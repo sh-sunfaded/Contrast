@@ -10,6 +10,9 @@
 //! - 最初の page flip が 2 秒以内に終わらなければ、エラーで終了する。
 //! - session の inactive（VT 切り替え）は必ずイベントループで処理する（描画と入力を止めて master を手放す）。
 //!   active に戻れば再開する。libseat への応答（disable の ack）は `LibSeatSessionNotifier` が行う。
+//! - VT 切り替えを要求した時点で `vt_switching` の印を立て、新しいフレームを出さない（pause か resume か 2 秒で解除）。
+//!   master が外れたあとの描画の依頼は `EACCES` で失敗するが、inactive か `vt_switching` のあいだなら致命的にしない
+//!   （`vt_guard::failure_action`）。active に戻って最初のフレームが 2 秒以内に終わらなければ、エラーで終了する。
 //! - modeset の失敗は原因つきのエラー（終了コード 1）にする。
 //!
 //! dmabuf はクライアントのバッファを描画してから flip する（direct scanout はしない）。
@@ -62,12 +65,17 @@ use smithay::utils::{DeviceFd, Logical, Point, SERIAL_COUNTER, Transform};
 use contrast_core::Rect;
 use contrast_policy::CursorSettings;
 
+use super::vt_guard::{FailureAction, failure_action, is_permission_denied};
 use crate::cursor::{CursorTheme, cursor_elements};
 use crate::render::{SceneElement, finish_frame, scene_elements};
 use crate::state::Contrast;
 
 /// 最初の page flip を待つ上限。
 const FIRST_FLIP_TIMEOUT: Duration = Duration::from_secs(2);
+/// VT 切り替えを要求してから、`vt_switching` の印を（pause も resume も来なくても）解除するまでの時間。
+const VT_SWITCH_GRACE: Duration = Duration::from_secs(2);
+/// session が active に戻ってから、最初のフレームが終わるまでの上限。
+const RESUME_FLIP_TIMEOUT: Duration = Duration::from_secs(2);
 /// `CONTRAST_EXIT_AFTER` の既定値（秒）。
 const DEFAULT_EXIT_AFTER_SECS: u64 = 30;
 /// 空のフレームが返ったときにやり直すまでの間隔（約 1 リフレッシュ）。
@@ -224,6 +232,10 @@ struct Drm {
     libinput: Libinput,
     handle: LoopHandle<'static, Contrast>,
     active: bool,
+    /// VT 切り替えを要求した時刻（`VT_SWITCH_GRACE` のあいだ、新しいフレームを出さない）。
+    vt_switching_since: Option<Instant>,
+    /// 描画の依頼を見送った（`vt_switching` か、`EACCES` を待った）。再開のときに描き直す。
+    stalled: bool,
     frames: u64,
     last_log: Instant,
     error: Option<DrmError>,
@@ -248,10 +260,48 @@ impl Drm {
         state.loop_signal.stop();
     }
 
+    /// VT 切り替えの要求から `VT_SWITCH_GRACE` 以内か。
+    fn vt_switching(&self) -> bool {
+        self.vt_switching_since
+            .is_some_and(|since| since.elapsed() < VT_SWITCH_GRACE)
+    }
+
+    /// 描画の依頼の失敗を、致命的にするか、待つか決める（`vt_guard::failure_action`）。
+    fn handle_failure(&mut self, state: &mut Contrast, error: DrmError, permission_denied: bool) {
+        match failure_action(permission_denied, self.active, self.vt_switching()) {
+            FailureAction::Fatal => self.fail(state, error),
+            FailureAction::Wait => {
+                tracing::debug!(
+                    active = self.active,
+                    vt_switching = self.vt_switching(),
+                    "drm: waiting after a failure during a vt switch: {error}"
+                );
+                self.stalled = true;
+            }
+        }
+    }
+
+    /// 要求した VT 切り替えの猶予が切れた（pause も resume も来なかった）: 印を外し、見送った描画を再開する。
+    fn vt_switch_expired(&mut self, state: &mut Contrast, shared: &Shared) {
+        if self.vt_switching_since.is_none() || self.vt_switching() {
+            return;
+        }
+        tracing::warn!("drm: no session event after the vt switch request, resuming rendering");
+        self.vt_switching_since = None;
+        if self.stalled && self.active {
+            self.stalled = false;
+            self.render(state, shared);
+        }
+    }
+
     /// 次のフレームを描いて queue し、成功したら frame callback を送る。
     /// クライアントの commit を拾うため、毎回バッファの age を捨てて全面を描き直す（プロトタイプ）。
     fn render(&mut self, state: &mut Contrast, shared: &Shared) {
         if !self.active {
+            return;
+        }
+        if self.vt_switching() {
+            self.stalled = true;
             return;
         }
         state.tick_animations();
@@ -297,16 +347,17 @@ impl Drm {
         let rendered = output
             .render_frame::<_, SceneElement>(renderer, &elements, background, FrameFlags::DEFAULT)
             .map(|result| result.is_empty)
-            .map_err(|e| DrmError::Frame(e.to_string()));
+            .map_err(|e| (DrmError::Frame(e.to_string()), is_permission_denied(&e)));
         let result = match rendered {
             Ok(true) => Err(None),
             Ok(false) => output.queue_frame(()).map_err(|e| {
                 // 最初の queue_frame が atomic commit（modeset）を行う。
-                Some(if first {
+                let error = if first {
                     DrmError::Modeset(e.to_string())
                 } else {
                     DrmError::Frame(e.to_string())
-                })
+                };
+                Some((error, is_permission_denied(&e)))
             }),
             Err(e) => Err(Some(e)),
         };
@@ -323,7 +374,7 @@ impl Drm {
                     );
                 }
             }
-            Err(Some(error)) => self.fail(state, error),
+            Err(Some((error, denied))) => self.handle_failure(state, error, denied),
             Err(None) => {
                 // 空のフレーム: 少し待ってやり直す。
                 let shared = shared.clone();
@@ -350,7 +401,11 @@ impl Drm {
             Ok(Some(())) => {}
             Ok(None) => return,
             Err(e) => {
-                self.fail(state, DrmError::Frame(e.to_string()));
+                self.handle_failure(
+                    state,
+                    DrmError::Frame(e.to_string()),
+                    is_permission_denied(&e),
+                );
                 return;
             }
         }
@@ -363,10 +418,14 @@ impl Drm {
     }
 
     /// session が inactive になった（VT 切り替え）: 描画と入力を止めて master を手放す。
-    fn pause(&mut self) {
+    fn pause(&mut self, state: &mut Contrast) {
         tracing::info!("drm: session inactive");
         self.active = false;
+        self.vt_switching_since = None;
+        self.stalled = false;
         self.libinput.suspend();
+        // デバイスが外れると、離したキーのイベントが来ない（押しっぱなしの修飾キーが残る）ので、ここで離す。
+        state.release_all_keys();
         if let Some(manager) = self.gpu.as_mut().and_then(|g| g.manager.as_mut()) {
             manager.pause();
         }
@@ -376,6 +435,8 @@ impl Drm {
     fn resume(&mut self, state: &mut Contrast, shared: &Shared) {
         tracing::info!("drm: session active");
         self.active = true;
+        self.vt_switching_since = None;
+        self.stalled = false;
         if self.libinput.resume().is_err() {
             tracing::warn!("drm: libinput resume failed");
         }
@@ -383,6 +444,24 @@ impl Drm {
             && let Err(e) = manager.activate(false)
         {
             self.fail(state, DrmError::Frame(format!("activate failed: {e}")));
+            return;
+        }
+        // 戻ってから最初のフレームが 2 秒以内に終わらなければ諦める（最初の page flip の見張りと同じ考え方）。
+        let frames = self.frames;
+        let watched = shared.clone();
+        let scheduled = self.handle.insert_source(
+            Timer::from_duration(RESUME_FLIP_TIMEOUT),
+            move |_, _, state| {
+                with(&watched.clone(), |d| {
+                    if d.active && !d.vt_switching() && d.error.is_none() && d.frames == frames {
+                        d.fail(state, DrmError::FlipTimeout);
+                    }
+                });
+                TimeoutAction::Drop
+            },
+        );
+        if let Err(e) = scheduled {
+            self.fail(state, DrmError::EventLoop(e.to_string()));
             return;
         }
         self.render(state, shared);
@@ -471,6 +550,8 @@ pub fn init(
         libinput,
         handle: handle.clone(),
         active: session.is_active(),
+        vt_switching_since: None,
+        stalled: false,
         frames: 0,
         last_log: Instant::now(),
         error: None,
@@ -506,9 +587,25 @@ pub fn init(
     );
 
     // VT 切り替え: キー処理が `pending_vt` を立てると、この関数が呼ばれる。
+    // 要求した時点で印を立てて新しいフレームを止める（master が外れたあとの commit は EACCES になる）。
+    // pause も resume も来なければ、`VT_SWITCH_GRACE` で印を外して描画を再開する。
     let mut vt_session = session;
+    let vt_shared = drm.clone();
+    let vt_handle = handle.clone();
     state.vt_switch = Some(Box::new(move |vt| {
         tracing::info!(vt, "drm: switching vt");
+        with(&vt_shared.clone(), |d| {
+            d.vt_switching_since = Some(Instant::now());
+        });
+        let expired = vt_shared.clone();
+        let scheduled =
+            vt_handle.insert_source(Timer::from_duration(VT_SWITCH_GRACE), move |_, _, state| {
+                with(&expired.clone(), |d| d.vt_switch_expired(state, &expired));
+                TimeoutAction::Drop
+            });
+        if let Err(e) = scheduled {
+            tracing::warn!("drm: cannot schedule the vt switch timeout: {e}");
+        }
         if let Err(e) = vt_session.change_vt(vt) {
             tracing::warn!(vt, "drm: change_vt failed: {e}");
         }
@@ -521,7 +618,7 @@ pub fn init(
                 SessionEvent::ActivateSession => {
                     with(&shared.clone(), |d| d.resume(state, &shared))
                 }
-                SessionEvent::PauseSession => with(&shared.clone(), |d| d.pause()),
+                SessionEvent::PauseSession => with(&shared.clone(), |d| d.pause(state)),
             })
             .map_err(|e| DrmError::EventLoop(e.to_string()))?;
     }
@@ -531,7 +628,11 @@ pub fn init(
             .insert_source(drm_notifier, move |event, _, state| match event {
                 DrmEvent::VBlank(_) => with(&shared.clone(), |d| d.on_vblank(state, &shared)),
                 DrmEvent::Error(e) => with(&shared.clone(), |d| {
-                    d.fail(state, DrmError::Frame(e.to_string()))
+                    d.handle_failure(
+                        state,
+                        DrmError::Frame(e.to_string()),
+                        is_permission_denied(&e),
+                    )
                 }),
             })
             .map_err(|e| DrmError::EventLoop(e.to_string()))?;

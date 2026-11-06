@@ -179,6 +179,33 @@ impl Contrast {
         }
     }
 
+    /// 押されているキーをすべて離す（VT 切り替えでデバイスが外れると、離したイベントが来ないため）。
+    /// 握りつぶしたキー（バインド）は、クライアントに渡さない。
+    pub fn release_all_keys(&mut self) {
+        let Some(keyboard) = self.seat.get_keyboard() else {
+            return;
+        };
+        let suppressed = std::mem::take(&mut self.suppressed_keys);
+        let time = u32::try_from(self.start_time.elapsed().as_millis()).unwrap_or(0);
+        for keycode in keyboard.pressed_keys() {
+            let serial = SERIAL_COUNTER.next_serial();
+            keyboard.input::<(), _>(
+                self,
+                keycode,
+                KeyState::Released,
+                serial,
+                time,
+                |_, _, _| {
+                    if suppressed.contains(&keycode) {
+                        FilterResult::Intercept(())
+                    } else {
+                        FilterResult::Forward
+                    }
+                },
+            );
+        }
+    }
+
     /// キー 1 回分。キーバインドに当たれば握りつぶして実行し、離したときも素通ししない。
     fn on_key(&mut self, keycode: xkb::Keycode, key_state: KeyState, time: u32) {
         let serial = SERIAL_COUNTER.next_serial();
