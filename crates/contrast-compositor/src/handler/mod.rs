@@ -11,9 +11,9 @@ use smithay::{
         allocator::{Buffer, dmabuf::Dmabuf},
         renderer::utils::on_commit_buffer_handler,
     },
-    delegate_compositor, delegate_data_device, delegate_dmabuf, delegate_input_method_manager,
-    delegate_output, delegate_primary_selection, delegate_seat, delegate_shm,
-    delegate_text_input_manager, delegate_virtual_keyboard_manager,
+    delegate_compositor, delegate_data_control, delegate_data_device, delegate_dmabuf,
+    delegate_input_method_manager, delegate_output, delegate_primary_selection, delegate_seat,
+    delegate_shm, delegate_text_input_manager, delegate_virtual_keyboard_manager,
     input::{Seat, SeatHandler, SeatState, pointer::CursorImageStatus},
     reexports::wayland_server::{
         Client, Resource,
@@ -36,6 +36,7 @@ use smithay::{
             primary_selection::{
                 PrimarySelectionHandler, PrimarySelectionState, set_primary_focus,
             },
+            wlr_data_control::{DataControlHandler, DataControlState},
         },
         shm::{ShmHandler, ShmState},
     },
@@ -124,6 +125,12 @@ impl PrimarySelectionHandler for Contrast {
     }
 }
 
+impl DataControlHandler for Contrast {
+    fn data_control_state(&self) -> &DataControlState {
+        &self.data_control_state
+    }
+}
+
 impl ClientDndGrabHandler for Contrast {}
 impl ServerDndGrabHandler for Contrast {}
 
@@ -134,6 +141,7 @@ delegate_shm!(Contrast);
 delegate_seat!(Contrast);
 delegate_data_device!(Contrast);
 delegate_primary_selection!(Contrast);
+delegate_data_control!(Contrast);
 delegate_output!(Contrast);
 // 日本語入力（fcitx5）: ハンドラは `ime.rs`（`InputMethodHandler`）。
 delegate_text_input_manager!(Contrast);

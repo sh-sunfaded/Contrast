@@ -1,6 +1,13 @@
 //! コンポジタ全体の状態と、Wayland ソケットの用意。
 
-use std::{ffi::OsString, rc::Rc, sync::Arc};
+use std::{
+    ffi::OsString,
+    rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicI32, Ordering},
+    },
+};
 
 use smithay::{
     backend::{
@@ -21,7 +28,10 @@ use smithay::{
         dmabuf::{DmabufFeedback, DmabufGlobal, DmabufState},
         input_method::{InputMethodManagerState, PopupSurface},
         output::OutputManagerState,
-        selection::{data_device::DataDeviceState, primary_selection::PrimarySelectionState},
+        selection::{
+            data_device::DataDeviceState, primary_selection::PrimarySelectionState,
+            wlr_data_control::DataControlState,
+        },
         shell::{
             wlr_layer::WlrLayerShellState,
             xdg::{XdgShellState, decoration::XdgDecorationState},
@@ -80,6 +90,10 @@ pub struct Contrast {
     pub seat_state: SeatState<Contrast>,
     pub data_device_state: DataDeviceState,
     pub primary_selection_state: PrimarySelectionState,
+    /// wlr-data-control（ironbar の clipboard、wl-clipboard、cliphist）。許可リストのクライアントにだけ見せる。
+    pub data_control_state: DataControlState,
+    /// wlr-data-control を使ってよいクライアントのプログラム名（設定の `DataControlClient`）。
+    pub data_control_clients: crate::data_control::AllowList,
     pub layer_shell_state: WlrLayerShellState,
     /// text-input-v3（アプリが入力メソッドに状態を伝える）。
     pub text_input_manager_state: TextInputManagerState,
@@ -136,6 +150,13 @@ impl Contrast {
         let mut seat_state = SeatState::new();
         let data_device_state = DataDeviceState::new::<Self>(&dh);
         let primary_selection_state = PrimarySelectionState::new::<Self>(&dh);
+        let data_control_clients: crate::data_control::AllowList =
+            std::sync::Arc::new(std::sync::Mutex::new(policy.data_control_clients()));
+        let data_control_state = DataControlState::new::<Self, _>(
+            &dh,
+            Some(&primary_selection_state),
+            crate::data_control::client_filter(data_control_clients.clone()),
+        );
         let layer_shell_state = WlrLayerShellState::new::<Self>(&dh);
         let text_input_manager_state = TextInputManagerState::new::<Self>(&dh);
         let input_method_manager_state = InputMethodManagerState::new::<Self, _>(&dh, |_| true);
@@ -175,6 +196,8 @@ impl Contrast {
             shell: Shell::default(),
             border_buffers: Default::default(),
             suppressed_keys: Vec::new(),
+            data_control_state,
+            data_control_clients,
             xdg_shell_state,
             xdg_decoration_state,
             compositor_state,
@@ -240,10 +263,16 @@ impl Contrast {
 
         handle
             .insert_source(listening_socket, |stream, _, state| {
+                let data = Arc::new(ClientState::default());
                 let client = state
                     .display_handle
-                    .insert_client(stream, Arc::new(ClientState::default()))
+                    .insert_client(stream, data.clone())
                     .expect("failed to insert client");
+                // pid は、ディスパッチの外（ここ）で調べて残す。ディスパッチの中（グローバルのフィルタ）で
+                // `get_credentials` を呼ぶと、バックエンドのロックと競合して止まる。
+                if let Ok(credentials) = client.get_credentials(&state.display_handle) {
+                    data.pid.store(credentials.pid, Ordering::Relaxed);
+                }
                 tracing::info!(client = ?client.id(), "client connected");
             })
             .expect("failed to init the wayland socket source");
@@ -298,6 +327,8 @@ fn add_keyboard(seat: &mut Seat<Contrast>) {
 pub struct ClientState {
     /// wl_compositor のクライアント側状態。
     pub compositor_state: CompositorClientState,
+    /// 接続したプロセスの pid。0 は不明。
+    pub pid: AtomicI32,
 }
 
 impl ClientData for ClientState {

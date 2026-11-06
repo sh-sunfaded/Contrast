@@ -37,6 +37,7 @@ impl Contrast {
                         "config: Layout mode changed, restart to apply (the running layout is kept)"
                     );
                 }
+                self.refresh_data_control_clients();
                 self.reapply_layout();
                 self.reapply_input_settings();
             }

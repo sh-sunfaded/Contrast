@@ -6,6 +6,7 @@
 mod anim;
 mod backend;
 mod cursor;
+mod data_control;
 mod geometry;
 mod handler;
 mod ime;
