@@ -1,0 +1,76 @@
+"use cdl 1";
+
+// まだ変換できない niri の binds。元の KDL の行を、そのまま「//> 」で残してある（待っている機能ごと）。
+// 機能が入ったら、この行を keybinds.cdl に移す。変換した binds と合わせて、元の 111 個になる（docs/config-migration.md）。
+
+// ---- ホイールのバインド（12 個） ----
+// Contrast にポインタの軸（ホイール）のバインドが無い（N5）。
+// 'cooldown-ms=150' のつくものは、連続するホイールの入力を 150ms 間引く指定。
+//> Mod+WheelScrollDown cooldown-ms=150 { focus-workspace-down; }
+//> Mod+WheelScrollUp cooldown-ms=150 { focus-workspace-up; }
+//> Mod+Ctrl+WheelScrollDown cooldown-ms=150 { move-column-to-workspace-down; }
+//> Mod+Ctrl+WheelScrollUp cooldown-ms=150 { move-column-to-workspace-up; }
+//> Mod+WheelScrollRight { focus-column-right; }
+//> Mod+WheelScrollLeft { focus-column-left; }
+//> Mod+Ctrl+WheelScrollRight { move-column-right; }
+//> Mod+Ctrl+WheelScrollLeft { move-column-left; }
+//> Mod+Shift+WheelScrollDown { focus-column-right; }
+//> Mod+Shift+WheelScrollUp { focus-column-left; }
+//> Mod+Ctrl+Shift+WheelScrollDown { move-column-right; }
+//> Mod+Ctrl+Shift+WheelScrollUp { move-column-left; }
+
+// ---- 複数モニタ（16 個） ----
+// Contrast は出力 1 枚だけを扱う（N4: 複数出力・ホットプラグ・モニタ間のフォーカスと移動）。
+//> Mod+Shift+Left { focus-monitor-left; }
+//> Mod+Shift+Down { focus-monitor-down; }
+//> Mod+Shift+Up { focus-monitor-up; }
+//> Mod+Shift+Right { focus-monitor-right; }
+//> Mod+Shift+H { focus-monitor-left; }
+//> Mod+Shift+J { focus-monitor-down; }
+//> Mod+Shift+K { focus-monitor-up; }
+//> Mod+Shift+L { focus-monitor-right; }
+//> Mod+Shift+Ctrl+Left { move-column-to-monitor-left; }
+//> Mod+Shift+Ctrl+Down { move-column-to-monitor-down; }
+//> Mod+Shift+Ctrl+Up { move-column-to-monitor-up; }
+//> Mod+Shift+Ctrl+Right { move-column-to-monitor-right; }
+//> Mod+Shift+Ctrl+H { move-column-to-monitor-left; }
+//> Mod+Shift+Ctrl+J { move-column-to-monitor-down; }
+//> Mod+Shift+Ctrl+K { move-column-to-monitor-up; }
+//> Mod+Shift+Ctrl+L { move-column-to-monitor-right; }
+
+// ---- ワークスペースの並べ替え（4 個） ----
+// Contrast のワークスペースは固定の数で、並べ替えがない（N4: 動的・名前つきワークスペース）。
+//> Mod+Shift+Page_Down { move-workspace-down; }
+//> Mod+Shift+Page_Up { move-workspace-up; }
+//> Mod+Shift+U { move-workspace-down; }
+//> Mod+Shift+I { move-workspace-up; }
+
+// ---- consume-or-expel-window-left/right（2 個） ----
+// core に、隣の列へ取り込むか、出すかの操作が無い（core の追加が要る）。
+//> Mod+BracketLeft { consume-or-expel-window-left; }
+//> Mod+BracketRight { consume-or-expel-window-right; }
+
+// ---- スクリーンショット（3 個） ----
+// スクリーンショット（screencopy と保存の UI）が無い（N5a）。
+//> Print { screenshot; }
+//> Ctrl+Print { screenshot-screen; }
+//> Alt+Print { screenshot-window; }
+
+// ---- ホットキーのオーバーレイと、モニタの電源（2 個） ----
+// オーバーレイの描画と、DPMS（モニタの電源）の操作が無い。
+//> Mod+Shift+Slash { show-hotkey-overlay; }
+//> Mod+Shift+P { power-off-monitors; }
+
+// ---- strat fedora …（2 個） ----
+// strat は Bedrock Linux のコマンドで、NixOS に無い。Bedrock 側のアプリを起動する手段が NixOS では別に要る。
+//> Mod+Shift+D { spawn-sh "strat fedora /home/user/DiscordPTB/launch.sh"; }
+//> Mod+Alt+E { spawn-sh "strat fedora /home/user/eclipse/eclipse";}
+
+// ---- swaylock（1 個） ----
+// swaylock は未インストール。ロック画面は ext-session-lock が要る（N5）。
+//> Super+Alt+L { spawn "swaylock"; }
+
+// ---- bind ではない設定 ----
+// screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"  （スクリーンショット N5a の保存先）
+// window-rule（wezterm の default-column-width {} は実質何もしない。keepassxc の block-out-from は無効化済み）、
+// output（無効）、border（無効）、animations（既定）は移さない。

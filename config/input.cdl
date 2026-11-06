@@ -1,0 +1,7 @@
+"use cdl 1";
+import { Input } from "host:contrast";
+
+// 入力デバイス（niri の input の touchpad: tap と natural-scroll）。
+// keyboard の xkb は空、mouse も空なので移さない。
+
+export const input = <Input tapToClick={true} naturalScroll={true} />;

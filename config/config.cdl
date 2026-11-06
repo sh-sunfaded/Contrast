@@ -1,0 +1,29 @@
+"use cdl 1";
+import { Contrast } from "host:contrast";
+import { appearance, layout, cursor, workspaces } from "./appearance.cdl";
+import { input } from "./input.cdl";
+import { startup, environment } from "./startup.cdl";
+import { keybinds } from "./keybinds.cdl";
+
+// niri の設定（~/.config/niri/config.kdl）を、CDL で再編した Contrast の設定。入口。
+// ~/.config/contrast/ にコピーして使う（CONTRAST_CONFIG で別の場所も指せる）。
+//
+// theme.cdl       色・長さ・幅などの定数
+// appearance.cdl  見た目・レイアウト・カーソル・ワークスペースの数
+// input.cdl       入力デバイス
+// startup.cdl     起動時のコマンドと環境変数
+// keybinds.cdl    キーバインド
+// unsupported.cdl まだ変換できない niri の設定（コメントだけ）
+
+export default (
+  <Contrast>
+    {appearance}
+    {layout}
+    {cursor}
+    {workspaces}
+    {input}
+    {startup}
+    {environment}
+    {keybinds}
+  </Contrast>
+);

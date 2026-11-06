@@ -1,0 +1,147 @@
+"use cdl 1";
+import { Keybind } from "host:contrast";
+import { RESIZE_STEP } from "./theme.cdl";
+
+// キーバインド（niri の binds）。`mod` は Contrast の modKey（実機の DRM は Super、nested は Alt）。
+// 変換できない binds は unsupported.cdl に残してある。
+//
+// 方向キーの二重定義（矢印と hjkl）、ワークスペースの 1〜9、Page_Up/Down と U/I は、データ 1 組から作る。
+
+/** 1 つのバインド。`workspace` は 1 始まり、`delta` はパーセント。 */
+interface Spec {
+  keys: string;
+  action: string;
+  command?: string;
+  workspace?: number;
+  delta?: number;
+}
+
+const none: Spec[] = [];
+
+// ---- プログラムの起動（niri の spawn） ----
+
+interface Launch {
+  keys: string;
+  command: string;
+}
+
+const launches: Launch[] = [
+  { keys: "mod+b", command: "firefox-nightly" },
+  { keys: "mod+t", command: "alacritty" },
+  { keys: "mod+d", command: "fuzzel" },
+  { keys: "ctrl+shift+space", command: "fcitx5-remote -t" },
+  // XWayland が要る（DISPLAY=:0）。Mod+Alt+J は、Mod が Alt のとき Mod+J と同じキーになるので、super+alt+j と書く。
+  {
+    keys: "super+alt+j",
+    command: "env DISPLAY=:0 /home/user/jetbrains-toolbox-3.8.1.88030/bin/jetbrains-toolbox",
+  },
+  { keys: "XF86AudioRaiseVolume", command: "wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.1+" },
+  { keys: "XF86AudioLowerVolume", command: "wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.1-" },
+  { keys: "XF86AudioMute", command: "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle" },
+  { keys: "XF86AudioMicMute", command: "wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle" },
+];
+
+function spawn(l: Launch): Spec {
+  return { keys: l.keys, action: "spawn", command: l.command };
+}
+
+// ---- 方向（フォーカスの移動と窓・列の移動。矢印と hjkl の 2 通り） ----
+
+interface Direction {
+  arrow: string;
+  vim: string;
+  focus: string;
+  move: string;
+}
+
+// 左右は列、上下は列の中の窓。
+const directions: Direction[] = [
+  { arrow: "Left", vim: "h", focus: "focus-left", move: "move-left" },
+  { arrow: "Right", vim: "l", focus: "focus-right", move: "move-right" },
+  { arrow: "Up", vim: "k", focus: "focus-up", move: "move-up" },
+  { arrow: "Down", vim: "j", focus: "focus-down", move: "move-down" },
+];
+
+function direction(d: Direction): Spec[] {
+  return [
+    { keys: `mod+${d.arrow}`, action: d.focus },
+    { keys: `mod+${d.vim}`, action: d.focus },
+    { keys: `mod+ctrl+${d.arrow}`, action: d.move },
+    { keys: `mod+ctrl+${d.vim}`, action: d.move },
+  ];
+}
+
+// ---- ワークスペース ----
+
+interface Step {
+  page: string;
+  vim: string;
+  focus: string;
+  move: string;
+}
+
+// 下 = 次、上 = 前。端で循環しない。
+const steps: Step[] = [
+  { page: "Page_Down", vim: "u", focus: "workspace-next", move: "move-to-workspace-next" },
+  { page: "Page_Up", vim: "i", focus: "workspace-prev", move: "move-to-workspace-prev" },
+];
+
+function step(s: Step): Spec[] {
+  return [
+    { keys: `mod+${s.page}`, action: s.focus },
+    { keys: `mod+${s.vim}`, action: s.focus },
+    { keys: `mod+ctrl+${s.page}`, action: s.move },
+    { keys: `mod+ctrl+${s.vim}`, action: s.move },
+  ];
+}
+
+const numbers: number[] = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+
+function numbered(n: number): Spec[] {
+  return [
+    { keys: `mod+${n}`, action: "workspace", workspace: n },
+    { keys: `mod+ctrl+${n}`, action: "move-to-workspace", workspace: n },
+  ];
+}
+
+// ---- そのほか（1 つずつ） ----
+
+const others: Spec[] = [
+  { keys: "mod+q", action: "close" },
+  { keys: "mod+Home", action: "focus-column-first" },
+  { keys: "mod+End", action: "focus-column-last" },
+  { keys: "mod+ctrl+Home", action: "move-column-first" },
+  { keys: "mod+ctrl+End", action: "move-column-last" },
+  { keys: "mod+Comma", action: "consume-window-into-column" },
+  { keys: "mod+Period", action: "expel-window-from-column" },
+  { keys: "mod+r", action: "switch-preset-column-width" },
+  { keys: "mod+shift+r", action: "switch-preset-window-height" },
+  { keys: "mod+ctrl+r", action: "reset-window-height" },
+  { keys: "mod+f", action: "maximize-column" },
+  { keys: "mod+shift+f", action: "toggle-fullscreen" },
+  { keys: "mod+c", action: "center-column" },
+  { keys: "mod+Minus", action: "adjust-column-width", delta: -RESIZE_STEP },
+  { keys: "mod+Equal", action: "adjust-column-width", delta: RESIZE_STEP },
+  { keys: "mod+shift+Minus", action: "adjust-window-height", delta: -RESIZE_STEP },
+  { keys: "mod+shift+Equal", action: "adjust-window-height", delta: RESIZE_STEP },
+  { keys: "mod+shift+e", action: "quit" },
+];
+
+// ---- すべてを 1 つにまとめて、要素にする ----
+
+const specs: Spec[] = none
+  .concat(launches.reduce((acc, l) => acc.concat([spawn(l)]), none))
+  .concat(directions.reduce((acc, d) => acc.concat(direction(d)), none))
+  .concat(steps.reduce((acc, s) => acc.concat(step(s)), none))
+  .concat(numbers.reduce((acc, n) => acc.concat(numbered(n)), none))
+  .concat(others);
+
+export const keybinds = specs.map((s) => (
+  <Keybind
+    keys={s.keys}
+    action={s.action}
+    command={s.command}
+    workspace={s.workspace}
+    delta={s.delta}
+  />
+));

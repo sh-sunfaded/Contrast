@@ -1,0 +1,34 @@
+"use cdl 1";
+import { Startup, Environment, Env } from "host:contrast";
+
+// 起動時に一度だけ実行するコマンド（niri の spawn-at-startup）と、子プロセスの環境変数（niri の environment）。
+
+/** 起動するコマンド。この順に実行する。リロードでは再実行しない。 */
+const startupCommands: string[] = [
+  "fcitx5",
+  "ironbar -c /home/user/.config/ironbar/niri-v8.toml -t /home/user/.config/ironbar/niri-v9.css",
+  "swaybg -i /home/user/Pictures/wallpaper/cece.jpg",
+  "mako",
+  "udiskie",
+];
+
+export const startup = startupCommands.map((command) => <Startup command={command} />);
+
+interface Variable {
+  name: string;
+  value: string;
+}
+
+/** spawn する子（Startup と Keybind の spawn）の環境変数。コンポジタ自身の環境は変えない。 */
+const variables: Variable[] = [
+  { name: "QT_IM_MODULE", value: "fcitx5" },
+  { name: "GTK_IM_MODULE", value: "fcitx5" },
+  { name: "SDL_IM_MODULE", value: "fcitx5" },
+  { name: "MOZ_ENABLE_WAYLAND", value: "1" },
+];
+
+export const environment = (
+  <Environment>
+    {variables.map((v) => <Env name={v.name} value={v.value} />)}
+  </Environment>
+);

@@ -1,0 +1,86 @@
+# niri の設定から Contrast の設定への移行
+
+`~/.config/niri/config.kdl`（作者の実機の設定）を、CDL で再編した設定が `config/` にある。`~/.config/contrast/` にコピーして使う
+（`CONTRAST_CONFIG=<config/config.cdl のパス>` で別の場所も指せる。`import` は設定ファイルのあるディレクトリの中だけ）。
+
+## 構成
+
+| ファイル | 内容 |
+| --- | --- |
+| `config/config.cdl` | 入口。ほかのモジュールを import して `Contrast` の木を組み立てる |
+| `config/theme.cdl` | 色・gap・幅・アニメーションの長さ・ワークスペースの数などの定数 |
+| `config/appearance.cdl` | `Appearance`・`Layout`・`Cursor`・`Workspaces` |
+| `config/input.cdl` | `Input`（touchpad の tap と natural-scroll） |
+| `config/startup.cdl` | `Startup`（spawn-at-startup）と `Environment`（environment） |
+| `config/keybinds.cdl` | キーバインド。方向・ワークスペースの繰り返しは、データから生成する |
+| `config/unsupported.cdl` | 変換できない binds（元の KDL の行を `//>` で残す。コメントだけ） |
+
+`mod` は `modKey`（実機の DRM は Super、nested の winit は Alt）に任せている。`Mod+Alt+J` だけは、`mod` が Alt のとき `Mod+J` と同じキーに
+なって重複するので、`super+alt+j` と書いている（実機の Super では同じ）。
+
+## binds 111 個の内訳
+
+元の `binds { … }` は 111 行。**変換したもの 69、変換しなかったもの 42**（69 + 42 = 111）。
+`crates/contrast-policy-cdl/tests/impl_config.rs` が、この数（`keybinds.cdl` の 69 と、`unsupported.cdl` の `//>` の 42）と、キーの重複がないことを確かめる。
+
+### (a) 変換したもの（69 個）
+
+| 区分 | 個数 | niri の action → CDL の action |
+| --- | --- | --- |
+| プログラムの起動 | 9 | `spawn` → `spawn`（`command`）。firefox-nightly・alacritty・fuzzel・fcitx5-remote -t・wpctl の 4 つ・jetbrains-toolbox（`env DISPLAY=:0 …`。XWayland が要る） |
+| 窓を閉じる・終了 | 2 | `close-window` → `close`、`quit` → `quit` |
+| フォーカスの移動 | 8 | `focus-column-left/right` → `focus-left/right`、`focus-window-up/down` → `focus-up/down`（矢印と hjkl の 2 通り × 4 方向） |
+| 窓・列の移動 | 8 | `move-column-left/right` → `move-left/right`、`move-window-up/down` → `move-up/down`（同上） |
+| 列の端 | 4 | `focus-column-first/last` → `focus-column-first/last`、`move-column-to-first/last` → `move-column-first/last` |
+| ワークスペース N | 18 | `focus-workspace N` → `workspace`（`workspace`）、`move-column-to-workspace N` → `move-to-workspace`（N = 1〜9） |
+| ワークスペースの上下 | 8 | `focus-workspace-down/up` → `workspace-next/prev`、`move-column-to-workspace-down/up` → `move-to-workspace-next/prev`（Page_Down/Up と U/I の 2 通り） |
+| 列への積み | 2 | `consume-window-into-column`、`expel-window-from-column`（同名） |
+| 幅・高さのプリセット | 3 | `switch-preset-column-width`（同名）、`switch-preset-window-height`（同名）、`reset-window-height`（同名） |
+| 列・窓の状態 | 3 | `maximize-column`（同名）、`fullscreen-window` → `toggle-fullscreen`、`center-column`（同名） |
+| 幅・高さの増減（±10%） | 4 | `set-column-width "±10%"` → `adjust-column-width`（`delta`）、`set-window-height "±10%"` → `adjust-window-height`（`delta`） |
+
+- 音量キー（`allow-when-locked=true`）の `allow-when-locked` は移さない（Contrast にロック画面が無い）。
+- キーは `Mod+Q` → `mod+q`、`Mod+Ctrl+Home` → `mod+ctrl+Home` のように、`+` で区切り、修飾キーを小文字にする（キー名の大文字小文字は問われない）。
+
+### (b) 変換しなかったもの（42 個）
+
+| 待っている機能 | 個数 | 内容 |
+| --- | --- | --- |
+| ホイールのバインド（N5） | 12 | `Mod+WheelScroll…`（ワークスペース・列の切り替えと移動） |
+| 複数モニタ（N4） | 16 | `focus-monitor-*`（8）と `move-column-to-monitor-*`（8） |
+| ワークスペースの並べ替え（N4） | 4 | `move-workspace-down/up` |
+| core の追加 | 2 | `consume-or-expel-window-left/right` |
+| スクリーンショット（N5a） | 3 | `screenshot`・`screenshot-screen`・`screenshot-window`（`screenshot-path` は bind ではない設定で、これも N5a） |
+| オーバーレイ・DPMS | 2 | `show-hotkey-overlay`、`power-off-monitors` |
+| Bedrock Linux の `strat` | 2 | `spawn-sh "strat fedora …"`（Discord、Eclipse）。`strat` は NixOS に無い |
+| ロック画面 | 1 | `Super+Alt+L` の `swaylock`（未インストール。ロックには ext-session-lock も要る） |
+
+元の KDL の行は `config/unsupported.cdl` に、待っている機能ごとに残してある。
+
+## binds 以外の設定
+
+| niri | CDL | 備考 |
+| --- | --- | --- |
+| `spawn-at-startup`（5 つ） | `Startup`（この順） | fcitx5・ironbar・swaybg・mako・udiskie |
+| `environment`（4 つ） | `Environment` / `Env` | QT_IM_MODULE・GTK_IM_MODULE・SDL_IM_MODULE（fcitx5）、MOZ_ENABLE_WAYLAND（1） |
+| `layout { gaps 16 }` | `Layout.gap`・`outerGap` | |
+| `default-column-width { proportion 0.5; }`、`preset-column-widths` | `Layout.defaultColumnWidth`・`presetColumnWidths` | 0.33333 0.5 0.66667 |
+| スクロールするレイアウト | `Layout.mode="scrolling"` | |
+| `animations`（既定） | `Layout.animationMs` | 150 |
+| `focus-ring`（width 4、active #7fc8ff、inactive #505050） | `Appearance.borderWidth`・`focusColor`・`borderColor` | |
+| `cursor`（Cecilia、24） | `Cursor.theme`・`size` | |
+| `input.touchpad`（tap、natural-scroll） | `Input.tapToClick`・`naturalScroll` | |
+| `workspace`（Mod+1〜9） | `Workspaces.count` | 9 |
+| `border`（off）、`output`（無効）、`window-rule`（wezterm は何もしない、keepassxc は無効）、`screenshot-path` | 移さない | `screenshot-path` はスクリーンショット（N5a）待ち |
+| `input.keyboard`（xkb は空）、`input.mouse`（空）、`struts`（空）、`hotkey-overlay` | 移さない | 設定が空 |
+
+## 繰り返しの減らし方
+
+`config/keybinds.cdl` は、次のデータ 1 組ずつから、複数の binds を生成する（CDL の `const`・関数・配列の `reduce`/`concat`・`map`・テンプレート文字列を使う）。
+
+- 方向 4 組（矢印、hjkl、focus、move）→ 16 個
+- ワークスペースの上下 2 組（Page_Down/Up、U/I、focus、move）→ 8 個
+- ワークスペースの番号 1〜9 → 18 個
+
+起動と、1 つずつの操作は、そのままの表（データ）で書く。元の binds は 111 行（変換するものだけで 69 行）。`keybinds.cdl` は、コメントと空行を除いて 113 行
+（import、型の宣言、データ、生成の関数、最後の `map` を含む）。ファイル全体は 147 行。
