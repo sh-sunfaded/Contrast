@@ -1,6 +1,7 @@
 //! バックエンド。ホストの Wayland 上の winit 窓と、実機の DRM（フェーズ1: 出力の列挙のみ）を持つ。
 
 pub mod drm;
+mod vt_guard;
 pub mod winit;
 
 use std::fmt;
