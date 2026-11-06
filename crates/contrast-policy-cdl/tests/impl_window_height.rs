@@ -8,9 +8,15 @@ use contrast_policy::{Action, ConfigLoader, LoadOutcome, ModKey, Mods, Settings}
 use contrast_policy_cdl::CdlLoader;
 
 /// 一時ファイルを書いて、そのパスを返す。`body` は `<Contrast>` の中身。
+/// テストは並列に走るので、`dir` が同じでも競合しないよう、テストの名前でも分ける。
 fn write_temp(dir: &str, body: &str) -> Result<PathBuf, String> {
+    let test = std::thread::current()
+        .name()
+        .unwrap_or("unnamed")
+        .to_owned();
     let base = Path::new(env!("CARGO_TARGET_TMPDIR"))
         .join("impl_window_height")
+        .join(test)
         .join(dir);
     fs::create_dir_all(&base).map_err(|e| e.to_string())?;
     let path = base.join("config.cdl");
