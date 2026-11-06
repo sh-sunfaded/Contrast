@@ -151,6 +151,11 @@ pub trait Policy {
         Vec::new()
     }
 
+    /// wlr-data-control を使ってよいクライアントのプログラム名。既定は空（だれにも見せない）。
+    fn data_control_clients(&self) -> Vec<String> {
+        Vec::new()
+    }
+
     /// spawn する子プロセスに足す環境変数（名前順）。
     fn environment(&self) -> Vec<(String, String)> {
         Vec::new()

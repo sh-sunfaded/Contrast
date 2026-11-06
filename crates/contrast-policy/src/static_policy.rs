@@ -63,6 +63,10 @@ impl Policy for StaticPolicy {
         self.store.startup_commands()
     }
 
+    fn data_control_clients(&self) -> Vec<String> {
+        self.store.data_control_clients()
+    }
+
     fn environment(&self) -> Vec<(String, String)> {
         self.store.environment()
     }

@@ -104,6 +104,7 @@ pub(crate) fn to_settings(
 
     // 1 回目: Appearance と Workspaces（キーバインドの検査に数が要る）。
     let mut keybind_nodes = Vec::new();
+    let mut data_control_nodes = Vec::new();
     for child in root.children() {
         match child.name() {
             "Appearance" => read_appearance(&mut cx, child, &mut settings),
@@ -112,6 +113,7 @@ pub(crate) fn to_settings(
             "Cursor" => read_cursor(&mut cx, child, &mut settings),
             "Input" => read_input(&mut cx, child, &mut settings),
             "Startup" => read_startup(&mut cx, child, &mut settings),
+            "DataControlClient" => data_control_nodes.push(child),
             "Environment" => read_environment(&mut cx, child, &mut settings),
             "Keybind" => keybind_nodes.push(child),
             other => cx.error(
@@ -121,6 +123,8 @@ pub(crate) fn to_settings(
             ),
         }
     }
+
+    read_data_control_clients(&mut cx, &data_control_nodes, &mut settings);
 
     // 2 回目: Keybind。
     let mut seen: BTreeMap<KeyId, (u32, u32)> = BTreeMap::new();
@@ -399,6 +403,41 @@ fn read_startup(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
         return;
     }
     settings.startup.push(command);
+}
+
+/// `DataControlClient` を読む。`name` は wlr-data-control を使ってよいプログラム名（実行ファイルの名前）。
+/// 1 つでも書くと既定の一覧を置き換える。空・空白や `/` を含む名前・重複は CT003。
+fn read_data_control_clients(cx: &mut Ctx<'_>, nodes: &[Node<'_>], settings: &mut Settings) {
+    if nodes.is_empty() {
+        return;
+    }
+    let mut names: Vec<String> = Vec::new();
+    for node in nodes {
+        let Some(name) = cx.prop::<String>(*node, "name") else {
+            continue;
+        };
+        let name = name.trim().to_owned();
+        if name.is_empty()
+            || name
+                .chars()
+                .any(|c| c.is_whitespace() || c == '/' || c == '\0')
+        {
+            cx.error(
+                *node,
+                codes::BAD_PROP,
+                "`DataControlClient` の `name` は、空でなく、空白と `/` を含まない名前",
+            );
+        } else if names.contains(&name) {
+            cx.error(
+                *node,
+                codes::BAD_PROP,
+                format!("`DataControlClient` の `name` が重複している: {name}"),
+            );
+        } else {
+            names.push(name);
+        }
+    }
+    settings.data_control_clients = names;
 }
 
 /// `Environment` を読む。子は `Env`（`name` と `value`）。名前の重複・空の名前・`=` や NUL を含む名前は CT003。

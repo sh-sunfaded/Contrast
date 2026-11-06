@@ -203,9 +203,21 @@ pub struct Settings {
     pub startup: Vec<String>,
     /// spawn する子プロセスに足す環境変数（名前順）。コンポジタ自身の環境は変えない。
     pub environment: BTreeMap<String, String>,
+    /// wlr-data-control（フォーカスなしでクリップボードを読み書きするプロトコル）を使ってよいクライアントの
+    /// プログラム名（実行ファイルの名前）。ここに無いクライアントには、そのグローバルを見せない。
+    pub data_control_clients: Vec<String>,
     /// キーバインド（並びの順）。
     pub keybinds: Vec<KeyBinding>,
 }
+
+/// `data_control_clients` の既定。
+pub const DEFAULT_DATA_CONTROL_CLIENTS: [&str; 5] = [
+    "ironbar",
+    "wl-copy",
+    "wl-paste",
+    "cliphist",
+    "wl-clip-persist",
+];
 
 /// 8 ビットの RGBA を 0.0〜1.0 にする。
 pub fn rgba8(c: [u8; 4]) -> [f32; 4] {
@@ -256,6 +268,10 @@ impl Settings {
             cursor: CursorSettings::default(),
             startup: Vec::new(),
             environment: BTreeMap::new(),
+            data_control_clients: DEFAULT_DATA_CONTROL_CLIENTS
+                .iter()
+                .map(|name| (*name).to_owned())
+                .collect(),
             keybinds,
         }
     }

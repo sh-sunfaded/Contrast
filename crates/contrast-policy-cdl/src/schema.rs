@@ -35,6 +35,7 @@ pub(crate) fn contrast_schema() -> Result<Schema, Vec<String>> {
                     "Cursor",
                     "Input",
                     "Startup",
+                    "DataControlClient",
                     "Environment",
                     "Keybind",
                 ])
@@ -80,6 +81,10 @@ pub(crate) fn contrast_schema() -> Result<Schema, Vec<String>> {
         .component(
             MODULE,
             ComponentDef::new("Startup").prop("command", Ty::String),
+        )
+        .component(
+            MODULE,
+            ComponentDef::new("DataControlClient").prop("name", Ty::String),
         )
         .component(MODULE, ComponentDef::new("Environment").children(&["Env"]))
         .component(

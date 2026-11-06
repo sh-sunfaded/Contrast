@@ -243,6 +243,10 @@ impl Policy for ConfigStore {
         self.config().settings.startup.clone()
     }
 
+    fn data_control_clients(&self) -> Vec<String> {
+        self.config().settings.data_control_clients.clone()
+    }
+
     fn environment(&self) -> Vec<(String, String)> {
         self.config()
             .settings

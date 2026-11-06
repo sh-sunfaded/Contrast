@@ -10,13 +10,14 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
 
 | 要素 | props | 子 | 一意 |
 | --- | --- | --- | --- |
-| `Contrast` | `modKey?: "alt" \| "super"`（省略時は下記の優先順位で決まる） | `Appearance` \| `Workspaces` \| `Layout` \| `Cursor` \| `Input` \| `Startup` \| `Environment` \| `Keybind` | `Appearance`、`Workspaces`、`Layout`、`Cursor`、`Input`、`Environment` |
+| `Contrast` | `modKey?: "alt" \| "super"`（省略時は下記の優先順位で決まる） | `Appearance` \| `Workspaces` \| `Layout` \| `Cursor` \| `Input` \| `Startup` \| `DataControlClient` \| `Environment` \| `Keybind` | `Appearance`、`Workspaces`、`Layout`、`Cursor`、`Input`、`Environment` |
 | `Appearance` | `borderWidth: Length`、`focusColor: Color`、`borderColor?: Color`、`background?: Color`、`radius?: Length`、`shadowBlur?: Length`、`shadowOffsetX?: Length`、`shadowOffsetY?: Length`、`shadowColor?: Color`、`inactiveBorderWidth?: Length` | なし | — |
 | `Workspaces` | `count: number`（整数、1〜32） | なし | — |
 | `Layout` | `gap?: Length`、`outerGap?: Length`、`mode?: "equal" \| "scrolling"`（既定 `"equal"`）、`defaultColumnWidth?: number`、`presetColumnWidths?: string`、`windowHeightPresets?: string`、`animationMs?: number`（既定 0） | なし | — |
 | `Cursor` | `theme?: string`、`size?: number`、`hideAfterInactiveMs?: number` | なし | — |
 | `Input` | `tapToClick?: boolean`（既定 true）、`naturalScroll?: boolean`（既定 false）、`accelSpeed?: number`（-1〜1、既定 0）、`disableWhileTyping?: boolean`（既定 true）、`focusFollowsMouse?: boolean`（既定 false） | なし | — |
 | `Startup` | `command: string` | なし | —（複数可） |
+| `DataControlClient` | `name: string` | なし | —（複数可） |
 | `Environment` | なし | `Env` | 一意 |
 | `Env` | `name: string`、`value: string` | なし | —（`Environment` の中だけ） |
 | `Keybind` | `keys: string`、`action: string`、`command?: string`、`workspace?: number`、`width?: number`、`delta?: number`、`height?: number`、`heightPx?: number` | なし | — |
@@ -41,6 +42,10 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
 - `Startup` は niri の `spawn-at-startup`。コンポジタが Wayland のソケットを公開したあと、書かれた順に、起動時に一度だけ spawn する。
   リロードでは再実行しない。`command` は空白で区切った先頭がプログラム、残りが引数（引用符・シェル記法は使えない。要るなら `sh -c …`）。
   空（空白だけ）の `command` は CT003。起動に失敗しても残りを続け、ログに出す。
+- `DataControlClient` は、wlr-data-control（`zwlr_data_control_manager_v1`。フォーカスなしでクリップボードを読み書きできる）を使ってよいクライアントの、
+  プログラム名（実行ファイルの名前。nix のラッパー `.name-wrapped` は `name` とみなす。取れなければ `comm`）。ここに無いクライアントには、そのグローバルを見せない。
+  1 つも書かないと既定（`ironbar`・`wl-copy`・`wl-paste`・`cliphist`・`wl-clip-persist`）、1 つでも書くと、書いたものだけに置き換わる。
+  空・空白や `/` を含む `name`・重複は CT003。リロードで更新する（以後に接続するクライアントから効く）。
 - `Environment` は niri の `environment`。`Env` の `name` と `value` の組を、spawn する子（`Startup` と、`Keybind` の `spawn`）の環境変数に足す。
   コンポジタ自身の環境は変えない。`WAYLAND_DISPLAY` は常にコンポジタのソケットで上書きする。`name` は空でなく、`=` と NUL を含まない。
   同じ `name` の重複・不正な `name`/`value` は CT003。リロードで更新する（以後の spawn から効く）。
