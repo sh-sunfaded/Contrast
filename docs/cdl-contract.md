@@ -16,7 +16,7 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
 | `Layout` | `gap?: Length`、`outerGap?: Length`、`mode?: "equal" \| "scrolling"`（既定 `"equal"`）、`defaultColumnWidth?: number`、`presetColumnWidths?: string`、`windowHeightPresets?: string`、`animationMs?: number`（既定 0） | なし | — |
 | `Cursor` | `theme?: string`、`size?: number`、`hideAfterInactiveMs?: number` | なし | — |
 | `Input` | `tapToClick?: boolean`（既定 true）、`naturalScroll?: boolean`（既定 false）、`accelSpeed?: number`（-1〜1、既定 0）、`disableWhileTyping?: boolean`（既定 true）、`focusFollowsMouse?: boolean`（既定 false） | なし | — |
-| `Startup` | `command: string` | なし | —（複数可） |
+| `Startup` | `command: string`、`ipc?: "niri"` | なし | —（複数可） |
 | `DataControlClient` | `name: string` | なし | —（複数可） |
 | `Environment` | なし | `Env` | 一意 |
 | `Env` | `name: string`、`value: string` | なし | —（`Environment` の中だけ） |
@@ -42,6 +42,9 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
 - `Startup` は niri の `spawn-at-startup`。コンポジタが Wayland のソケットを公開したあと、書かれた順に、起動時に一度だけ spawn する。
   リロードでは再実行しない。`command` は空白で区切った先頭がプログラム、残りが引数（引用符・シェル記法は使えない。要るなら `sh -c …`）。
   空（空白だけ）の `command` は CT003。起動に失敗しても残りを続け、ログに出す。
+  `ipc="niri"` を付けた `command` の子には、環境変数 `NIRI_SOCKET`（niri 互換の IPC のソケットのパス。`$XDG_RUNTIME_DIR/contrast.<pid>.sock`）を足す。
+  ironbar の workspaces のように `NIRI_SOCKET` で niri を見分けるクライアント向けで、ほかの子（ほかの `Startup` と `Keybind` の `spawn`）には渡さない。
+  `ipc` は `"niri"` だけ。ほかの値は CT003。IPC が起動できなかったときは、`NIRI_SOCKET` を渡さない（ログに警告）。
 - `DataControlClient` は、wlr-data-control（`zwlr_data_control_manager_v1`。フォーカスなしでクリップボードを読み書きできる）を使ってよいクライアントの、
   プログラム名（実行ファイルの名前。nix のラッパー `.name-wrapped` は `name` とみなす。取れなければ `comm`）。ここに無いクライアントには、そのグローバルを見せない。
   1 つも書かないと既定（`ironbar`・`wl-copy`・`wl-paste`・`cliphist`・`wl-clip-persist`）、1 つでも書くと、書いたものだけに置き換わる。

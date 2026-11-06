@@ -49,6 +49,16 @@ pub(crate) fn devshell_vars(in_nix_shell: bool) -> &'static [&'static str] {
     if in_nix_shell { DEVSHELL_VARS } else { &[] }
 }
 
+/// 子の環境から取り除く変数の名前。開発シェルの変数に、`NIRI_SOCKET`（`niri_ipc` の指定のない子には、
+/// ホストから継承した値も渡さない）を足す。
+pub(crate) fn scrub_list(in_nix_shell: bool, niri_ipc: bool) -> Vec<&'static str> {
+    let mut list = devshell_vars(in_nix_shell).to_vec();
+    if !niri_ipc {
+        list.push("NIRI_SOCKET");
+    }
+    list
+}
+
 /// `command`（空白で区切った先頭がプログラム、残りが引数）から起動するコマンドを作る。空なら `None`。
 /// `scrub` の変数は取り除き、そのあとで `environment` を足す（利用者の指定が勝つ）。
 pub(crate) fn build_command(
@@ -178,12 +188,32 @@ fn attach_log(child: &mut Child, dir: &Path, name: &str, pid: u32) -> Option<Pat
 
 impl Contrast {
     /// `command` をこのコンポジタのソケットにつないで起動する。失敗はログに出すだけ。`kind` はログ用の起動元。
-    pub(crate) fn spawn_command(&self, command: &str, kind: &'static str) {
+    /// `niri_ipc` なら、niri 互換の IPC のソケットのパスを `NIRI_SOCKET` で渡す（IPC が無ければ渡せない）。
+    pub(crate) fn spawn_command(&self, command: &str, kind: &'static str, niri_ipc: bool) {
         let environment = self.policy.environment();
-        let scrub = devshell_vars(std::env::var_os("IN_NIX_SHELL").is_some());
-        let Some(mut cmd) = build_command(command, &self.socket_name, &environment, scrub) else {
+        let niri_socket = if niri_ipc {
+            if self.ipc_socket.is_none() {
+                tracing::warn!(
+                    kind,
+                    command,
+                    "ipc=\"niri\" but the IPC socket is not available"
+                );
+            }
+            self.ipc_socket.as_deref()
+        } else {
+            None
+        };
+        let scrub = scrub_list(
+            std::env::var_os("IN_NIX_SHELL").is_some(),
+            niri_socket.is_some(),
+        );
+        let Some(mut cmd) = build_command(command, &self.socket_name, &environment, &scrub) else {
             return;
         };
+        if let Some(path) = niri_socket {
+            // コンポジタの値が勝つ（`Environment` で上書きさせない）。
+            cmd.env("NIRI_SOCKET", path);
+        }
         let dir = log_dir(
             std::env::var_os("XDG_STATE_HOME").as_deref(),
             std::env::var_os("HOME").as_deref(),
@@ -221,7 +251,7 @@ impl Contrast {
         let commands = self.policy.startup_commands();
         tracing::info!(count = commands.len(), "startup: running commands");
         for command in &commands {
-            self.spawn_command(command, "startup");
+            self.spawn_command(&command.command, "startup", command.niri_ipc);
         }
     }
 }
@@ -288,6 +318,41 @@ mod tests {
             wayland,
             [&("WAYLAND_DISPLAY".to_owned(), "wayland-9".to_owned())]
         );
+    }
+
+    #[test]
+    fn niri_socket_is_scrubbed_unless_the_command_asks_for_it() {
+        assert!(scrub_list(false, false).contains(&"NIRI_SOCKET"));
+        assert!(scrub_list(true, false).contains(&"NIRI_SOCKET"));
+        assert!(!scrub_list(false, true).contains(&"NIRI_SOCKET"));
+        assert!(!scrub_list(true, true).contains(&"NIRI_SOCKET"));
+        // 開発シェルの変数は、`niri_ipc` に関係なく同じ条件で外す。
+        assert!(scrub_list(true, true).contains(&"LD_LIBRARY_PATH"));
+        assert!(!scrub_list(false, true).contains(&"LD_LIBRARY_PATH"));
+    }
+
+    #[test]
+    fn a_child_without_ipc_loses_niri_socket_and_one_with_ipc_gets_ours() {
+        let run = |niri_ipc: bool| {
+            let scrub = scrub_list(false, niri_ipc);
+            let env = vec![("NIRI_SOCKET".to_owned(), "/user/set".to_owned())];
+            let mut cmd = build_command("sh -c", OsStr::new("w"), &env, &scrub).expect("command");
+            if niri_ipc {
+                cmd.env("NIRI_SOCKET", "/run/user/1/contrast.1.sock");
+            }
+            cmd.arg("printf '%s' \"${NIRI_SOCKET-unset}\"").output()
+        };
+        // `Environment` の指定は、IPC のない子では（取り除いたあとで足すので）残る。
+        if let Ok(out) = run(false) {
+            assert_eq!(String::from_utf8_lossy(&out.stdout), "/user/set");
+        }
+        // IPC のある子では、コンポジタの値が勝つ。
+        if let Ok(out) = run(true) {
+            assert_eq!(
+                String::from_utf8_lossy(&out.stdout),
+                "/run/user/1/contrast.1.sock"
+            );
+        }
     }
 
     #[test]

@@ -148,7 +148,7 @@ impl Contrast {
 
     /// キーバインドの `spawn`。環境変数などは `spawn_command` が決める。
     fn spawn(&self, command: &str) {
-        self.spawn_command(command, "keybind");
+        self.spawn_command(command, "keybind", false);
     }
 }
 

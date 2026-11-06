@@ -239,7 +239,7 @@ impl Policy for ConfigStore {
         self.config().settings.input
     }
 
-    fn startup_commands(&self) -> Vec<String> {
+    fn startup_commands(&self) -> Vec<crate::StartupCommand> {
         self.config().settings.startup.clone()
     }
 
@@ -357,11 +357,19 @@ mod tests {
     #[test]
     fn startup_and_environment_come_from_the_settings() {
         let mut s = Settings::builtin();
-        s.startup = vec!["mako".to_owned(), "swaybg -i x.jpg".to_owned()];
+        s.startup = vec![
+            crate::StartupCommand::new("mako"),
+            crate::StartupCommand::new("swaybg -i x.jpg").with_niri_ipc(),
+        ];
         s.environment.insert("B".to_owned(), "2".to_owned());
         s.environment.insert("A".to_owned(), "1".to_owned());
         let store = ConfigStore::new(Config::new(s, None));
-        assert_eq!(store.startup_commands(), ["mako", "swaybg -i x.jpg"]);
+        let startup = store.startup_commands();
+        let commands: Vec<&str> = startup.iter().map(|s| s.command.as_str()).collect();
+        assert_eq!(commands, ["mako", "swaybg -i x.jpg"]);
+        // `NIRI_SOCKET` を渡す指定は、指定したコマンドだけ。
+        let ipc: Vec<bool> = startup.iter().map(|s| s.niri_ipc).collect();
+        assert_eq!(ipc, [false, true]);
         // 名前順。
         assert_eq!(
             store.environment(),

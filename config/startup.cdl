@@ -3,16 +3,19 @@ import { Startup, Environment, Env } from "host:contrast";
 
 // 起動時に一度だけ実行するコマンド（niri の spawn-at-startup）と、子プロセスの環境変数（niri の environment）。
 
-/** 起動するコマンド。この順に実行する。リロードでは再実行しない。 */
-const startupCommands: string[] = [
-  "fcitx5",
-  "ironbar -c /home/user/.config/ironbar/niri-v8.toml -t /home/user/.config/ironbar/niri-v9.css",
-  "swaybg -i /home/user/Pictures/wallpaper/cece.jpg",
-  "mako",
-  "udiskie",
+/** 起動するコマンド。この順に実行する。リロードでは再実行しない。`ipc: "niri"` は、その子に NIRI_SOCKET（niri 互換の IPC）を渡す。 */
+const startupCommands: { command: string; ipc?: string }[] = [
+  { command: "fcitx5" },
+  {
+    command: "ironbar -c /home/user/.config/ironbar/niri-v8.toml -t /home/user/.config/ironbar/niri-v9.css",
+    ipc: "niri",
+  },
+  { command: "swaybg -i /home/user/Pictures/wallpaper/cece.jpg" },
+  { command: "mako" },
+  { command: "udiskie" },
 ];
 
-export const startup = startupCommands.map((command) => <Startup command={command} />);
+export const startup = startupCommands.map((s) => (s.ipc === undefined ? <Startup command={s.command} /> : <Startup command={s.command} ipc={s.ipc} />));
 
 interface Variable {
   name: string;

@@ -33,7 +33,7 @@ export default (
     {/* niri の spawn-at-startup（5 つ）。コンポジタが Wayland のソケットを公開したあとに、この順で一度だけ起動する
         （リロードでは再実行しない）。コマンドは空白で区切る（引用符は使えない）。失敗してもほかを続ける。 */}
     <Startup command="fcitx5" />
-    <Startup command="ironbar -c /home/user/.config/ironbar/niri-v8.toml -t /home/user/.config/ironbar/niri-v9.css" />
+    <Startup command="ironbar -c /home/user/.config/ironbar/niri-v8.toml -t /home/user/.config/ironbar/niri-v9.css" ipc="niri" />
     <Startup command="swaybg -i /home/user/Pictures/wallpaper/cece.jpg" />
     <Startup command="mako" />
     <Startup command="udiskie" />

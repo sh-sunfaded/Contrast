@@ -62,8 +62,17 @@ fn the_config_loads_without_diagnostics() -> Result<(), String> {
 #[test]
 fn startup_and_environment_are_those_of_niri() -> Result<(), String> {
     let s = load(ModKey::Super)?;
+    // `ipc="niri"`（NIRI_SOCKET を渡す）のは ironbar だけ。
+    let ipc: Vec<Option<&str>> = s
+        .startup
+        .iter()
+        .filter(|c| c.niri_ipc)
+        .map(|c| c.command.split_whitespace().next())
+        .collect();
+    assert_eq!(ipc, [Some("ironbar")]);
+    let startup: Vec<&str> = s.startup.iter().map(|c| c.command.as_str()).collect();
     assert_eq!(
-        s.startup,
+        startup,
         [
             "fcitx5",
             "ironbar -c /home/user/.config/ironbar/niri-v8.toml -t /home/user/.config/ironbar/niri-v9.css",

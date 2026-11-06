@@ -147,7 +147,7 @@ pub trait Policy {
     }
 
     /// 起動時に一度だけ実行するコマンド。
-    fn startup_commands(&self) -> Vec<String> {
+    fn startup_commands(&self) -> Vec<crate::StartupCommand> {
         Vec::new()
     }
 

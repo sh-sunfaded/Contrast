@@ -65,10 +65,54 @@ fn startup_commands_are_read_in_order() -> Result<(), String> {
     <Startup command="ironbar -c /a.toml -t /b.css" />
     <Startup command="  mako  " />"#;
     let c = load("startup", body)?.map_err(|d| format!("{d:?}"))?;
+    let commands: Vec<&str> = c
+        .settings
+        .startup
+        .iter()
+        .map(|s| s.command.as_str())
+        .collect();
+    assert_eq!(commands, ["fcitx5", "ironbar -c /a.toml -t /b.css", "mako"]);
+    // `ipc` を書かなければ、`NIRI_SOCKET` は渡さない。
+    assert!(c.settings.startup.iter().all(|s| !s.niri_ipc));
+    Ok(())
+}
+
+#[test]
+fn startup_ipc_niri_marks_only_that_command() -> Result<(), String> {
+    let body = r#"
+    <Startup command="fcitx5" />
+    <Startup command="ironbar -c /a.toml" ipc="niri" />
+    <Startup command="mako" />"#;
+    let c = load("startup-ipc", body)?.map_err(|d| format!("{d:?}"))?;
+    let flags: Vec<(&str, bool)> = c
+        .settings
+        .startup
+        .iter()
+        .map(|s| (s.command.as_str(), s.niri_ipc))
+        .collect();
     assert_eq!(
-        c.settings.startup,
-        ["fcitx5", "ironbar -c /a.toml -t /b.css", "mako"]
+        flags,
+        [
+            ("fcitx5", false),
+            ("ironbar -c /a.toml", true),
+            ("mako", false)
+        ]
     );
+    Ok(())
+}
+
+#[test]
+fn bad_startup_ipc_is_ct003() -> Result<(), String> {
+    for (dir, value) in [("sway", "sway"), ("empty", ""), ("upper", "Niri")] {
+        let body = format!(r#"<Startup command="x" ipc="{value}" />"#);
+        assert_eq!(
+            codes_of(&format!("startup-ipc-{dir}"), &body)?,
+            ["CT003"],
+            "{value:?}"
+        );
+    }
+    // 文字列でない値は、CDL のスキーマ適合の誤り（E4002 ではなく型の誤り）。成功してはいけない。
+    assert!(load("startup-ipc-number", r#"<Startup command="x" ipc={1} />"#)?.is_err());
     Ok(())
 }
 

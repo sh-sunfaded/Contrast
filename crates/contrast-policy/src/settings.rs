@@ -184,6 +184,33 @@ impl Default for InputSettings {
     }
 }
 
+/// 起動時に実行するコマンド 1 つ。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StartupCommand {
+    /// 空白で区切った先頭がプログラム、残りが引数。
+    pub command: String,
+    /// niri 互換の IPC のソケットのパスを、環境変数 `NIRI_SOCKET` で渡すか（CDL の `ipc="niri"`）。
+    /// ironbar の workspaces のように、`NIRI_SOCKET` で niri を見分けるクライアントだけに渡す。
+    pub niri_ipc: bool,
+}
+
+impl StartupCommand {
+    /// IPC を渡さないコマンドを作る。
+    pub fn new(command: impl Into<String>) -> Self {
+        Self {
+            command: command.into(),
+            niri_ipc: false,
+        }
+    }
+
+    /// `NIRI_SOCKET` を渡す指定にする。
+    #[must_use]
+    pub fn with_niri_ipc(mut self) -> Self {
+        self.niri_ipc = true;
+        self
+    }
+}
+
 /// 設定の値。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Settings {
@@ -200,7 +227,7 @@ pub struct Settings {
     /// カーソル。
     pub cursor: CursorSettings,
     /// 起動時に一度だけ実行するコマンド（並びの順。空白で区切った先頭がプログラム、残りが引数）。リロードでは再実行しない。
-    pub startup: Vec<String>,
+    pub startup: Vec<StartupCommand>,
     /// spawn する子プロセスに足す環境変数（名前順）。コンポジタ自身の環境は変えない。
     pub environment: BTreeMap<String, String>,
     /// wlr-data-control（フォーカスなしでクリップボードを読み書きするプロトコル）を使ってよいクライアントの

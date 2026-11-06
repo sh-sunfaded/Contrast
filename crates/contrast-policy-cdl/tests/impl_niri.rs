@@ -249,8 +249,21 @@ fn niri_example_carries_the_niri_look() -> Result<(), String> {
 fn niri_example_has_the_startup_commands_and_environment() -> Result<(), String> {
     let settings = load_with(&CdlLoader::new(), &example("niri.cdl"))?;
     // niri の config.kdl の spawn-at-startup（5 つ、この順）。
+    // `ipc="niri"`（NIRI_SOCKET を渡す）のは ironbar だけ。
+    let ipc: Vec<Option<&str>> = settings
+        .startup
+        .iter()
+        .filter(|c| c.niri_ipc)
+        .map(|c| c.command.split_whitespace().next())
+        .collect();
+    assert_eq!(ipc, [Some("ironbar")]);
+    let startup: Vec<&str> = settings
+        .startup
+        .iter()
+        .map(|c| c.command.as_str())
+        .collect();
     assert_eq!(
-        settings.startup,
+        startup,
         [
             "fcitx5",
             "ironbar -c /home/user/.config/ironbar/niri-v8.toml -t /home/user/.config/ironbar/niri-v9.css",

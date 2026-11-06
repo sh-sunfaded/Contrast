@@ -58,6 +58,8 @@ pub struct Contrast {
     pub start_time: std::time::Instant,
     /// クライアント向けに公開したソケット名。
     pub socket_name: OsString,
+    /// niri 互換の IPC のソケットのパス（IPC が起動していなければ `None`）。`Startup` の `ipc="niri"` の子に渡す。
+    pub ipc_socket: Option<std::path::PathBuf>,
     /// Display のハンドル。
     pub display_handle: DisplayHandle,
     /// 窓と出力を置く 2 次元平面。
@@ -185,6 +187,7 @@ impl Contrast {
         Self {
             start_time: std::time::Instant::now(),
             socket_name,
+            ipc_socket: None,
             display_handle: dh,
             space: Space::default(),
             loop_signal: event_loop.get_signal(),

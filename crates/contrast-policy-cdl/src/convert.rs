@@ -12,7 +12,9 @@ use contrast_policy::settings::{
     MAX_ANIMATION_MS, MAX_BORDER_WIDTH, MAX_DECORATION_PX, MAX_HIDE_AFTER_INACTIVE_MS,
     MAX_WINDOW_HEIGHT_PX, MAX_WORKSPACES, rgba8,
 };
-use contrast_policy::{Action, ConfigDiagnostic, KeyBinding, KeySpec, ModKey, Settings, codes};
+use contrast_policy::{
+    Action, ConfigDiagnostic, KeyBinding, KeySpec, ModKey, Settings, StartupCommand, codes,
+};
 
 use crate::diag::{at, convert};
 use crate::keys::parse_key_spec;
@@ -393,6 +395,7 @@ fn read_cursor(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
 }
 
 /// `Startup` を読む。`command` は空でない文字列（空白で区切った先頭がプログラム、残りが引数）。並びの順に足す。
+/// `ipc` は省略できる。`"niri"` なら、その子に環境変数 `NIRI_SOCKET`（niri 互換の IPC のソケット）を渡す。それ以外は CT003。
 fn read_startup(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
     let Some(command) = cx.prop::<String>(node, "command") else {
         return;
@@ -402,7 +405,20 @@ fn read_startup(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
         cx.error(node, codes::BAD_PROP, "`Startup` の `command` が空");
         return;
     }
-    settings.startup.push(command);
+    let mut startup = StartupCommand::new(command);
+    match cx.optional::<String>(node, "ipc").as_deref() {
+        None => {}
+        Some("niri") => startup = startup.with_niri_ipc(),
+        Some(other) => {
+            cx.error(
+                node,
+                codes::BAD_PROP,
+                format!("`Startup` の `ipc` は \"niri\" だけ（`{other}` は使えない）"),
+            );
+            return;
+        }
+    }
+    settings.startup.push(startup);
 }
 
 /// `DataControlClient` を読む。`name` は wlr-data-control を使ってよいプログラム名（実行ファイルの名前）。

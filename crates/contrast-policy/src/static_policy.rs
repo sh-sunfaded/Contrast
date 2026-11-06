@@ -59,7 +59,7 @@ impl Policy for StaticPolicy {
         self.store.input_settings()
     }
 
-    fn startup_commands(&self) -> Vec<String> {
+    fn startup_commands(&self) -> Vec<crate::StartupCommand> {
         self.store.startup_commands()
     }
 

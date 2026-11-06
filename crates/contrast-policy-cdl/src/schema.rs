@@ -80,7 +80,9 @@ pub(crate) fn contrast_schema() -> Result<Schema, Vec<String>> {
         )
         .component(
             MODULE,
-            ComponentDef::new("Startup").prop("command", Ty::String),
+            ComponentDef::new("Startup")
+                .prop("command", Ty::String)
+                .optional_prop("ipc", Ty::String),
         )
         .component(
             MODULE,
