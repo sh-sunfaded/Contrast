@@ -2,8 +2,8 @@
 #![allow(dead_code, reason = "補助関数はファイルごとに使うものが違う")]
 
 use contrast_core::{
-    Action, Columns, Command, Core, CoreConfig, CoreError, DefaultPolicy, ExternalKey, LayoutMode,
-    OutputName, Rect, WindowMeta,
+    Action, Columns, Command, Core, CoreConfig, CoreError, DefaultPolicy, ExternalKey, IdKind,
+    LayoutMode, OutputName, Rect, WindowMeta, WorkspaceMode,
 };
 
 /// 既定のポリシーと Columns レイアウトの Core。
@@ -110,4 +110,77 @@ pub fn columns(c: &TestCore, keys: &[u64]) -> Vec<(Vec<u64>, i32)> {
         }
     }
     out
+}
+
+/// ワークスペースの方式を指定した Core。出力 1 台（900x600）と、窓 `windows` 枚（キーは 11 から）。
+pub fn core_in(workspaces: WorkspaceMode, mode: LayoutMode, windows: u64) -> TestCore {
+    let mut c = Core::new(
+        CoreConfig::new(9)
+            .with_layout(mode)
+            .with_workspace_mode(workspaces),
+        DefaultPolicy::new(),
+        Columns::new(),
+    );
+    apply_ok(
+        &mut c,
+        Command::OutputAdded {
+            key: ExternalKey::new(1),
+            name: OutputName::new("out"),
+            geometry: rect(0, 0, OUTPUT_WIDTH, 600),
+        },
+    );
+    for i in 0..windows {
+        open(&mut c, FIRST_KEY.saturating_add(i));
+    }
+    c
+}
+
+/// `Dynamic` で `Scrolling` の Core。
+pub fn dynamic(windows: u64) -> TestCore {
+    core_in(WorkspaceMode::Dynamic, LayoutMode::Scrolling, windows)
+}
+
+/// 窓 `k` を開く。
+pub fn open(c: &mut TestCore, k: u64) {
+    apply_ok(
+        c,
+        Command::WindowMapped {
+            key: ExternalKey::new(k),
+            meta: WindowMeta::default(),
+        },
+    );
+}
+
+/// 窓 `k` を閉じる（`WindowUnmapped`）。
+pub fn close(c: &mut TestCore, k: u64) {
+    apply_ok(c, Command::WindowUnmapped(ExternalKey::new(k)));
+}
+
+/// ワークスペースの並び: `(id, そのワークスペースの窓のキー（昇順）)`。
+pub fn workspaces(c: &TestCore) -> Vec<(u64, Vec<u64>)> {
+    let view = c.view();
+    (0..view.workspace_count())
+        .map(|i| {
+            let index = contrast_core::WorkspaceIndex::new(i);
+            let id = view.workspace_id(index).expect("id がある").raw();
+            let mut keys: Vec<u64> = view
+                .workspace_windows(index)
+                .unwrap_or(&[])
+                .iter()
+                .filter_map(|w| view.window_key(*w))
+                .filter_map(|want| {
+                    (FIRST_KEY..FIRST_KEY.saturating_add(256))
+                        .find(|k| ExternalKey::new(*k) == want)
+                })
+                .collect();
+            keys.sort_unstable();
+            (id, keys)
+        })
+        .collect()
+}
+
+/// 表示中のワークスペースの位置（出力は 1 台）。
+pub fn shown(c: &TestCore) -> u8 {
+    let out = c.view().output_id(ExternalKey::new(1)).expect("出力がある");
+    c.view().shown_workspace(out).expect("表示中").get()
 }

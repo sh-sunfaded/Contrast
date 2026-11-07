@@ -31,3 +31,5 @@ fn niri_parity_tests_need_the_invariants_feature() {
 mod common;
 #[cfg(feature = "invariants")]
 mod consume_or_expel;
+#[cfg(feature = "invariants")]
+mod dynamic_workspaces;
