@@ -418,10 +418,8 @@ impl Contrast {
             WindowState::Fullscreen => tile,
             _ => self.frame_of(tile, state),
         };
-        let to_window = |frame: Rect| match state {
-            WindowState::Fullscreen => frame,
-            _ => crate::geometry::window_rect(frame, border),
-        };
+        // 窓はフレームそのもの（枠は外側に描く）。
+        let to_window = |frame: Rect| frame;
         // 全画面にするときは補間しない（全画面から戻るときは、全画面の矩形から補間する）。
         let duration = self.animation_duration();
         let animate = state != WindowState::Fullscreen;
@@ -469,7 +467,6 @@ impl Contrast {
     /// 補間を 1 フレーム進める（描画の前に呼ぶ）。まだ続くなら `true`（次のフレームも描く）。
     pub fn tick_animations(&mut self) -> bool {
         let duration = self.animation_duration();
-        let border = self.policy.border_width().max(0);
         for (id, frame) in self.anim.tick(std::time::Instant::now(), duration) {
             let Some(window) = self.window_of_id(id) else {
                 continue;
@@ -477,10 +474,8 @@ impl Contrast {
             let Some(state) = self.core.view().window(id).map(|w| w.state) else {
                 continue;
             };
-            let rect = match state {
-                WindowState::Fullscreen => frame,
-                _ => crate::geometry::window_rect(frame, border),
-            };
+            // 窓はフレームそのもの（枠は外側に描く）。
+            let rect = frame;
             tracing::trace!(
                 "anim step window={} x={} y={} w={} h={}",
                 raw(id),
@@ -521,7 +516,6 @@ impl Contrast {
 
     /// 表示中の窓だけを core の矩形で Space に置き、それ以外は外す。
     fn sync_space(&mut self) {
-        let border = self.policy.border_width().max(0);
         let view = self.core.view();
         let mut visible = view.visible_windows();
         visible.sort_by_key(|w| stacking(w.state));
@@ -536,10 +530,7 @@ impl Contrast {
             // 補間の途中の窓は、途中の矩形に置く（行き先ではない）。
             let rect = match w.state {
                 WindowState::Fullscreen => tile,
-                _ => crate::geometry::window_rect(
-                    self.displayed_frame(w.id, self.frame_of(tile, w.state)),
-                    border,
-                ),
+                _ => self.displayed_frame(w.id, self.frame_of(tile, w.state)),
             };
             shown.push((window, rect));
         }

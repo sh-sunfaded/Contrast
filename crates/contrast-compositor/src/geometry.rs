@@ -1,6 +1,7 @@
 //! 窓の矩形の計算（純粋な関数）。隙間（gap・outerGap）を core の矩形に重ねる。
 //!
-//! core が返すタイルは変えない。描画側が、タイルから「フレーム」（枠線の外側の矩形）を作り、窓はそこから枠の幅だけ内側に置く。
+//! core が返すタイルは変えない。描画側が、タイルから「フレーム」（隙間を引いた矩形）を作り、窓はフレームそのものに置く（niri と同じ。
+//! フォーカスの枠は窓の**外側**に描くので、窓は枠の幅だけ縮まない）。枠の外側の矩形は `outset`。
 
 use contrast_core::Rect;
 
@@ -56,10 +57,17 @@ pub fn frame_rect(tile: Rect, bounds: Rect, gap: i32, outer: i32) -> Rect {
     shrink(tile, left, top, right, bottom)
 }
 
-/// フレームから枠の幅 `border` だけ内側の、窓の矩形。
-pub fn window_rect(frame: Rect, border: i32) -> Rect {
+/// 窓の矩形（フレーム）の四辺を `border` だけ外へ広げた矩形。枠（フォーカスリング）の外側の矩形になる（niri と同じく窓の外に描く）。
+/// `border` が 0 以下ならそのまま。広げ切れなければ（座標の限界）元の矩形。
+pub fn outset(frame: Rect, border: i32) -> Rect {
     let b = border.max(0);
-    shrink(frame, b, b, b, b)
+    Rect::new(
+        frame.x().saturating_sub(b),
+        frame.y().saturating_sub(b),
+        frame.width().saturating_add(b.saturating_mul(2)),
+        frame.height().saturating_add(b.saturating_mul(2)),
+    )
+    .unwrap_or(frame)
 }
 
 #[cfg(test)]
@@ -103,13 +111,25 @@ mod tests {
     fn negative_values_are_treated_as_zero() {
         let tile = r(0, 0, 100, 100);
         assert_eq!(frame_rect(tile, tile, -5, -5), tile);
-        assert_eq!(window_rect(tile, -3), tile);
+        assert_eq!(outset(tile, -3), tile);
     }
 
     #[test]
-    fn window_is_inset_by_the_border() {
-        assert_eq!(window_rect(r(8, 8, 100, 50), 3), r(11, 11, 94, 44));
-        assert_eq!(window_rect(r(0, 0, 4, 4), 3), r(0, 0, 4, 4));
+    fn the_ring_is_outside_the_window() {
+        // 窓（フレーム）は縮まず、枠はその外へ `border` だけ広がる。
+        let window = r(16, 16, 936, 1168);
+        assert_eq!(outset(window, 4), r(12, 12, 944, 1176));
+        assert_eq!(outset(window, 0), window);
+        // 隙間 16 の中に、枠 4 が収まる。
+        assert!(outset(window, 4).x() >= 16 - 16 / 2 - 4 + 4);
+    }
+
+    #[test]
+    fn outset_does_not_overflow() {
+        let edge = r(i32::MAX - 10, i32::MAX - 10, 5, 5);
+        let _ = outset(edge, i32::MAX);
+        let low = r(i32::MIN + 1, i32::MIN + 1, 5, 5);
+        let _ = outset(low, i32::MAX);
     }
 
     #[test]

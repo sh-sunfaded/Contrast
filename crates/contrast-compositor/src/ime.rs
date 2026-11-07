@@ -76,7 +76,7 @@ impl InputMethodHandler for Contrast {
 }
 
 impl Contrast {
-    /// 窓の面 `surface` の、core が決めた最終の窓の矩形（枠を除く。アニメーション中の矩形ではない）。
+    /// 窓の面 `surface` の、core が決めた最終の窓の矩形（フレームそのもの。アニメーション中の矩形ではない）。
     fn final_window_rect(&self, surface: &WlSurface) -> Option<contrast_core::Rect> {
         let key = self.key_of_surface(surface)?;
         let view = self.core.view();
@@ -84,10 +84,7 @@ impl Contrast {
         let tile = w.rect?;
         Some(match w.state {
             WindowState::Fullscreen => tile,
-            state => crate::geometry::window_rect(
-                self.frame_of(tile, state),
-                self.policy.border_width().max(0),
-            ),
+            state => self.frame_of(tile, state),
         })
     }
 

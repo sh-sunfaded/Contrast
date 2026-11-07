@@ -257,18 +257,19 @@ fn ring_elements(state: &mut Contrast, sh: &Shaders, radius: i32) -> Vec<SceneEl
         ))
     };
     let mut out = Vec::new();
+    // 枠は窓（フレーム）の外側に描く（niri のフォーカスリングと同じ）。
     if let Some(frame) = state.focused_tile() {
-        out.push(ring(frame, b, state.policy.focus_border_color()));
+        out.push(ring(
+            crate::geometry::outset(frame, b),
+            b,
+            state.policy.focus_border_color(),
+        ));
     }
     if let Some(color) = state.policy.unfocused_border_color() {
         let thin = unfocused_width(b, state.policy.appearance().inactive_border_width);
         if thin > 0 {
             for frame in state.unfocused_tiles() {
-                out.push(ring(
-                    crate::geometry::window_rect(frame, b - thin),
-                    thin,
-                    color,
-                ));
+                out.push(ring(crate::geometry::outset(frame, thin), thin, color));
             }
         }
     }
@@ -286,11 +287,14 @@ fn shadow_elements(
     if s.blur <= 0 {
         return Vec::new();
     }
-    let frame_radius = (radius + appearance.border_width.max(0)) as f32;
+    let border = appearance.border_width.max(0);
+    let frame_radius = (radius + border) as f32;
     let mut frames: Vec<contrast_core::Rect> = state.focused_tile().into_iter().collect();
     frames.extend(state.unfocused_tiles());
     frames
         .into_iter()
+        // 影は枠の外側の矩形に付ける。
+        .map(|f| crate::geometry::outset(f, border))
         .map(|f| {
             let area = logical(
                 f.x() - s.blur + s.offset_x,
@@ -323,18 +327,17 @@ fn unfocused_width(border: i32, inactive: Option<i32>) -> i32 {
 fn border_elements(state: &mut Contrast) -> Vec<SolidColorRenderElement> {
     let b = state.policy.border_width();
     let mut bands: Vec<(Band, [f32; 4])> = Vec::new();
+    // 枠は窓（フレーム）の外側に描く。
     if let Some(tile) = state.focused_tile()
-        && let Some(es) = edges(tile, b)
+        && let Some(es) = edges(crate::geometry::outset(tile, b), b)
     {
         let color = state.policy.focus_border_color();
         bands.extend(es.into_iter().map(|e| (e, color)));
     }
     if let Some(color) = state.policy.unfocused_border_color() {
         for tile in state.unfocused_tiles() {
-            // 窓の大きさは枠の太さ `b` で決まっている。細い枠は窓に接する側に描く。
             let thin = unfocused_width(b, state.policy.appearance().inactive_border_width);
-            let ring = crate::geometry::window_rect(tile, b - thin);
-            if let Some(es) = edges(ring, thin) {
+            if let Some(es) = edges(crate::geometry::outset(tile, thin), thin) {
                 bands.extend(es.into_iter().map(|e| (e, color)));
             }
         }
