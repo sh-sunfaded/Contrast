@@ -27,8 +27,8 @@ export default (
     <Cursor theme="Cecilia" size={24} />
     {/* niri の input { touchpad { tap; natural-scroll } }。niri は省略した dwt を off にする */}
     <Input tapToClick={true} naturalScroll={true} disableWhileTyping={false} />
-    {/* niri の Mod+1〜9 に合わせて 9 つ */}
-    <Workspaces count={9} />
+    {/* niri の動的なワークスペース（窓のあるものと末尾の空 1 つ）。count は `workspace` の番号の上限 */}
+    <Workspaces count={9} mode="dynamic" />
 
     {/* niri の spawn-at-startup（5 つ）。コンポジタが Wayland のソケットを公開したあとに、この順で一度だけ起動する
         （リロードでは再実行しない）。コマンドは空白で区切る（引用符は使えない）。失敗してもほかを続ける。 */}
@@ -102,20 +102,26 @@ export default (
     <Keybind keys="mod+8" action="workspace" workspace={8} />
     <Keybind keys="mod+9" action="workspace" workspace={9} />
 
-    {/* 窓を別のワークスペースへ（move-column-to-workspace-*） */}
-    <Keybind keys="mod+ctrl+Page_Down" action="move-to-workspace-next" />
-    <Keybind keys="mod+ctrl+Page_Up" action="move-to-workspace-prev" />
-    <Keybind keys="mod+ctrl+u" action="move-to-workspace-next" />
-    <Keybind keys="mod+ctrl+i" action="move-to-workspace-prev" />
-    <Keybind keys="mod+ctrl+1" action="move-to-workspace" workspace={1} />
-    <Keybind keys="mod+ctrl+2" action="move-to-workspace" workspace={2} />
-    <Keybind keys="mod+ctrl+3" action="move-to-workspace" workspace={3} />
-    <Keybind keys="mod+ctrl+4" action="move-to-workspace" workspace={4} />
-    <Keybind keys="mod+ctrl+5" action="move-to-workspace" workspace={5} />
-    <Keybind keys="mod+ctrl+6" action="move-to-workspace" workspace={6} />
-    <Keybind keys="mod+ctrl+7" action="move-to-workspace" workspace={7} />
-    <Keybind keys="mod+ctrl+8" action="move-to-workspace" workspace={8} />
-    <Keybind keys="mod+ctrl+9" action="move-to-workspace" workspace={9} />
+    {/* ワークスペースの入れ替え（move-workspace-down/up） */}
+    <Keybind keys="mod+shift+Page_Down" action="move-workspace-down" />
+    <Keybind keys="mod+shift+Page_Up" action="move-workspace-up" />
+    <Keybind keys="mod+shift+u" action="move-workspace-down" />
+    <Keybind keys="mod+shift+i" action="move-workspace-up" />
+
+    {/* 列ごと別のワークスペースへ（move-column-to-workspace-*） */}
+    <Keybind keys="mod+ctrl+Page_Down" action="move-column-to-workspace-next" />
+    <Keybind keys="mod+ctrl+Page_Up" action="move-column-to-workspace-prev" />
+    <Keybind keys="mod+ctrl+u" action="move-column-to-workspace-next" />
+    <Keybind keys="mod+ctrl+i" action="move-column-to-workspace-prev" />
+    <Keybind keys="mod+ctrl+1" action="move-column-to-workspace" workspace={1} />
+    <Keybind keys="mod+ctrl+2" action="move-column-to-workspace" workspace={2} />
+    <Keybind keys="mod+ctrl+3" action="move-column-to-workspace" workspace={3} />
+    <Keybind keys="mod+ctrl+4" action="move-column-to-workspace" workspace={4} />
+    <Keybind keys="mod+ctrl+5" action="move-column-to-workspace" workspace={5} />
+    <Keybind keys="mod+ctrl+6" action="move-column-to-workspace" workspace={6} />
+    <Keybind keys="mod+ctrl+7" action="move-column-to-workspace" workspace={7} />
+    <Keybind keys="mod+ctrl+8" action="move-column-to-workspace" workspace={8} />
+    <Keybind keys="mod+ctrl+9" action="move-column-to-workspace" workspace={9} />
 
     {/* 全画面（fullscreen-window）。フローティングの切り替えは niri の既定の Mod+V */}
     <Keybind keys="mod+shift+f" action="toggle-fullscreen" />
@@ -124,8 +130,8 @@ export default (
     {/* マウスのホイール（niri の WheelScroll…）。縦のワークスペースの切り替えは 150ms に 1 回まで（niri の cooldown-ms=150） */}
     <Keybind keys="mod+WheelScrollDown" action="workspace-next" cooldown={150} />
     <Keybind keys="mod+WheelScrollUp" action="workspace-prev" cooldown={150} />
-    <Keybind keys="mod+ctrl+WheelScrollDown" action="move-to-workspace-next" cooldown={150} />
-    <Keybind keys="mod+ctrl+WheelScrollUp" action="move-to-workspace-prev" cooldown={150} />
+    <Keybind keys="mod+ctrl+WheelScrollDown" action="move-column-to-workspace-next" cooldown={150} />
+    <Keybind keys="mod+ctrl+WheelScrollUp" action="move-column-to-workspace-prev" cooldown={150} />
     <Keybind keys="mod+WheelScrollRight" action="focus-right" />
     <Keybind keys="mod+WheelScrollLeft" action="focus-left" />
     <Keybind keys="mod+ctrl+WheelScrollRight" action="move-right" />

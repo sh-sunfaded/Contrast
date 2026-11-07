@@ -110,13 +110,13 @@ fn the_wheel_binds_of_config_resolve_with_their_cooldowns() -> Result<(), String
         (
             ctrl,
             "WheelScrollDown",
-            Action::MoveToWorkspaceNext,
+            Action::MoveColumnToWorkspaceNext,
             Some(150),
         ),
         (
             ctrl,
             "WheelScrollUp",
-            Action::MoveToWorkspacePrev,
+            Action::MoveColumnToWorkspacePrev,
             Some(150),
         ),
         (m, "WheelScrollRight", Action::FocusNext, None),

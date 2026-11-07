@@ -22,13 +22,6 @@
 //> Mod+Shift+Ctrl+K { move-column-to-monitor-up; }
 //> Mod+Shift+Ctrl+L { move-column-to-monitor-right; }
 
-// ---- ワークスペースの並べ替え（4 個） ----
-// Contrast のワークスペースは固定の数で、並べ替えがない（N4: 動的・名前つきワークスペース）。
-//> Mod+Shift+Page_Down { move-workspace-down; }
-//> Mod+Shift+Page_Up { move-workspace-up; }
-//> Mod+Shift+U { move-workspace-down; }
-//> Mod+Shift+I { move-workspace-up; }
-
 // ---- スクリーンショット（3 個） ----
 // スクリーンショット（screencopy と保存の UI）が無い（N5a）。
 //> Print { screenshot; }

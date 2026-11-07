@@ -23,7 +23,7 @@ export const PRESET_COLUMN_WIDTHS = "0.33333 0.5 0.66667";
 /** 窓のアニメーションの長さ（ミリ秒）。 */
 export const ANIMATION_MS = 150;
 
-/** ワークスペースの数（niri の Mod+1〜9 に合わせる）。 */
+/** `workspace` の番号の上限（niri の Mod+1〜9 に合わせる）。ワークスペースの数そのものは動的（窓のあるものと末尾の空 1 つ）。 */
 export const WORKSPACE_COUNT = 9;
 
 /** カーソルのテーマと大きさ（niri の cursor の xcursor-theme と xcursor-size）。 */

@@ -123,13 +123,22 @@ fn niri_example_binds_resolve_to_the_expected_actions() -> Result<(), String> {
     assert_eq!(s.resolve_key(m, "i"), Some(Action::WorkspacePrev));
     assert_eq!(
         s.resolve_key(ctrl, "Page_Down"),
-        Some(Action::MoveToWorkspaceNext)
+        Some(Action::MoveColumnToWorkspaceNext)
     );
-    assert_eq!(s.resolve_key(ctrl, "i"), Some(Action::MoveToWorkspacePrev));
+    assert_eq!(
+        s.resolve_key(ctrl, "i"),
+        Some(Action::MoveColumnToWorkspacePrev)
+    );
     assert_eq!(s.resolve_key(m, "1"), Some(Action::SwitchWorkspace(0)));
     assert_eq!(s.resolve_key(m, "9"), Some(Action::SwitchWorkspace(8)));
-    assert_eq!(s.resolve_key(ctrl, "1"), Some(Action::MoveToWorkspace(0)));
-    assert_eq!(s.resolve_key(ctrl, "9"), Some(Action::MoveToWorkspace(8)));
+    assert_eq!(
+        s.resolve_key(ctrl, "1"),
+        Some(Action::MoveColumnToWorkspace(0))
+    );
+    assert_eq!(
+        s.resolve_key(ctrl, "9"),
+        Some(Action::MoveColumnToWorkspace(8))
+    );
 
     assert_eq!(s.resolve_key(shift, "f"), Some(Action::ToggleFullscreen));
     assert_eq!(s.resolve_key(m, "v"), Some(Action::ToggleFloating));

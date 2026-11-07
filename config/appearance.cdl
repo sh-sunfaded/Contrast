@@ -30,4 +30,4 @@ export const layout = (
 
 export const cursor = <Cursor theme={CURSOR_THEME} size={CURSOR_SIZE} />;
 
-export const workspaces = <Workspaces count={WORKSPACE_COUNT} />;
+export const workspaces = <Workspaces count={WORKSPACE_COUNT} mode="dynamic" />;

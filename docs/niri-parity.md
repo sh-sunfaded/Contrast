@@ -122,3 +122,10 @@ niri の設定の既定値は niri の既定（wiki / パッケージの既定�
 
 - ○ に変えたもの: ホイールの bind 12 個（`cooldown`）、`consume-or-expel-window-left/right`（core の P9、`core-spec.md` の 15 節）、キーリピート 600ms、xdg-decoration を公開しない・Tiled を送らない（`prefer-no-csd` が無効）、子の `XCURSOR_THEME`・`XCURSOR_SIZE`・`XDG_CURRENT_DESKTOP`・`XDG_SESSION_TYPE`、タッチパッドの dwt off、フォーカスリングを窓の外側に描く・フォーカス外の窓に枠を描かない。
 - 差が残るもの（理由は報告）: 動的なワークスペース（常に 9 個）、`move-workspace-down/up`、複数モニタ、スクリーンショット、ホットキーのオーバーレイ、`power-off-monitors`、アニメーション（バネと窓の開閉）、ジェスチャーとホットコーナー、`dwtp`、xkb を localed から取ること、`move-column-to-workspace` が列ごとでないこと、`expel-window-from-column` の細部（`core-spec.md` の D61）。
+
+## 2026-11-07 niri-dynws（`proto/niri-dynws`）での変更
+
+動的なワークスペース（`Workspaces mode="dynamic"`、core-spec 16 節）、`move-column-to-workspace`（列ごと）、`move-workspace-down/up` を実装した。`config/` は `dynamic`。調査は `.cc-logs/report-niri-dynws-status.md`。
+
+- ○ に変えたもの: ワークスペースの数（窓のあるものと末尾の空 1 つ。ironbar のボタンも同じ数）、`focus-workspace N` の範囲外（末尾の空へ）、離れた空のワークスペースの整理、`move-column-to-workspace`（列ごと）、`move-workspace-down/up` の 4 個。
+- 差が残るもの: 離れた空のワークスペースの削除が、切り替えのアニメーションの終わりではなく直後（IPC は `WorkspaceActivated` → `WorkspacesChanged` の順で、niri と同じ）。複数モニタ（モニタごとのワークスペースの列）は未対応。

@@ -12,7 +12,7 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
 | --- | --- | --- | --- |
 | `Contrast` | `modKey?: "alt" \| "super"`（省略時は下記の優先順位で決まる） | `Appearance` \| `Workspaces` \| `Layout` \| `Cursor` \| `Input` \| `Startup` \| `DataControlClient` \| `Environment` \| `Keybind` | `Appearance`、`Workspaces`、`Layout`、`Cursor`、`Input`、`Environment` |
 | `Appearance` | `borderWidth: Length`、`focusColor: Color`、`borderColor?: Color`、`background?: Color`、`radius?: Length`、`shadowBlur?: Length`、`shadowOffsetX?: Length`、`shadowOffsetY?: Length`、`shadowColor?: Color`、`inactiveBorderWidth?: Length` | なし | — |
-| `Workspaces` | `count: number`（整数、1〜32） | なし | — |
+| `Workspaces` | `count: number`（整数、1〜32）、`mode?: "fixed" \| "dynamic"`（既定 `"fixed"`） | なし | — |
 | `Layout` | `gap?: Length`、`outerGap?: Length`、`mode?: "equal" \| "scrolling"`（既定 `"equal"`）、`defaultColumnWidth?: number`、`presetColumnWidths?: string`、`windowHeightPresets?: string`、`animationMs?: number`（既定 0） | なし | — |
 | `Cursor` | `theme?: string`、`size?: number`、`hideAfterInactiveMs?: number` | なし | — |
 | `Input` | `tapToClick?: boolean`（既定 true）、`naturalScroll?: boolean`（既定 false）、`accelSpeed?: number`（-1〜1、既定 0）、`disableWhileTyping?: boolean`（既定 true）、`focusFollowsMouse?: boolean`（既定 false） | なし | — |
@@ -74,7 +74,7 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
 ### action
 
 `spawn` / `close` / `focus-left` / `focus-right` / `move-left` / `move-right` / `workspace` / `move-to-workspace` /
-`workspace-next` / `workspace-prev` / `move-to-workspace-next` / `move-to-workspace-prev` /
+`workspace-next` / `workspace-prev` / `move-to-workspace-next` / `move-to-workspace-prev` / `move-column-to-workspace` / `move-column-to-workspace-next` / `move-column-to-workspace-prev` / `move-workspace-down` / `move-workspace-up` /
 `toggle-floating` / `toggle-fullscreen` / `reload-config` / `quit` /
 `focus-up` / `focus-down` / `move-up` / `move-down` /
 `focus-column-first` / `focus-column-last` / `move-column-first` / `move-column-last` /
@@ -95,6 +95,10 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
 - `set-column-width` は `width`（0 より大きく 1 以下の割合）が必須。`adjust-column-width` は `delta`（0 以外で -100〜100 の整数のパーセント）が必須で、
   フォーカス列の今の幅の割合（整数パーセント）に足して 1〜100 に収める。どちらも不正なら CT003。
 
+- `Workspaces.mode` は、ワークスペースの方式。`"fixed"` は `count` 個で固定。`"dynamic"` は niri のように、窓のあるものと末尾の空 1 つ（空の状態から始まる）。
+  `dynamic` のとき `count` は `workspace` の番号の上限（CT022 の検査）にだけ使う。ほかの値は CT003。起動時に決まり、リロードでは変わらない（CT050）。
+- `move-column-to-workspace`（`workspace` 必須）／`-next`／`-prev` は、フォーカス窓の**列ごと**移して、そこへ切り替える（`Layout.mode` が `scrolling` のときだけ。`equal` では何もしない。
+  Floating・Fullscreen の窓は、その窓だけ）。`dynamic` では、存在しない番号は末尾の空のワークスペースになる。`move-workspace-down` / `-up` は、表示中のワークスペースを 1 つ下／上と入れ替える（`dynamic` のみ）。
 - `workspace-next` / `workspace-prev` は、いま表示中の番号の ±1 へ切り替える。`move-to-workspace-next` / `-prev` は、
   フォーカス窓をその番号へ移す。端では何もしない（循環しない）。引数は取らない。
 

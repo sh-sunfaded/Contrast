@@ -7,12 +7,12 @@ use std::path::{Path, PathBuf};
 use contrast_policy::{Action, ConfigLoader, LoadOutcome, ModKey, Mods, Settings};
 use contrast_policy_cdl::CdlLoader;
 
-/// `keybinds.cdl` のバインドの数（`docs/config-migration.md`）。niri の binds 86 個と、niri の既定の `Mod+V` の 1 個。
-const CONVERTED: usize = 87;
+/// `keybinds.cdl` のバインドの数（`docs/config-migration.md`）。niri の binds 90 個と、niri の既定の `Mod+V` の 1 個。
+const CONVERTED: usize = 91;
 /// そのうち、作者の config.kdl に無いもの（niri の既定の `Mod+V`）。
 const NOT_IN_NIRI_CONFIG: usize = 1;
 /// 変換しなかったバインドの数（`unsupported.cdl` の `//>` の行）。
-const UNSUPPORTED: usize = 25;
+const UNSUPPORTED: usize = 21;
 /// 元の niri の config.kdl の binds の数。
 const NIRI_BINDS: usize = 111;
 
@@ -106,6 +106,34 @@ fn startup_and_environment_are_those_of_niri() -> Result<(), String> {
 }
 
 #[test]
+fn the_config_uses_dynamic_workspaces_and_the_reorder_binds() -> Result<(), String> {
+    let s = load(ModKey::Super)?;
+    assert_eq!(s.workspace_mode, contrast_core::WorkspaceMode::Dynamic);
+    // `count` は `workspace` の番号の上限（Mod+1〜9）。
+    assert_eq!(s.workspaces, 9);
+    let m = ModKey::Super.mods();
+    let shift = with(ModKey::Super, |x| x.shift = true);
+    assert_eq!(
+        s.resolve_key(shift, "Page_Down"),
+        Some(Action::MoveWorkspaceDown)
+    );
+    assert_eq!(
+        s.resolve_key(shift, "Page_Up"),
+        Some(Action::MoveWorkspaceUp)
+    );
+    assert_eq!(s.resolve_key(shift, "u"), Some(Action::MoveWorkspaceDown));
+    assert_eq!(s.resolve_key(shift, "i"), Some(Action::MoveWorkspaceUp));
+    // 窓ではなく列ごとの移動（niri の move-column-to-workspace）。
+    let ctrl = with(ModKey::Super, |x| x.ctrl = true);
+    assert_eq!(
+        s.resolve_key(ctrl, "Page_Down"),
+        Some(Action::MoveColumnToWorkspaceNext)
+    );
+    let _ = m;
+    Ok(())
+}
+
+#[test]
 fn the_number_of_binds_and_the_keys_are_unique() -> Result<(), String> {
     for mod_key in [ModKey::Super, ModKey::Alt] {
         let s = load(mod_key)?;
@@ -154,8 +182,14 @@ fn the_main_binds_resolve_to_the_expected_actions() -> Result<(), String> {
         s.resolve_key(mod_only, "9"),
         Some(Action::SwitchWorkspace(8))
     );
-    assert_eq!(s.resolve_key(ctrl, "1"), Some(Action::MoveToWorkspace(0)));
-    assert_eq!(s.resolve_key(ctrl, "9"), Some(Action::MoveToWorkspace(8)));
+    assert_eq!(
+        s.resolve_key(ctrl, "1"),
+        Some(Action::MoveColumnToWorkspace(0))
+    );
+    assert_eq!(
+        s.resolve_key(ctrl, "9"),
+        Some(Action::MoveColumnToWorkspace(8))
+    );
     assert_eq!(s.resolve_key(mod_only, "t"), spawn("alacritty"));
     assert_eq!(s.resolve_key(mod_only, "d"), spawn("fuzzel"));
     assert_eq!(s.resolve_key(mod_only, "b"), spawn("firefox-nightly"));
@@ -177,13 +211,13 @@ fn the_main_binds_resolve_to_the_expected_actions() -> Result<(), String> {
             "Page_Down",
             "u",
             Action::WorkspaceNext,
-            Action::MoveToWorkspaceNext,
+            Action::MoveColumnToWorkspaceNext,
         ),
         (
             "Page_Up",
             "i",
             Action::WorkspacePrev,
-            Action::MoveToWorkspacePrev,
+            Action::MoveColumnToWorkspacePrev,
         ),
     ] {
         assert_eq!(s.resolve_key(mod_only, page), Some(focus.clone()));

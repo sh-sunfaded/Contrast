@@ -20,12 +20,12 @@
 
 ## binds 111 個の内訳
 
-元の `binds { … }` は 111 行。**変換したもの 86、変換しなかったもの 25**（86 + 25 = 111）。
-`keybinds.cdl` には、これに niri の既定の `Mod+V`（`toggle-floating`。作者の config.kdl の binds には無い）を足して 87 個ある。
-`crates/contrast-policy-cdl/tests/impl_config.rs` が、この数（`keybinds.cdl` の 87 と、`unsupported.cdl` の `//>` の 25）と、キーの重複がないことを確かめる。
+元の `binds { … }` は 111 行。**変換したもの 90、変換しなかったもの 21**（90 + 21 = 111）。
+`keybinds.cdl` には、これに niri の既定の `Mod+V`（`toggle-floating`。作者の config.kdl の binds には無い）を足して 91 個ある。
+`crates/contrast-policy-cdl/tests/impl_config.rs` が、この数（`keybinds.cdl` の 91 と、`unsupported.cdl` の `//>` の 21）と、キーの重複がないことを確かめる。
 `impl_binds_parity.rs` が、`config/` と基準の `examples/niri.cdl` で、同じキーに同じ操作が割り当てられていること（`mod` が Super でも Alt でも）を確かめる。
 
-### (a) 変換したもの（86 個。niri の既定の `Mod+V` を足して 87 個）
+### (a) 変換したもの（90 個。niri の既定の `Mod+V` を足して 91 個）
 
 | 区分 | 個数 | niri の action → CDL の action |
 | --- | --- | --- |
@@ -34,9 +34,10 @@
 | フォーカスの移動 | 8 | `focus-column-left/right` → `focus-left/right`、`focus-window-up/down` → `focus-up/down`（矢印と hjkl の 2 通り × 4 方向） |
 | 窓・列の移動 | 8 | `move-column-left/right` → `move-left/right`、`move-window-up/down` → `move-up/down`（同上） |
 | 列の端 | 4 | `focus-column-first/last` → `focus-column-first/last`、`move-column-to-first/last` → `move-column-first/last` |
-| ワークスペース N | 18 | `focus-workspace N` → `workspace`（`workspace`）、`move-column-to-workspace N` → `move-to-workspace`（N = 1〜9） |
-| ワークスペースの上下 | 8 | `focus-workspace-down/up` → `workspace-next/prev`、`move-column-to-workspace-down/up` → `move-to-workspace-next/prev`（Page_Down/Up と U/I の 2 通り） |
+| ワークスペース N | 18 | `focus-workspace N` → `workspace`（`workspace`）、`move-column-to-workspace N` → `move-column-to-workspace`（**列ごと**移して切り替える。N = 1〜9）。動的なワークスペースでは、存在しない番号は末尾の空のワークスペースになる |
+| ワークスペースの上下 | 8 | `focus-workspace-down/up` → `workspace-next/prev`、`move-column-to-workspace-down/up` → `move-column-to-workspace-next/prev`（Page_Down/Up と U/I の 2 通り） |
 | 列への積み | 4 | `consume-window-into-column`、`expel-window-from-column`、`consume-or-expel-window-left/right`（同名）。`expel-window-from-column` は niri と細部が違う（下記） |
+| ワークスペースの入れ替え | 4 | `move-workspace-down/up`（Mod+Shift+Page_Down/Up と U/I）。動的なワークスペースのみ |
 | ホイール | 12 | `Mod+WheelScroll…` → `workspace-next` などと同じ action を、キー名 `WheelScrollDown/Up/Left/Right` に割り当てる。縦のワークスペースの 4 つは `cooldown={150}`（niri の `cooldown-ms=150`） |
 | 幅・高さのプリセット | 3 | `switch-preset-column-width`（同名）、`switch-preset-window-height`（同名）、`reset-window-height`（同名） |
 | 列・窓の状態 | 3 | `maximize-column`（同名）、`fullscreen-window` → `toggle-fullscreen`、`center-column`（同名） |
@@ -46,12 +47,11 @@
 - 音量キー（`allow-when-locked=true`）の `allow-when-locked` は移さない（Contrast にロック画面が無い）。
 - キーは `Mod+Q` → `mod+q`、`Mod+Ctrl+Home` → `mod+ctrl+Home` のように、`+` で区切り、修飾キーを小文字にする（キー名の大文字小文字は問われない）。
 
-### (b) 変換しなかったもの（25 個）
+### (b) 変換しなかったもの（21 個）
 
 | 待っている機能 | 個数 | 内容 |
 | --- | --- | --- |
 | 複数モニタ（N4） | 16 | `focus-monitor-*`（8）と `move-column-to-monitor-*`（8） |
-| ワークスペースの並べ替え（N4） | 4 | `move-workspace-down/up` |
 | スクリーンショット（N5a） | 3 | `screenshot`・`screenshot-screen`・`screenshot-window`（`screenshot-path` は bind ではない設定で、これも N5a） |
 | オーバーレイ・DPMS | 2 | `show-hotkey-overlay`、`power-off-monitors` |
 
@@ -82,11 +82,23 @@ Contrast は、そのうち ironbar が使う最小の部分（`EventStream`、`
 
 - `config/startup.cdl` の ironbar の `Startup` に `ipc="niri"` を付けてある。付けた子にだけ、コンポジタが `NIRI_SOCKET=<そのソケットのパス>` を環境に足す。
   ほかの子（ほかの `Startup` と `Keybind` の `spawn`）には渡さない（ホストから継承した `NIRI_SOCKET` も外す）。niri 対応のほかのアプリが、Contrast を niri と誤認しないため。
-- ワークスペースの `id`・`idx` は 1 始まり（`Workspaces.count` 個）、名前は無い（ironbar は番号を出す）。`Super+1〜9` や `workspace-next` の切り替えは、ironbar に `WorkspaceActivated` として伝わる。
+- ワークスペースは動的（`Workspaces mode="dynamic"`）。`idx` は位置 + 1、`id` は作った順の通し番号で位置と無関係（消えても再利用しない）。名前は無い（ironbar は番号を出す）。バーのボタンは、窓のあるワークスペースと末尾の空 1 つ（niri と同じ）。`Super+1〜9` や `workspace-next` の切り替えは、ironbar に `WorkspaceActivated` として伝わる。
   ボタンのクリックは `FocusWorkspace` として届き、キーと同じ切り替えになる。
 - 出力は 1 枚だけの想定。隠れたワークスペースの出力は主出力として伝える。
 - IPC が起動できなかったとき（`XDG_RUNTIME_DIR` が無い・同じパスのソケットがある）は、エラーをログに出して IPC なしで続ける。このとき `ipc="niri"` の子にも `NIRI_SOCKET` は渡らず（警告が出る）、ironbar の workspaces は使えない。
 - ironbar のクリップボード（clipboard）モジュールが使う wlr-data-control は、設定を書かなくても、既定の許可リスト（ironbar・wl-copy・wl-paste・cliphist・wl-clip-persist）のクライアントにだけ公開される（`DataControlClient` で変えられる）。
+
+## 動的なワークスペース（`mode="dynamic"`）
+
+`config/` は `<Workspaces count={9} mode="dynamic" />`。niri のように、ワークスペースは窓のあるものと末尾の空 1 つだけで、空の状態から始まる（`core-spec.md` の 16 節）。
+`count` は、`workspace` の番号の上限（`Mod+1〜9` の検査）にだけ使う。ワークスペースの数そのものではない。
+
+- 窓がいちばん下のワークスペースに入ると、その下に新しい空のワークスペースができる。
+- ワークスペースを離れて切り替えると、窓も名前もない（末尾以外の）ワークスペースが消える。窓を閉じただけでは消えない（表示中のあいだは残る）。
+- `focus-workspace N` で存在しない番号は、末尾の空のワークスペースになる。`move-column-to-workspace N` も同じ（列ごと移して、そこへ切り替える）。
+- `move-workspace-down/up` は、表示中のワークスペースを 1 つ下／上と入れ替える。
+- niri との差: niri は切り替えのアニメーションが終わるまで、離れた空のワークスペースを残す。Contrast は切り替えの直後に消す。IPC は、niri と同じ順序（`WorkspaceActivated` → `WorkspacesChanged`）で送る。
+- 起動時の方式（`fixed` か `dynamic`）は、リロードでは変わらない（変えると警告 CT050）。
 
 ## 繰り返しの減らし方
 

@@ -86,12 +86,14 @@ interface Step {
   vim: string;
   focus: string;
   move: string;
+  /** ワークスペースの入れ替え（niri の move-workspace-down/up）。 */
+  reorder: string;
 }
 
 // 下 = 次、上 = 前。端で循環しない。
 const steps: Step[] = [
-  { page: "Page_Down", vim: "u", focus: "workspace-next", move: "move-to-workspace-next" },
-  { page: "Page_Up", vim: "i", focus: "workspace-prev", move: "move-to-workspace-prev" },
+  { page: "Page_Down", vim: "u", focus: "workspace-next", move: "move-column-to-workspace-next", reorder: "move-workspace-down" },
+  { page: "Page_Up", vim: "i", focus: "workspace-prev", move: "move-column-to-workspace-prev", reorder: "move-workspace-up" },
 ];
 
 function step(s: Step): Spec[] {
@@ -100,6 +102,8 @@ function step(s: Step): Spec[] {
     { keys: `mod+${s.vim}`, action: s.focus },
     { keys: `mod+ctrl+${s.page}`, action: s.move },
     { keys: `mod+ctrl+${s.vim}`, action: s.move },
+    { keys: `mod+shift+${s.page}`, action: s.reorder },
+    { keys: `mod+shift+${s.vim}`, action: s.reorder },
   ];
 }
 
@@ -108,7 +112,7 @@ const numbers: number[] = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 function numbered(n: number): Spec[] {
   return [
     { keys: `mod+${n}`, action: "workspace", workspace: n },
-    { keys: `mod+ctrl+${n}`, action: "move-to-workspace", workspace: n },
+    { keys: `mod+ctrl+${n}`, action: "move-column-to-workspace", workspace: n },
   ];
 }
 
@@ -118,8 +122,8 @@ function numbered(n: number): Spec[] {
 const wheels: Spec[] = [
   { keys: "mod+WheelScrollDown", action: "workspace-next", cooldown: 150 },
   { keys: "mod+WheelScrollUp", action: "workspace-prev", cooldown: 150 },
-  { keys: "mod+ctrl+WheelScrollDown", action: "move-to-workspace-next", cooldown: 150 },
-  { keys: "mod+ctrl+WheelScrollUp", action: "move-to-workspace-prev", cooldown: 150 },
+  { keys: "mod+ctrl+WheelScrollDown", action: "move-column-to-workspace-next", cooldown: 150 },
+  { keys: "mod+ctrl+WheelScrollUp", action: "move-column-to-workspace-prev", cooldown: 150 },
   { keys: "mod+WheelScrollRight", action: "focus-right" },
   { keys: "mod+WheelScrollLeft", action: "focus-left" },
   { keys: "mod+ctrl+WheelScrollRight", action: "move-right" },
