@@ -48,10 +48,17 @@ impl Contrast {
             Action::AdjustWindowHeight(percent) => return self.adjust_window_height(percent),
             Action::ToggleFloating => contrast_core::Action::ToggleFloating,
             Action::ToggleFullscreen => contrast_core::Action::ToggleFullscreen,
-            Action::WorkspaceNext => return self.step_workspace(1, false),
-            Action::WorkspacePrev => return self.step_workspace(-1, false),
-            Action::MoveToWorkspaceNext => return self.step_workspace(1, true),
-            Action::MoveToWorkspacePrev => return self.step_workspace(-1, true),
+            Action::WorkspaceNext => return self.step_workspace(1, Step::Switch),
+            Action::WorkspacePrev => return self.step_workspace(-1, Step::Switch),
+            Action::MoveToWorkspaceNext => return self.step_workspace(1, Step::MoveWindow),
+            Action::MoveToWorkspacePrev => return self.step_workspace(-1, Step::MoveWindow),
+            Action::MoveColumnToWorkspaceNext => return self.step_workspace(1, Step::MoveColumn),
+            Action::MoveColumnToWorkspacePrev => return self.step_workspace(-1, Step::MoveColumn),
+            Action::MoveColumnToWorkspace(n) => {
+                contrast_core::Action::MoveColumnToWorkspace(WorkspaceIndex::new(n))
+            }
+            Action::MoveWorkspaceDown => contrast_core::Action::MoveWorkspaceDown,
+            Action::MoveWorkspaceUp => contrast_core::Action::MoveWorkspaceUp,
             Action::SwitchWorkspace(n) => {
                 contrast_core::Action::SwitchWorkspace(WorkspaceIndex::new(n))
             }
@@ -127,12 +134,13 @@ impl Contrast {
         view.shown_workspace(output).map(|i| i.get())
     }
 
-    /// 表示中の番号から `delta` だけ離れたワークスペースへ、切り替える（`carry` なら窓も移す）。範囲外は何もしない。
-    fn step_workspace(&mut self, delta: i8, carry: bool) {
+    /// 表示中の番号から `delta` だけ離れたワークスペースへ、`step` の操作をする。範囲外は何もしない。
+    /// 範囲は core のいまの個数（動的なワークスペースでは増減する）。
+    fn step_workspace(&mut self, delta: i8, step: Step) {
         let Some(shown) = self.shown_workspace_index() else {
             return;
         };
-        let Some(target) = step_index(shown, delta, self.policy.workspace_count()) else {
+        let Some(target) = step_index(shown, delta, self.core.view().workspace_count()) else {
             tracing::info!(
                 shown = shown + 1,
                 delta,
@@ -141,10 +149,10 @@ impl Contrast {
             return;
         };
         let index = WorkspaceIndex::new(target);
-        self.core_action(if carry {
-            contrast_core::Action::MoveToWorkspace(index)
-        } else {
-            contrast_core::Action::SwitchWorkspace(index)
+        self.core_action(match step {
+            Step::Switch => contrast_core::Action::SwitchWorkspace(index),
+            Step::MoveWindow => contrast_core::Action::MoveToWorkspace(index),
+            Step::MoveColumn => contrast_core::Action::MoveColumnToWorkspace(index),
         });
     }
 
@@ -152,6 +160,17 @@ impl Contrast {
     fn spawn(&self, command: &str) {
         self.spawn_command(command, "keybind", false);
     }
+}
+
+/// 隣のワークスペースに対する操作。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Step {
+    /// 切り替える。
+    Switch,
+    /// フォーカス窓だけ移す。
+    MoveWindow,
+    /// フォーカス窓の列ごと移して切り替える。
+    MoveColumn,
 }
 
 /// `shown` から `delta` だけ離れた番号。`0..count` を出るなら `None`（循環しない）。

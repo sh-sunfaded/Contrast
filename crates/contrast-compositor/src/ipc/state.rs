@@ -4,26 +4,30 @@
 //! `name` は `None`。出力が表示しているワークスペースの `output` はその出力、表示していない（隠れた）ものは
 //! 主出力（先頭の出力）。複数出力は対象外（プロトタイプは出力 1 つ）。
 
+use contrast_core::{IdKind, WorkspaceIndex};
+
 use super::protocol::{Event, Workspace};
 use crate::state::Contrast;
 
 /// 出力の表示状態から、ワークスペースの一覧を作る。
 ///
-/// `count` はワークスペースの数。`shown` は出力ごとの（名前, 表示中のワークスペースの 0 始まりの位置）で、
-/// 先頭が主出力。`focused_output` はフォーカス中の出力の名前。
+/// `ids` はワークスペースの id を位置の順に並べたもの（core の `workspace_id`。動的なワークスペースでは位置と無関係）。
+/// `idx` は位置 + 1。`shown` は出力ごとの（名前, 表示中のワークスペースの 0 始まりの位置）で、先頭が主出力。
+/// `focused_output` はフォーカス中の出力の名前。
 pub(crate) fn build_workspaces(
-    count: u8,
+    ids: &[u64],
     shown: &[(String, u8)],
     focused_output: Option<&str>,
 ) -> Vec<Workspace> {
     let primary = shown.first().map(|(name, _)| name.clone());
-    (0..count)
-        .map(|index| {
+    ids.iter()
+        .enumerate()
+        .map(|(position, id)| {
+            let index = u8::try_from(position).unwrap_or(u8::MAX);
             let owner = shown.iter().find(|(_, shown_index)| *shown_index == index);
-            let idx = index.saturating_add(1);
             Workspace {
-                id: u64::from(idx),
-                idx,
+                id: *id,
+                idx: index.saturating_add(1),
                 name: None,
                 output: owner
                     .map(|(name, _)| name.clone())
@@ -45,30 +49,39 @@ fn same_structure(old: &[Workspace], new: &[Workspace]) -> bool {
         })
 }
 
-/// 前に送った一覧 `old` から `new` になったときに送るイベント。
-///
-/// - 構成（数・id・idx・名前・出力）が変わった → `WorkspacesChanged`（完全な状態）。
-/// - 構成は同じで、表示中・フォーカス中になったものがある → `WorkspaceActivated`
-///   （フォーカスも移ったものを最後に並べる）。
-/// - 何も変わらなければ空。
-pub(crate) fn diff(old: &[Workspace], new: &[Workspace]) -> Vec<Event> {
-    if !same_structure(old, new) {
-        return vec![Event::WorkspacesChanged {
-            workspaces: new.to_vec(),
-        }];
-    }
-    let mut activated: Vec<(u64, bool)> = old
+/// `old` にもある（id が同じ）ワークスペースのうち、`new` で表示中・フォーカス中になったものの `WorkspaceActivated`。
+/// フォーカスも移ったものを最後に並べる（ironbar は `focused:true` で「いまのフォーカス」を決める）。
+fn activations(old: &[Workspace], new: &[Workspace]) -> Vec<Event> {
+    let mut activated: Vec<(u64, bool)> = new
         .iter()
-        .zip(new)
-        .filter(|(a, b)| (b.is_active && !a.is_active) || (b.is_focused && !a.is_focused))
-        .map(|(_, b)| (b.id, b.is_focused))
+        .filter_map(|b| {
+            let a = old.iter().find(|a| a.id == b.id)?;
+            ((b.is_active && !a.is_active) || (b.is_focused && !a.is_focused))
+                .then_some((b.id, b.is_focused))
+        })
         .collect();
-    // フォーカスの移ったものを最後に（ironbar は `focused:true` で「いまのフォーカス」を決める）。
     activated.sort_by_key(|(_, focused)| *focused);
     activated
         .into_iter()
         .map(|(id, focused)| Event::WorkspaceActivated { id, focused })
         .collect()
+}
+
+/// 前に送った一覧 `old` から `new` になったときに送るイベント。
+///
+/// - 表示中・フォーカス中になった（前からある）ワークスペースがあれば、まず `WorkspaceActivated`。
+/// - 構成（数・id・idx・名前・出力）が変わったら、そのあとに `WorkspacesChanged`（完全な状態）。
+///   niri は切り替えの時点で `WorkspaceActivated` を出し、空のワークスペースの整理（`WorkspacesChanged`）はアニメーションが終わってから
+///   出す。Contrast は整理が即時なので、同じ順序で続けて出す（ironbar は `WorkspacesChanged` では強調を更新しない）。
+/// - 何も変わらなければ空。
+pub(crate) fn diff(old: &[Workspace], new: &[Workspace]) -> Vec<Event> {
+    let mut events = activations(old, new);
+    if !same_structure(old, new) {
+        events.push(Event::WorkspacesChanged {
+            workspaces: new.to_vec(),
+        });
+    }
+    events
 }
 
 impl Contrast {
@@ -86,7 +99,11 @@ impl Contrast {
             .take(1)
             .collect();
         let focused = shown.first().map(|(name, _)| name.as_str());
-        build_workspaces(view.workspace_count(), &shown, focused)
+        let ids: Vec<u64> = (0..view.workspace_count())
+            .filter_map(|i| view.workspace_id(WorkspaceIndex::new(i)))
+            .map(|id| id.raw())
+            .collect();
+        build_workspaces(&ids, &shown, focused)
     }
 }
 
@@ -94,13 +111,18 @@ impl Contrast {
 mod tests {
     use super::*;
 
+    /// 位置 + 1 を id にした id の並び（固定のワークスペース）。
+    fn seq(n: u8) -> Vec<u64> {
+        (1..=u64::from(n)).collect()
+    }
+
     fn shown(name: &str, index: u8) -> Vec<(String, u8)> {
         vec![(name.to_owned(), index)]
     }
 
     #[test]
     fn the_list_is_one_based_with_the_shown_workspace_active_and_focused() {
-        let list = build_workspaces(4, &shown("eDP-1", 1), Some("eDP-1"));
+        let list = build_workspaces(&seq(4), &shown("eDP-1", 1), Some("eDP-1"));
         let summary: Vec<(u64, u8, bool, bool)> = list
             .iter()
             .map(|w| (w.id, w.idx, w.is_active, w.is_focused))
@@ -120,13 +142,13 @@ mod tests {
 
     #[test]
     fn hidden_workspaces_belong_to_the_primary_output() {
-        let list = build_workspaces(3, &shown("eDP-1", 0), Some("eDP-1"));
+        let list = build_workspaces(&seq(3), &shown("eDP-1", 0), Some("eDP-1"));
         assert!(list.iter().all(|w| w.output.as_deref() == Some("eDP-1")));
     }
 
     #[test]
     fn without_outputs_nothing_is_active_and_no_output_is_named() {
-        let list = build_workspaces(2, &[], None);
+        let list = build_workspaces(&seq(2), &[], None);
         assert_eq!(list.len(), 2);
         assert!(list.iter().all(|w| w.output.is_none()));
         assert!(list.iter().all(|w| !w.is_active && !w.is_focused));
@@ -135,7 +157,7 @@ mod tests {
     #[test]
     fn an_unfocused_output_keeps_its_active_workspace_unfocused() {
         let two = vec![("A".to_owned(), 0), ("B".to_owned(), 2)];
-        let list = build_workspaces(3, &two, Some("A"));
+        let list = build_workspaces(&seq(3), &two, Some("A"));
         let flags: Vec<(bool, bool)> = list.iter().map(|w| (w.is_active, w.is_focused)).collect();
         assert_eq!(flags, [(true, true), (false, false), (true, false)]);
         assert_eq!(list.get(2).and_then(|w| w.output.as_deref()), Some("B"));
@@ -143,8 +165,8 @@ mod tests {
 
     #[test]
     fn switching_the_workspace_sends_one_activation_with_focus() {
-        let old = build_workspaces(4, &shown("eDP-1", 0), Some("eDP-1"));
-        let new = build_workspaces(4, &shown("eDP-1", 2), Some("eDP-1"));
+        let old = build_workspaces(&seq(4), &shown("eDP-1", 0), Some("eDP-1"));
+        let new = build_workspaces(&seq(4), &shown("eDP-1", 2), Some("eDP-1"));
         assert_eq!(
             diff(&old, &new),
             [Event::WorkspaceActivated {
@@ -156,16 +178,16 @@ mod tests {
 
     #[test]
     fn nothing_changed_sends_nothing() {
-        let list = build_workspaces(4, &shown("eDP-1", 1), Some("eDP-1"));
+        let list = build_workspaces(&seq(4), &shown("eDP-1", 1), Some("eDP-1"));
         assert_eq!(diff(&list, &list), []);
         assert_eq!(diff(&[], &[]), []);
     }
 
     #[test]
     fn a_new_structure_sends_the_full_state() {
-        let old = build_workspaces(4, &shown("eDP-1", 0), Some("eDP-1"));
+        let old = build_workspaces(&seq(4), &shown("eDP-1", 0), Some("eDP-1"));
         // 数が変わった。
-        let more = build_workspaces(5, &shown("eDP-1", 0), Some("eDP-1"));
+        let more = build_workspaces(&seq(5), &shown("eDP-1", 0), Some("eDP-1"));
         assert_eq!(
             diff(&old, &more),
             [Event::WorkspacesChanged {
@@ -173,7 +195,7 @@ mod tests {
             }]
         );
         // 出力の名前が変わった。
-        let renamed = build_workspaces(4, &shown("HDMI-A-1", 0), Some("HDMI-A-1"));
+        let renamed = build_workspaces(&seq(4), &shown("HDMI-A-1", 0), Some("HDMI-A-1"));
         assert_eq!(
             diff(&old, &renamed),
             [Event::WorkspacesChanged {
@@ -190,10 +212,55 @@ mod tests {
     #[test]
     fn a_secondary_output_switching_moves_ownership_so_the_full_state_is_sent() {
         let two = vec![("A".to_owned(), 0), ("B".to_owned(), 2)];
-        let old = build_workspaces(3, &two, Some("A"));
+        let old = build_workspaces(&seq(3), &two, Some("A"));
         // B の表示が 2 → 1 に変わると、隠れたワークスペースの持ち主（主出力 A）が変わる。
         let two_after = vec![("A".to_owned(), 0), ("B".to_owned(), 1)];
-        let new = build_workspaces(3, &two_after, Some("B"));
+        let new = build_workspaces(&seq(3), &two_after, Some("B"));
+        // 切り替わったワークスペース（id 2）の `WorkspaceActivated` のあとに、完全な状態。
+        assert_eq!(
+            diff(&old, &new),
+            [
+                Event::WorkspaceActivated {
+                    id: 2,
+                    focused: true
+                },
+                Event::WorkspacesChanged { workspaces: new }
+            ]
+        );
+    }
+
+    #[test]
+    fn ids_are_independent_of_positions_in_dynamic_workspaces() {
+        // 動的なワークスペース: id は位置と無関係（空のワークスペースが消えても残りの id は変わらない）。
+        let list = build_workspaces(&[1, 3, 4], &shown("eDP-1", 1), Some("eDP-1"));
+        let summary: Vec<(u64, u8, bool)> =
+            list.iter().map(|w| (w.id, w.idx, w.is_active)).collect();
+        assert_eq!(summary, [(1, 1, false), (3, 2, true), (4, 3, false)]);
+    }
+
+    #[test]
+    fn leaving_an_empty_workspace_sends_the_activation_then_the_removal() {
+        // [A(1), 空(2)(表示), 末尾(3)] から A へ切り替えると、空(2)が消える。niri と同じ順序で、先に Activated、あとに Changed。
+        let old = build_workspaces(&[1, 2, 3], &shown("eDP-1", 1), Some("eDP-1"));
+        let new = build_workspaces(&[1, 3], &shown("eDP-1", 0), Some("eDP-1"));
+        assert_eq!(
+            diff(&old, &new),
+            [
+                Event::WorkspaceActivated {
+                    id: 1,
+                    focused: true
+                },
+                Event::WorkspacesChanged {
+                    workspaces: new.clone()
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn a_new_trailing_workspace_alone_sends_only_the_full_state() {
+        let old = build_workspaces(&[1], &shown("eDP-1", 0), Some("eDP-1"));
+        let new = build_workspaces(&[1, 2], &shown("eDP-1", 0), Some("eDP-1"));
         assert_eq!(
             diff(&old, &new),
             [Event::WorkspacesChanged { workspaces: new }]
@@ -203,8 +270,8 @@ mod tests {
     #[test]
     fn focus_moving_between_outputs_with_the_same_display_sends_the_focused_activation() {
         let two = vec![("A".to_owned(), 0), ("B".to_owned(), 1)];
-        let on_b = build_workspaces(3, &two, Some("B"));
-        let on_a = build_workspaces(3, &two, Some("A"));
+        let on_b = build_workspaces(&seq(3), &two, Some("B"));
+        let on_a = build_workspaces(&seq(3), &two, Some("A"));
         assert_eq!(
             diff(&on_b, &on_a),
             [Event::WorkspaceActivated {

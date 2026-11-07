@@ -174,6 +174,7 @@ impl Contrast {
         let socket_name = Self::init_wayland_listener(display, event_loop);
         let layout = policy.layout_settings();
         let mut core_config = contrast_core::CoreConfig::new(policy.workspace_count())
+            .with_workspace_mode(policy.workspace_mode())
             .with_layout(layout.mode)
             .with_preset_column_widths(layout.preset_column_widths.clone())
             .with_preset_window_heights(layout.window_height_presets.clone());

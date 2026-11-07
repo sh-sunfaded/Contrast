@@ -305,13 +305,14 @@ fn handle_line<D: Host>(
     let reply: Reply = match &request {
         Request::EventStream | Request::Workspaces => Ok(Response::Handled),
         Request::FocusWorkspaceId(n) => {
-            let count = host.ipc_workspaces().len();
-            match u8::try_from(n.saturating_sub(1)) {
-                Ok(index) if *n >= 1 && usize::from(index) < count => {
+            // id は位置と無関係（動的なワークスペース）。一覧から id で探して、その位置に切り替える。
+            let position = host.ipc_workspaces().iter().position(|w| w.id == *n);
+            match position.and_then(|p| u8::try_from(p).ok()) {
+                Some(index) => {
                     host.ipc_focus(index);
                     Ok(Response::Handled)
                 }
-                _ => Err(NOT_FOUND.to_owned()),
+                None => Err(NOT_FOUND.to_owned()),
             }
         }
         Request::FocusWorkspaceName(name) => {
@@ -560,6 +561,42 @@ mod tests {
             lines,
             [r#"{"WorkspaceActivated":{"id":2,"focused":true}}"#.to_owned()]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn focus_workspace_finds_the_workspace_by_id_not_by_position() -> Result<(), String> {
+        let mut r = rig("focus-by-id")?;
+        // 動的なワークスペース: id は位置と無関係。
+        r.host.list = list(3, 0)
+            .into_iter()
+            .zip([5_u64, 9, 12])
+            .map(|(mut w, id)| {
+                w.id = id;
+                w
+            })
+            .collect();
+        let stream = r.connect()?;
+        for request in [
+            // 位置 2 に当たる番号だが、その id のワークスペースは無い（偽ホストは最初の切り替えで id を振り直すので、先に送る）。
+            &br#"{"Action":{"FocusWorkspace":{"reference":{"Id":2}}}}"#[..],
+            br#"{"Action":{"FocusWorkspace":{"reference":{"Id":9}}}}"#,
+        ] {
+            (&stream)
+                .write_all(request)
+                .and_then(|()| (&stream).write_all(b"\n"))
+                .map_err(|e| e.to_string())?;
+        }
+        let (lines, _) = r.read_lines(&stream, 2);
+        assert_eq!(
+            lines,
+            [
+                r#"{"Err":"workspace not found"}"#.to_owned(),
+                r#"{"Ok":"Handled"}"#.to_owned()
+            ]
+        );
+        // id 9 は位置 1。
+        assert_eq!(r.host.focused, [1]);
         Ok(())
     }
 
