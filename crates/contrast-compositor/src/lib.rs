@@ -11,6 +11,7 @@ mod geometry;
 mod handler;
 mod ime;
 mod input;
+mod ipc;
 mod reload;
 mod render;
 mod shell;

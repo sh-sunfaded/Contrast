@@ -396,6 +396,8 @@ dependencies = [
  "calloop 0.14.5",
  "contrast-core",
  "contrast-policy",
+ "serde",
+ "serde_json",
  "smithay",
  "tracing",
  "xcursor",

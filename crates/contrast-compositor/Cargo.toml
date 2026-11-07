@@ -9,6 +9,9 @@ description = "Contrast の Smithay シェル（nested プロトタイプ: winit
 contrast-core = { path = "../contrast-core" }
 contrast-policy = { path = "../contrast-policy" }
 tracing = "=0.1.44"
+# niri 互換の IPC（ironbar の workspaces 用）の JSON。どちらも Cargo.lock に既にある版。
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
 # カーソルのテーマ（xcursor）の読み込み。winit が引く版と同じ（Cargo.lock に既にある）。
 xcursor = "=0.3.11"
 # SIGUSR1 でリロードするための signal source。smithay が使う calloop と同じ版の `signals` 機能だけを足す。
