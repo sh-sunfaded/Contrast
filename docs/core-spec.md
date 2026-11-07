@@ -312,3 +312,24 @@ niri のソース（`src/layout/scrolling.rs` の `consume_or_expel_window_left`
 - **D59 動作（右）**: 左右を入れ替えたもの。`n == 1` のとき、`c` が最後の列なら状態不変で `Ok`、そうでなければ右隣の列 `c + 1` の最下段へ移し、元の列を削除する。`n >= 2` のとき、元の列の**右隣**（インデックス `c + 1`）の新しい列へ、元の列の幅で出す。
 - **D60 範囲外**: フォーカス窓が Floating・Fullscreen（列に属さない）のとき、フォーカスが None のとき（`NoFocusedWindow`）は、既存の列の操作（`ExpelWindowFromColumn` など）と同じ扱いにする。`Equal` では、状態不変で `Ok`（Effect なし。D45 と同じ）。
 - **D61 既存の D43 との違い（記録）**: niri の `expel-window-from-column` は、フォーカス窓ではなく**最下段**の窓を、列の幅を保って出し、フォーカスは動かない。Contrast の `ExpelWindowFromColumn`（D43）は、フォーカス窓を既定の幅の新しい列へ出し、フォーカスはついていく。D43 は `tests/spec` の前提なので変えない。この違いは `docs/` の差分表に残す。
+
+## 16. 動的なワークスペース（P10。niri-dynws。15 節の続き）
+
+作者の niri の、動的なワークスペース（窓のあるものと末尾の空 1 つ）と、それに連なる `move-column-to-workspace`・`move-workspace-down/up` に合わせる。
+根拠は niri のソース `src/layout/monitor.rs`（`add_tile`・`add_column`・`clean_up_workspaces`・`switch_workspace`・`move_column_to_workspace`・`move_workspace_down/up`）と `src/ipc/server.rs`（`ipc_refresh_workspaces`）。調査は `.cc-logs/report-niri-dynws-status.md`。
+出力 1 枚を前提にする（niri はモニタごとにワークスペースの列を持つが、Contrast の core はワークスペースを全出力で共有する（D1）。複数の出力は今回の範囲外）。
+
+- **D62 方式の設定**: `WorkspaceMode::{Fixed, Dynamic}`（`#[non_exhaustive]`、既定 `Fixed`）と `CoreConfig::with_workspace_mode`。`Fixed` は D1 のとおり（個数固定。ここまでの動作・仕様テストはすべて変わらない）。`Dynamic` のとき `workspace_count` は無視され、空のワークスペース 1 個から始まる。`StateView::workspace_count()` は、いまの個数を返す。
+- **D63 id と位置**: ワークスペースは `id`（`WorkspaceId`。作ったとき 1 から順に払い出す通し番号。削除しても再利用しない。位置が変わっても変わらない）と、位置（`WorkspaceIndex`。0 始まりで、`Workspace.index` と `Window.workspace`・`Output.shown` は常に位置と一致する）を持つ。`Fixed` の id は従来どおり位置 + 1。`StateView::workspace_id(index) -> Option<WorkspaceId>` を足す。
+- **D64 末尾の空（`Dynamic`）**: 末尾のワークスペースは、常に空（窓がない）。窓がワークスペースに入って、それが末尾なら、すべての命令の最後に、新しい空のワークスペースを末尾に足す（niri の `add_workspace_bottom`）。これは窓の追加（`WindowMapped`）、`MoveToWorkspace`、`MoveColumnToWorkspace` など、窓が末尾に入るすべての場合に当たる。
+- **D65 整理（`Dynamic`）**: 「整理」は、末尾以外で、窓がなく、どの出力も表示していないワークスペースを削除する（位置を詰める。表示中のワークスペースの位置は、同じワークスペースを指すように直す）。niri は切り替えが終わったときに行う。Contrast は、次の命令の**最後**で、**表示中のワークスペースが変わったとき**だけ行う: `SwitchWorkspace`（実際に切り替わったとき）、`MoveColumnToWorkspace`、`MoveToWorkspace`（窓。niri の `move_to_workspace` の末尾の整理）、`MoveWorkspaceDown/Up`。窓を閉じる（`WindowUnmapped`）では行わない（空になったワークスペースは、表示中のあいだ残り、離れたあとの次の整理で消える）。
+- **D66 切り替え（`Dynamic`）**: `SwitchWorkspace(index)` は、`index` が範囲外のとき、末尾のワークスペースに丸める（niri は `min(idx, len − 1)`）。`Fixed` は従来どおり `WorkspaceIndexOutOfRange`。`MoveToWorkspace(index)` も、`Dynamic` では末尾に丸める。
+- **D67 `MoveColumnToWorkspace(WorkspaceIndex)`**: 新しい `Action`。フォーカス窓の**列ごと**を、ワークスペース `t` へ移す。`t` は、`Dynamic` では `min(index, 個数 − 1)`、`Fixed` では範囲外なら `WorkspaceIndexOutOfRange`。
+  - `Scrolling` で、フォーカス窓が Tiled（列に属する）のとき: 列の全部の窓を `t` へ移す。列は、幅・窓ごとの高さ・最大化の状態を保ったまま、`t` の「最後にフォーカスした列」の右隣（`t` に窓がなければ先頭）に入る。フォーカス窓は変わらず、表示中のワークスペースが `t` に切り替わる（niri の `focus` の既定 true）。`t` が今のワークスペースなら状態不変で `Ok`。
+  - フォーカス窓が Floating・Fullscreen（列に属さない）のとき: その窓だけを `t` へ移し、同様に `t` に切り替える。
+  - `Equal` では状態不変で `Ok`（D45 と同じ）。フォーカスが None なら `NoFocusedWindow`。
+  - 元のワークスペースが空になれば、D65 の整理で消える（`Dynamic`）。
+- **D68 `MoveWorkspaceDown`・`MoveWorkspaceUp`（`Dynamic` のみ）**: 新しい `Action`。フォーカス出力が表示しているワークスペース（位置 `a`）を、1 つ下（`a + 1`）／上（`a − 1`）のワークスペースと入れ替える。下が無い（`a` が末尾）／上が無い（`a == 0`）なら状態不変で `Ok`。表示は入れ替えたワークスペースについていく。入れ替えのあと、D64 の末尾の空の補充、D65 の整理を行う（niri の順序と同じ）。`Fixed` では状態不変で `Ok`。
+- **D69 IPC に必要な読み取り**: ワークスペースの id・位置・個数は `StateView` から読める。ワークスペースが増減しても、`ShowWorkspace` の Effect は、**ワークスペースの id** が変わった出力にだけ出す（位置の比較ではない。位置は増減でずれる）。
+- **D70 不変条件（`Dynamic`）**: I12: 個数は 1 以上で、末尾のワークスペースは空、`Workspace.index` は位置と一致し、id は互いに異なる。既存の I1〜I11 は、そのまま成り立つ。
+- **D71 niri との差（記録）**: niri は切り替えのアニメーションが終わるまで、離れた空のワークスペースを残す。Contrast の core にはアニメーションが無いので、D65 の整理は命令の直後に行う。IPC の `WorkspacesChanged` は、その分だけ早く出る。
