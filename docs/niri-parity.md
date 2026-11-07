@@ -51,7 +51,7 @@ niri の設定の既定値は niri の既定（wiki / パッケージの既定�
 | 動的な縦のワークスペース（空きが自動で増減） | 暗黙 | × 固定数 | core のワークスペースの増減 | L |
 | `move-workspace-down/up` | はい | × 並べ替えが無い | core | M |
 | 名前つきワークスペース（`workspace "name"`） | いいえ | × | core と CDL | M |
-| `focus-monitor-*`・`move-column-to-monitor-*`・出力ごとのワークスペース | はい | × 出力 1 枚だけ（core は複数出力に対応しているが、コンポジタが 1 枚前提） | コンポジタの複数出力（ホットプラグ含む） | L |
+| `focus-monitor-*`・`move-column-to-monitor-*`・出力ごとのワークスペース | はい | ○ core は出力ごとの列（追補 17 節、参照モデルとの比較の proptest）。コンポジタは複数の出力を描き分け、IPC も出力ごと（nested の 2 出力で確認）。DRM の複数 connector・ホットプラグは実機で要確認 | — | — |
 | `output`（mode・scale・transform・position） | 無効 | × スケール 1 固定、modeset は preferred のみ | DRM のモード選択、スケール | L |
 | `toggle-overview` | いいえ | × | 縮小表示の描画と操作 | L |
 

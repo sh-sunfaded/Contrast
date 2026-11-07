@@ -3,24 +3,7 @@
 // まだ変換できない niri の binds。元の KDL の行を、そのまま「//> 」で残してある（待っている機能ごと）。
 // 機能が入ったら、この行を keybinds.cdl に移す。変換した binds と合わせて、元の 111 個になる（docs/config-migration.md）。
 
-// ---- 複数モニタ（16 個） ----
-// Contrast は出力 1 枚だけを扱う（N4: 複数出力・ホットプラグ・モニタ間のフォーカスと移動）。
-//> Mod+Shift+Left { focus-monitor-left; }
-//> Mod+Shift+Down { focus-monitor-down; }
-//> Mod+Shift+Up { focus-monitor-up; }
-//> Mod+Shift+Right { focus-monitor-right; }
-//> Mod+Shift+H { focus-monitor-left; }
-//> Mod+Shift+J { focus-monitor-down; }
-//> Mod+Shift+K { focus-monitor-up; }
-//> Mod+Shift+L { focus-monitor-right; }
-//> Mod+Shift+Ctrl+Left { move-column-to-monitor-left; }
-//> Mod+Shift+Ctrl+Down { move-column-to-monitor-down; }
-//> Mod+Shift+Ctrl+Up { move-column-to-monitor-up; }
-//> Mod+Shift+Ctrl+Right { move-column-to-monitor-right; }
-//> Mod+Shift+Ctrl+H { move-column-to-monitor-left; }
-//> Mod+Shift+Ctrl+J { move-column-to-monitor-down; }
-//> Mod+Shift+Ctrl+K { move-column-to-monitor-up; }
-//> Mod+Shift+Ctrl+L { move-column-to-monitor-right; }
+// 複数モニタの 16 個（focus-monitor-*・move-column-to-monitor-*）は keybinds.cdl に移した。
 
 // ---- スクリーンショット（2 個） ----
 // `screenshot`（範囲を選ぶ UI）と `screenshot-window`（窓だけを描く）が無い。`Ctrl+Print` の `screenshot-screen` は `keybinds.cdl` に移した。

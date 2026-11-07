@@ -81,7 +81,13 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
 `focus-column-first` / `focus-column-last` / `move-column-first` / `move-column-last` /
 `consume-window-into-column` / `expel-window-from-column` / `consume-or-expel-window-left` / `consume-or-expel-window-right` / `switch-preset-column-width` / `maximize-column` /
 `set-column-width` / `adjust-column-width` /
-`center-column` / `switch-preset-window-height` / `reset-window-height` / `set-window-height` / `adjust-window-height`。
+`center-column` / `switch-preset-window-height` / `reset-window-height` / `set-window-height` / `adjust-window-height` /
+`focus-monitor-left` / `focus-monitor-right` / `focus-monitor-up` / `focus-monitor-down` /
+`move-column-to-monitor-left` / `move-column-to-monitor-right` / `move-column-to-monitor-up` / `move-column-to-monitor-down`。
+
+- 出力の操作（`focus-monitor-*`・`move-column-to-monitor-*`、niri と同じ名前）は、`Workspaces.mode` が `dynamic` のとき（出力ごとのワークスペースの列。core-spec の追補 17 節）。
+  `fixed` のときは何もしない。`move-column-to-monitor-*` は、さらに `Layout.mode` が `scrolling` のときだけ。
+  その方向に出力が無ければ何もしない。出力が変わったら、カーソルをその出力の中央へ動かす（niri と同じ）。
 
 - 列の操作（`focus-column-*` 以降）と `focus-up/down`・`move-up/down` の列での意味は、`Layout.mode` が `scrolling` のときだけ。`equal` のとき、列の操作は何もしない
   （`focus-up/down`・`move-up/down` は従来の幾何・順序列の規則）。

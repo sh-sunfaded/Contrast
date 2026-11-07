@@ -7,7 +7,7 @@
 use std::collections::BTreeMap;
 
 use cdl_host::{Node, Px, Rgba};
-use contrast_core::{LayoutMode, Ratio, WindowHeight};
+use contrast_core::{Direction, LayoutMode, Ratio, WindowHeight};
 use contrast_policy::settings::{
     MAX_ANIMATION_MS, MAX_BORDER_WIDTH, MAX_COOLDOWN_MS, MAX_DECORATION_PX,
     MAX_HIDE_AFTER_INACTIVE_MS, MAX_WINDOW_HEIGHT_PX, MAX_WORKSPACES, rgba8,
@@ -685,6 +685,14 @@ fn read_action(cx: &mut Ctx<'_>, node: Node<'_>, name: &str, args: ActionArgs) -
         "center-column" => Some(Action::CenterColumn),
         "switch-preset-window-height" => Some(Action::SwitchPresetWindowHeight),
         "reset-window-height" => Some(Action::ResetWindowHeight),
+        "focus-monitor-left" => Some(Action::FocusMonitor(Direction::Left)),
+        "focus-monitor-right" => Some(Action::FocusMonitor(Direction::Right)),
+        "focus-monitor-up" => Some(Action::FocusMonitor(Direction::Up)),
+        "focus-monitor-down" => Some(Action::FocusMonitor(Direction::Down)),
+        "move-column-to-monitor-left" => Some(Action::MoveColumnToMonitor(Direction::Left)),
+        "move-column-to-monitor-right" => Some(Action::MoveColumnToMonitor(Direction::Right)),
+        "move-column-to-monitor-up" => Some(Action::MoveColumnToMonitor(Direction::Up)),
+        "move-column-to-monitor-down" => Some(Action::MoveColumnToMonitor(Direction::Down)),
         _ => None,
     };
     if simple.is_some() {

@@ -7,12 +7,12 @@ use std::path::{Path, PathBuf};
 use contrast_policy::{Action, ConfigLoader, LoadOutcome, ModKey, Mods, Settings};
 use contrast_policy_cdl::CdlLoader;
 
-/// `keybinds.cdl` のバインドの数（`docs/config-migration.md`）。niri の binds 92 個と、niri の既定の `Mod+V` の 1 個。
-const CONVERTED: usize = 93;
+/// `keybinds.cdl` のバインドの数（`docs/config-migration.md`）。niri の binds 108 個と、niri の既定の `Mod+V` の 1 個。
+const CONVERTED: usize = 109;
 /// そのうち、作者の config.kdl に無いもの（niri の既定の `Mod+V`）。
 const NOT_IN_NIRI_CONFIG: usize = 1;
 /// 変換しなかったバインドの数（`unsupported.cdl` の `//>` の行）。
-const UNSUPPORTED: usize = 19;
+const UNSUPPORTED: usize = 3;
 /// 元の niri の config.kdl の binds の数。
 const NIRI_BINDS: usize = 111;
 
@@ -312,13 +312,45 @@ fn the_main_binds_resolve_to_the_expected_actions() -> Result<(), String> {
         ),
         spawn("swaylock")
     );
-    // 変換しなかったキーは何もしない（例: モニタ、スクリーンショット）。
-    assert_eq!(s.resolve_key(shift, "Left"), None);
+    // 変換しなかったキーは何もしない（例: スクリーンショットの範囲選択）。モニタは変換した。
+    assert_eq!(
+        s.resolve_key(shift, "Left"),
+        Some(Action::FocusMonitor(contrast_core::Direction::Left))
+    );
     assert_eq!(s.resolve_key(Mods::default(), "Print"), None);
     // consume-or-expel は変換した。
     assert_eq!(
         s.resolve_key(mod_only, "BracketLeft"),
         Some(Action::ConsumeOrExpelWindowLeft)
     );
+    Ok(())
+}
+
+#[test]
+fn the_monitor_binds_resolve_to_the_monitor_actions() -> Result<(), String> {
+    use contrast_core::Direction;
+    let s = load(ModKey::Super)?;
+    let shift = with(ModKey::Super, |m| m.shift = true);
+    let shift_ctrl = with(ModKey::Super, |m| {
+        m.shift = true;
+        m.ctrl = true;
+    });
+    for (arrow, vim, d) in [
+        ("Left", "h", Direction::Left),
+        ("Right", "l", Direction::Right),
+        ("Up", "k", Direction::Up),
+        ("Down", "j", Direction::Down),
+    ] {
+        assert_eq!(s.resolve_key(shift, arrow), Some(Action::FocusMonitor(d)));
+        assert_eq!(s.resolve_key(shift, vim), Some(Action::FocusMonitor(d)));
+        assert_eq!(
+            s.resolve_key(shift_ctrl, arrow),
+            Some(Action::MoveColumnToMonitor(d))
+        );
+        assert_eq!(
+            s.resolve_key(shift_ctrl, vim),
+            Some(Action::MoveColumnToMonitor(d))
+        );
+    }
     Ok(())
 }

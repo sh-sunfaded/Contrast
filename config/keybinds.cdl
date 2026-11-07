@@ -79,6 +79,31 @@ function direction(d: Direction): Spec[] {
   ];
 }
 
+// ---- 複数モニタ（niri の focus-monitor-* と move-column-to-monitor-*） ----
+
+interface MonitorDirection {
+  arrow: string;
+  vim: string;
+  focus: string;
+  move: string;
+}
+
+const monitorDirections: MonitorDirection[] = [
+  { arrow: "Left", vim: "h", focus: "focus-monitor-left", move: "move-column-to-monitor-left" },
+  { arrow: "Right", vim: "l", focus: "focus-monitor-right", move: "move-column-to-monitor-right" },
+  { arrow: "Up", vim: "k", focus: "focus-monitor-up", move: "move-column-to-monitor-up" },
+  { arrow: "Down", vim: "j", focus: "focus-monitor-down", move: "move-column-to-monitor-down" },
+];
+
+function monitor(d: MonitorDirection): Spec[] {
+  return [
+    { keys: `mod+shift+${d.arrow}`, action: d.focus },
+    { keys: `mod+shift+${d.vim}`, action: d.focus },
+    { keys: `mod+shift+ctrl+${d.arrow}`, action: d.move },
+    { keys: `mod+shift+ctrl+${d.vim}`, action: d.move },
+  ];
+}
+
 // ---- ワークスペース ----
 
 interface Step {
@@ -168,6 +193,7 @@ const others: Spec[] = [
 const specs: Spec[] = none
   .concat(launches.reduce((acc, l) => acc.concat([spawn(l)]), none))
   .concat(directions.reduce((acc, d) => acc.concat(direction(d)), none))
+  .concat(monitorDirections.reduce((acc, d) => acc.concat(monitor(d)), none))
   .concat(steps.reduce((acc, s) => acc.concat(step(s)), none))
   .concat(numbers.reduce((acc, n) => acc.concat(numbered(n)), none))
   .concat(wheels)

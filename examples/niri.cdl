@@ -105,6 +105,24 @@ export default (
     <Keybind keys="mod+8" action="workspace" workspace={8} />
     <Keybind keys="mod+9" action="workspace" workspace={9} />
 
+    {/* 複数モニタ（focus-monitor-* / move-column-to-monitor-*） */}
+    <Keybind keys="mod+shift+Left" action="focus-monitor-left" />
+    <Keybind keys="mod+shift+h" action="focus-monitor-left" />
+    <Keybind keys="mod+shift+ctrl+Left" action="move-column-to-monitor-left" />
+    <Keybind keys="mod+shift+ctrl+h" action="move-column-to-monitor-left" />
+    <Keybind keys="mod+shift+Right" action="focus-monitor-right" />
+    <Keybind keys="mod+shift+l" action="focus-monitor-right" />
+    <Keybind keys="mod+shift+ctrl+Right" action="move-column-to-monitor-right" />
+    <Keybind keys="mod+shift+ctrl+l" action="move-column-to-monitor-right" />
+    <Keybind keys="mod+shift+Up" action="focus-monitor-up" />
+    <Keybind keys="mod+shift+k" action="focus-monitor-up" />
+    <Keybind keys="mod+shift+ctrl+Up" action="move-column-to-monitor-up" />
+    <Keybind keys="mod+shift+ctrl+k" action="move-column-to-monitor-up" />
+    <Keybind keys="mod+shift+Down" action="focus-monitor-down" />
+    <Keybind keys="mod+shift+j" action="focus-monitor-down" />
+    <Keybind keys="mod+shift+ctrl+Down" action="move-column-to-monitor-down" />
+    <Keybind keys="mod+shift+ctrl+j" action="move-column-to-monitor-down" />
+
     {/* ワークスペースの入れ替え（move-workspace-down/up） */}
     <Keybind keys="mod+shift+Page_Down" action="move-workspace-down" />
     <Keybind keys="mod+shift+Page_Up" action="move-workspace-up" />
@@ -169,9 +187,6 @@ export default (
     {/* ---- まだ実現できないもの（docs/niri-parity.md） ----
         N3b の残り（consume-or-expel）待ち:
           Mod+BracketLeft / Mod+BracketRight    consume-or-expel-window-left / right
-        N4（ワークスペース・モニタ）待ち:
-          Mod+Shift+矢印/H/J/K/L（+Ctrl）       focus-monitor-* / move-column-to-monitor-*
-          Mod+Shift+Page_Down / Page_Up / U / I move-workspace-down / up
         N5 待ち:
           Mod+ホイール系、Print 系（screenshot）、Mod+Shift+Slash（hotkey overlay）、Mod+Shift+P（power-off-monitors）、overview
         アニメーション: 窓の移動・大きさ・ワークスペース切替の補間は Layout.animationMs（niri の animations は既定のまま有効）。

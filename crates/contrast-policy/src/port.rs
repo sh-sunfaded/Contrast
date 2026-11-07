@@ -88,6 +88,10 @@ pub enum Action {
     SetColumnWidth(contrast_core::Ratio),
     /// フォーカス列の幅を、作業領域の幅の `n` パーセントぶん増減する（スクロール列レイアウトのみ）。
     AdjustColumnWidth(i8),
+    /// その方向の出力をアクティブにする（niri の `focus-monitor-*`。動的なワークスペースのみ）。
+    FocusMonitor(contrast_core::Direction),
+    /// フォーカス窓の列ごと、その方向の出力へ移す（niri の `move-column-to-monitor-*`。スクロール列・動的なワークスペースのみ）。
+    MoveColumnToMonitor(contrast_core::Direction),
     /// フォーカス列の中心を作業領域の中心に合わせる（スクロール列レイアウトのみ）。
     CenterColumn,
     /// フォーカス窓の高さを、次のプリセットへ変える（スクロール列レイアウトのみ）。
