@@ -11,11 +11,8 @@ export const BORDER_WIDTH = px(4);
 /** フォーカス窓の枠の色（niri の focus-ring の active-color）。 */
 export const FOCUS_COLOR = color("#7fc8ff");
 
-/** フォーカス外の窓の枠の色（niri の focus-ring の inactive-color）。 */
-export const BORDER_COLOR = color("#505050");
-
-/** 背景色。niri の config には無い（壁紙は swaybg）ので、Contrast の組み込みと同じ色。 */
-export const BACKGROUND = color("#1f2433");
+/** 背景色。niri の既定の layout.background-color（0.25 のグレー）。壁紙は swaybg が覆う。 */
+export const BACKGROUND = color("#404040");
 
 /** 新しい列の幅（niri の default-column-width の proportion 0.5）。 */
 export const DEFAULT_COLUMN_WIDTH = 0.5;

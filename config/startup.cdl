@@ -28,6 +28,10 @@ const variables: Variable[] = [
   { name: "GTK_IM_MODULE", value: "fcitx5" },
   { name: "SDL_IM_MODULE", value: "fcitx5" },
   { name: "MOZ_ENABLE_WAYLAND", value: "1" },
+  // niri がセッションとして動くとき自分の環境に設定し、子が継承するもの（niri の main.rs）。
+  // xdg-desktop-portal がポータルの設定を選ぶのに XDG_CURRENT_DESKTOP を使う。tty のままだと XDG_SESSION_TYPE は tty。
+  { name: "XDG_CURRENT_DESKTOP", value: "niri" },
+  { name: "XDG_SESSION_TYPE", value: "wayland" },
 ];
 
 export const environment = (

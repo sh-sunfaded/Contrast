@@ -238,7 +238,9 @@ fn niri_example_carries_the_niri_look() -> Result<(), String> {
     assert_eq!(s.layout.preset_column_widths.len(), 3);
     assert_eq!(s.appearance.border_width, 4);
     assert_eq!(s.appearance.radius, 0);
-    assert!(s.appearance.border_color.is_some());
+    // niri の focus-ring の inactive-color はフォーカス外の窓には描かれないので、borderColor は無い。
+    assert!(s.appearance.border_color.is_none());
+    assert!(!s.input.disable_while_typing);
     assert_eq!(s.cursor.theme.as_deref(), Some("Cecilia"));
     assert_eq!(s.cursor.size, Some(24));
     assert!(s.input.tap_to_click && s.input.natural_scroll);
@@ -272,7 +274,7 @@ fn niri_example_has_the_startup_commands_and_environment() -> Result<(), String>
             "udiskie",
         ]
     );
-    // environment（4 つ）。
+    // environment（4 つと、niri がセッションとして設定する XDG_* の 2 つ）。
     let env: Vec<(&str, &str)> = settings
         .environment
         .iter()
@@ -285,6 +287,8 @@ fn niri_example_has_the_startup_commands_and_environment() -> Result<(), String>
             ("MOZ_ENABLE_WAYLAND", "1"),
             ("QT_IM_MODULE", "fcitx5"),
             ("SDL_IM_MODULE", "fcitx5"),
+            ("XDG_CURRENT_DESKTOP", "niri"),
+            ("XDG_SESSION_TYPE", "wayland"),
         ]
     );
     // niri の config は focus-follows-mouse も cursor の hide も使わない。

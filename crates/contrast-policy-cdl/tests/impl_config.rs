@@ -53,6 +53,9 @@ fn the_config_loads_without_diagnostics() -> Result<(), String> {
     assert_eq!(s.layout.preset_column_widths.len(), 3);
     assert_eq!(s.appearance.border_width, 4);
     assert_eq!(s.appearance.radius, 0);
+    // niri はフォーカス外の窓に枠を描かず、タッチパッドの dwt は off。
+    assert!(s.appearance.border_color.is_none());
+    assert!(!s.input.disable_while_typing);
     assert_eq!(s.cursor.theme.as_deref(), Some("Cecilia"));
     assert_eq!(s.cursor.size, Some(24));
     assert!(s.input.tap_to_click && s.input.natural_scroll);
@@ -95,6 +98,8 @@ fn startup_and_environment_are_those_of_niri() -> Result<(), String> {
             ("MOZ_ENABLE_WAYLAND", "1"),
             ("QT_IM_MODULE", "fcitx5"),
             ("SDL_IM_MODULE", "fcitx5"),
+            ("XDG_CURRENT_DESKTOP", "niri"),
+            ("XDG_SESSION_TYPE", "wayland"),
         ]
     );
     Ok(())

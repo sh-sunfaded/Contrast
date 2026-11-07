@@ -18,15 +18,15 @@ export default (
     {/* niri の layout.gaps 16 / focus-ring（width 4、active #7fc8ff、inactive #505050）に合わせる。
         niri の config には geometry-corner-radius と shadow が無いので、角丸 0・影なし。
         使うなら radius={px(12)} shadowBlur={px(30)} shadowOffsetY={px(5)} shadowColor={color("#00000070")} を足す。 */}
-    <Appearance borderWidth={px(4)} focusColor={color("#7fc8ff")} borderColor={color("#505050")}
-      background={color("#1f2433")} radius={px(0)} />
+    <Appearance borderWidth={px(4)} focusColor={color("#7fc8ff")}
+      background={color("#404040")} radius={px(0)} />
     {/* niri の layout { gaps 16; default-column-width { proportion 0.5; } preset-column-widths { 1/3 1/2 2/3 } } */}
     <Layout gap={px(16)} outerGap={px(16)} mode="scrolling" defaultColumnWidth={0.5}
       presetColumnWidths="0.33333 0.5 0.66667" animationMs={150} />
     {/* niri の cursor { xcursor-theme "Cecilia"; xcursor-size 24 } */}
     <Cursor theme="Cecilia" size={24} />
-    {/* niri の input { touchpad { tap; natural-scroll } } */}
-    <Input tapToClick={true} naturalScroll={true} />
+    {/* niri の input { touchpad { tap; natural-scroll } }。niri は省略した dwt を off にする */}
+    <Input tapToClick={true} naturalScroll={true} disableWhileTyping={false} />
     {/* niri の Mod+1〜9 に合わせて 9 つ */}
     <Workspaces count={9} />
 
@@ -45,6 +45,8 @@ export default (
       <Env name="GTK_IM_MODULE" value="fcitx5" />
       <Env name="SDL_IM_MODULE" value="fcitx5" />
       <Env name="MOZ_ENABLE_WAYLAND" value="1" />
+      <Env name="XDG_CURRENT_DESKTOP" value="niri" />
+      <Env name="XDG_SESSION_TYPE" value="wayland" />
     </Environment>
 
     {/* プログラムの起動（niri の spawn / spawn-sh のコマンドそのまま） */}
