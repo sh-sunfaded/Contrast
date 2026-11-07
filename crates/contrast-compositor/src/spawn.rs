@@ -15,6 +15,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use contrast_policy::CursorSettings;
+
 use crate::state::Contrast;
 
 /// 開発シェル（`nix develop`）が足す変数。子には引き継がない。
@@ -57,6 +59,30 @@ pub(crate) fn scrub_list(in_nix_shell: bool, niri_ipc: bool) -> Vec<&'static str
         list.push("NIRI_SOCKET");
     }
     list
+}
+
+/// 子に渡す `XCURSOR_THEME`・`XCURSOR_SIZE`（niri が `cursor` の設定から環境変数に設定するのと同じ）。
+///
+/// テーマ・大きさは、設定（`Cursor`）> コンポジタ自身の環境変数 > 既定（`default`・24）。`Environment` の指定より弱い。
+pub(crate) fn cursor_environment(
+    cursor: &CursorSettings,
+    host_theme: Option<&str>,
+    host_size: Option<&str>,
+) -> Vec<(String, String)> {
+    let theme = cursor
+        .theme
+        .clone()
+        .or_else(|| host_theme.filter(|t| !t.is_empty()).map(str::to_owned))
+        .unwrap_or_else(|| "default".to_owned());
+    let size = cursor
+        .size
+        .map(|s| s.to_string())
+        .or_else(|| host_size.filter(|s| !s.is_empty()).map(str::to_owned))
+        .unwrap_or_else(|| "24".to_owned());
+    vec![
+        ("XCURSOR_THEME".to_owned(), theme),
+        ("XCURSOR_SIZE".to_owned(), size),
+    ]
 }
 
 /// `command`（空白で区切った先頭がプログラム、残りが引数）から起動するコマンドを作る。空なら `None`。
@@ -190,7 +216,13 @@ impl Contrast {
     /// `command` をこのコンポジタのソケットにつないで起動する。失敗はログに出すだけ。`kind` はログ用の起動元。
     /// `niri_ipc` なら、niri 互換の IPC のソケットのパスを `NIRI_SOCKET` で渡す（IPC が無ければ渡せない）。
     pub(crate) fn spawn_command(&self, command: &str, kind: &'static str, niri_ipc: bool) {
-        let environment = self.policy.environment();
+        // カーソルの環境変数を先に、利用者の `Environment` を後に置く（同じ名前は後の指定が勝つ）。
+        let mut environment = cursor_environment(
+            &self.policy.cursor_settings(),
+            std::env::var("XCURSOR_THEME").ok().as_deref(),
+            std::env::var("XCURSOR_SIZE").ok().as_deref(),
+        );
+        environment.extend(self.policy.environment());
         let niri_socket = if niri_ipc {
             if self.ipc_socket.is_none() {
                 tracing::warn!(
@@ -353,6 +385,43 @@ mod tests {
                 "/run/user/1/contrast.1.sock"
             );
         }
+    }
+
+    #[test]
+    fn cursor_environment_follows_the_config_then_the_host_then_the_default() {
+        let cfg = |theme: Option<&str>, size: Option<u32>| CursorSettings {
+            theme: theme.map(str::to_owned),
+            size,
+            hide_after_inactive_ms: None,
+        };
+        let pair = |e: Vec<(String, String)>| {
+            let get = |k: &str| e.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
+            (get("XCURSOR_THEME"), get("XCURSOR_SIZE"))
+        };
+        let some = |a: &str, b: &str| (Some(a.to_owned()), Some(b.to_owned()));
+        // 設定が最優先（niri の cursor { xcursor-theme "Cecilia"; xcursor-size 24 }）。
+        assert_eq!(
+            pair(cursor_environment(
+                &cfg(Some("Cecilia"), Some(24)),
+                Some("x"),
+                Some("48")
+            )),
+            some("Cecilia", "24")
+        );
+        // 設定が無ければコンポジタ自身の環境変数。
+        assert_eq!(
+            pair(cursor_environment(
+                &cfg(None, None),
+                Some("Adwaita"),
+                Some("32")
+            )),
+            some("Adwaita", "32")
+        );
+        // どちらも無ければ既定（niri と同じ default・24）。空の環境変数は無いものとして扱う。
+        assert_eq!(
+            pair(cursor_environment(&cfg(None, None), Some(""), None)),
+            some("default", "24")
+        );
     }
 
     #[test]
