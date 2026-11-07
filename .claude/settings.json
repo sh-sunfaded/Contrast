@@ -18,8 +18,6 @@
     ],
     "deny": [
       "Bash(cargo add:*)",
-      "Edit(./**/Cargo.toml)",
-      "Write(./**/Cargo.toml)",
       "Bash(rm:*)",
       "Bash(git reset:*)",
       "Bash(git clean:*)",
