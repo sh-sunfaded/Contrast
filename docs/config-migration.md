@@ -15,19 +15,21 @@
 | `config/keybinds.cdl` | キーバインド。方向・ワークスペースの繰り返しは、データから生成する |
 | `config/unsupported.cdl` | 変換できない binds（元の KDL の行を `//>` で残す。コメントだけ） |
 
-`mod` は `modKey`（実機の DRM は Super、nested の winit は Alt）に任せている。`Mod+Alt+J` だけは、`mod` が Alt のとき `Mod+J` と同じキーに
-なって重複するので、`super+alt+j` と書いている（実機の Super では同じ）。
+`mod` は `modKey`（実機の DRM は Super、nested の winit は Alt）に任せている。`Mod+Alt+J`・`Mod+Alt+E` は、`mod` が Alt のとき `Mod+J`・`Mod+E` と同じキーに
+なって重複するので、`super+alt+j`・`super+alt+e` と書いている（実機の Super では同じ）。`Super+Alt+L` は元から Super と書かれている。
 
 ## binds 111 個の内訳
 
-元の `binds { … }` は 111 行。**変換したもの 69、変換しなかったもの 42**（69 + 42 = 111）。
-`crates/contrast-policy-cdl/tests/impl_config.rs` が、この数（`keybinds.cdl` の 69 と、`unsupported.cdl` の `//>` の 42）と、キーの重複がないことを確かめる。
+元の `binds { … }` は 111 行。**変換したもの 72、変換しなかったもの 39**（72 + 39 = 111）。
+`keybinds.cdl` には、これに niri の既定の `Mod+V`（`toggle-floating`。作者の config.kdl の binds には無い）を足して 73 個ある。
+`crates/contrast-policy-cdl/tests/impl_config.rs` が、この数（`keybinds.cdl` の 73 と、`unsupported.cdl` の `//>` の 39）と、キーの重複がないことを確かめる。
+`impl_binds_parity.rs` が、`config/` と基準の `examples/niri.cdl` で、同じキーに同じ操作が割り当てられていること（`mod` が Super でも Alt でも）を確かめる。
 
-### (a) 変換したもの（69 個）
+### (a) 変換したもの（72 個。niri の既定の `Mod+V` を足して 73 個）
 
 | 区分 | 個数 | niri の action → CDL の action |
 | --- | --- | --- |
-| プログラムの起動 | 9 | `spawn` → `spawn`（`command`）。firefox-nightly・alacritty・fuzzel・fcitx5-remote -t・wpctl の 4 つ・jetbrains-toolbox（`env DISPLAY=:0 …`。XWayland が要る） |
+| プログラムの起動 | 12 | `spawn` / `spawn-sh` → `spawn`（`command`）。firefox-nightly・alacritty・fuzzel・fcitx5-remote -t・wpctl の 4 つ・jetbrains-toolbox（`env DISPLAY=:0 …`。XWayland が要る）・`strat fedora …` の 2 つ（Discord、Eclipse）・`swaylock`。`strat`（Bedrock Linux のコマンド）と `swaylock` は、この NixOS には無いので、押すと spawn が失敗してログに出るだけ |
 | 窓を閉じる・終了 | 2 | `close-window` → `close`、`quit` → `quit` |
 | フォーカスの移動 | 8 | `focus-column-left/right` → `focus-left/right`、`focus-window-up/down` → `focus-up/down`（矢印と hjkl の 2 通り × 4 方向） |
 | 窓・列の移動 | 8 | `move-column-left/right` → `move-left/right`、`move-window-up/down` → `move-up/down`（同上） |
@@ -37,12 +39,13 @@
 | 列への積み | 2 | `consume-window-into-column`、`expel-window-from-column`（同名） |
 | 幅・高さのプリセット | 3 | `switch-preset-column-width`（同名）、`switch-preset-window-height`（同名）、`reset-window-height`（同名） |
 | 列・窓の状態 | 3 | `maximize-column`（同名）、`fullscreen-window` → `toggle-fullscreen`、`center-column`（同名） |
+| （niri の既定） | 1 | `Mod+V` → `toggle-floating`。作者の binds には無いが、`examples/niri.cdl` が niri の既定どおり持つので合わせた |
 | 幅・高さの増減（±10%） | 4 | `set-column-width "±10%"` → `adjust-column-width`（`delta`）、`set-window-height "±10%"` → `adjust-window-height`（`delta`） |
 
 - 音量キー（`allow-when-locked=true`）の `allow-when-locked` は移さない（Contrast にロック画面が無い）。
 - キーは `Mod+Q` → `mod+q`、`Mod+Ctrl+Home` → `mod+ctrl+Home` のように、`+` で区切り、修飾キーを小文字にする（キー名の大文字小文字は問われない）。
 
-### (b) 変換しなかったもの（42 個）
+### (b) 変換しなかったもの（39 個）
 
 | 待っている機能 | 個数 | 内容 |
 | --- | --- | --- |
@@ -52,8 +55,6 @@
 | core の追加 | 2 | `consume-or-expel-window-left/right` |
 | スクリーンショット（N5a） | 3 | `screenshot`・`screenshot-screen`・`screenshot-window`（`screenshot-path` は bind ではない設定で、これも N5a） |
 | オーバーレイ・DPMS | 2 | `show-hotkey-overlay`、`power-off-monitors` |
-| Bedrock Linux の `strat` | 2 | `spawn-sh "strat fedora …"`（Discord、Eclipse）。`strat` は NixOS に無い |
-| ロック画面 | 1 | `Super+Alt+L` の `swaylock`（未インストール。ロックには ext-session-lock も要る） |
 
 元の KDL の行は `config/unsupported.cdl` に、待っている機能ごとに残してある。
 
@@ -61,7 +62,7 @@
 
 | niri | CDL | 備考 |
 | --- | --- | --- |
-| `spawn-at-startup`（5 つ） | `Startup`（この順） | fcitx5・ironbar・swaybg・mako・udiskie |
+| `spawn-at-startup`（5 つ） | `Startup`（この順） | fcitx5・ironbar・swaybg・mako・udiskie。ironbar だけ `ipc="niri"`（下記） |
 | `environment`（4 つ） | `Environment` / `Env` | QT_IM_MODULE・GTK_IM_MODULE・SDL_IM_MODULE（fcitx5）、MOZ_ENABLE_WAYLAND（1） |
 | `layout { gaps 16 }` | `Layout.gap`・`outerGap` | |
 | `default-column-width { proportion 0.5; }`、`preset-column-widths` | `Layout.defaultColumnWidth`・`presetColumnWidths` | 0.33333 0.5 0.66667 |
@@ -74,6 +75,20 @@
 | `border`（off）、`output`（無効）、`window-rule`（wezterm は何もしない、keepassxc は無効）、`screenshot-path` | 移さない | `screenshot-path` はスクリーンショット（N5a）待ち |
 | `input.keyboard`（xkb は空）、`input.mouse`（空）、`struts`（空）、`hotkey-overlay` | 移さない | 設定が空 |
 
+## ironbar の workspaces（`ipc="niri"`）
+
+ironbar の workspaces モジュールは、環境変数 `NIRI_SOCKET` があると niri だとみなし、そのソケットに niri の IPC で接続する。
+Contrast は、そのうち ironbar が使う最小の部分（`EventStream`、`FocusWorkspace`、`Workspaces`）を、`$XDG_RUNTIME_DIR/contrast.<pid>.sock`（0600）で話す
+（計画と範囲は `docs/ipc-plan.md`）。
+
+- `config/startup.cdl` の ironbar の `Startup` に `ipc="niri"` を付けてある。付けた子にだけ、コンポジタが `NIRI_SOCKET=<そのソケットのパス>` を環境に足す。
+  ほかの子（ほかの `Startup` と `Keybind` の `spawn`）には渡さない（ホストから継承した `NIRI_SOCKET` も外す）。niri 対応のほかのアプリが、Contrast を niri と誤認しないため。
+- ワークスペースの `id`・`idx` は 1 始まり（`Workspaces.count` 個）、名前は無い（ironbar は番号を出す）。`Super+1〜9` や `workspace-next` の切り替えは、ironbar に `WorkspaceActivated` として伝わる。
+  ボタンのクリックは `FocusWorkspace` として届き、キーと同じ切り替えになる。
+- 出力は 1 枚だけの想定。隠れたワークスペースの出力は主出力として伝える。
+- IPC が起動できなかったとき（`XDG_RUNTIME_DIR` が無い・同じパスのソケットがある）は、エラーをログに出して IPC なしで続ける。このとき `ipc="niri"` の子にも `NIRI_SOCKET` は渡らず（警告が出る）、ironbar の workspaces は使えない。
+- ironbar のクリップボード（clipboard）モジュールが使う wlr-data-control は、設定を書かなくても、既定の許可リスト（ironbar・wl-copy・wl-paste・cliphist・wl-clip-persist）のクライアントにだけ公開される（`DataControlClient` で変えられる）。
+
 ## 繰り返しの減らし方
 
 `config/keybinds.cdl` は、次のデータ 1 組ずつから、複数の binds を生成する（CDL の `const`・関数・配列の `reduce`/`concat`・`map`・テンプレート文字列を使う）。
@@ -82,5 +97,5 @@
 - ワークスペースの上下 2 組（Page_Down/Up、U/I、focus、move）→ 8 個
 - ワークスペースの番号 1〜9 → 18 個
 
-起動と、1 つずつの操作は、そのままの表（データ）で書く。元の binds は 111 行（変換するものだけで 69 行）。`keybinds.cdl` は、コメントと空行を除いて 113 行
-（import、型の宣言、データ、生成の関数、最後の `map` を含む）。ファイル全体は 147 行。
+起動と、1 つずつの操作は、そのままの表（データ）で書く。元の binds は 111 行（変換するものだけで 72 行、`Mod+V` を足して 73 行）。`keybinds.cdl` は、コメントと空行を除いて 117 行
+（import、型の宣言、データ、生成の関数、最後の `map` を含む）。ファイル全体は 155 行。
