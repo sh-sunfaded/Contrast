@@ -297,3 +297,17 @@ layer-shell のバーなどが確保する領域を、出力の作業領域か�
 - **D54 Equal**: 上の 4 つの Action は、`Equal` では、状態不変で Ok（Effect なし）。
 - **D55 不変条件**: I10 に「列の中の窓の高さの合計は、作業領域の高さに等しい」を足す（窓の数が高さ以下のとき）。
 - **D56 N3b に含めないもの**: `center-focused-column` の設定（always・on-overflow）、複数窓の高さの比の保存（niri の auto の重み）。
+
+## 15. consume-or-expel-window-left/right（P9。niri-parity。14 節の続き）
+
+作者の `~/.config/niri/config.kdl` の `Mod+BracketLeft`／`Mod+BracketRight`（`consume-or-expel-window-left`／`-right`）に合わせる。
+niri のソース（`src/layout/scrolling.rs` の `consume_or_expel_window_left`・`consume_or_expel_window_right`、`add_tile_to_column`、`remove_tile_by_idx`）で確かめた動作。
+
+- **D57 新しい Action**: `ConsumeOrExpelWindowLeft`・`ConsumeOrExpelWindowRight`。`Action` は `#[non_exhaustive]` なので、variant の追加は公開 API の破壊ではない。
+- **D58 動作（左）**: `Scrolling` で、フォーカス窓（Tiled。列に属する）の列を `c`、列の窓の数を `n` とする。
+  - `n == 1` のとき: `c` が先頭の列（0）なら、状態不変で `Ok`。そうでなければ、窓を左隣の列 `c − 1` の**最下段**へ移す。元の列は空になるので削除する。
+  - `n >= 2` のとき: 窓を元の列から外し、元の列の**左隣**（インデックス `c`、元の列は `c + 1` になる）の新しい列へ出す。新しい列の幅は**元の列の幅**（niri は取り出した窓の列の幅を保つ）。
+  - どちらも、フォーカスは窓についていく（窓がフォーカス窓だったので、移った先でもフォーカス窓）。窓の高さは `Auto` に戻る（D52）。
+- **D59 動作（右）**: 左右を入れ替えたもの。`n == 1` のとき、`c` が最後の列なら状態不変で `Ok`、そうでなければ右隣の列 `c + 1` の最下段へ移し、元の列を削除する。`n >= 2` のとき、元の列の**右隣**（インデックス `c + 1`）の新しい列へ、元の列の幅で出す。
+- **D60 範囲外**: フォーカス窓が Floating・Fullscreen（列に属さない）のとき、フォーカスが None のとき（`NoFocusedWindow`）は、既存の列の操作（`ExpelWindowFromColumn` など）と同じ扱いにする。`Equal` では、状態不変で `Ok`（Effect なし。D45 と同じ）。
+- **D61 既存の D43 との違い（記録）**: niri の `expel-window-from-column` は、フォーカス窓ではなく**最下段**の窓を、列の幅を保って出し、フォーカスは動かない。Contrast の `ExpelWindowFromColumn`（D43）は、フォーカス窓を既定の幅の新しい列へ出し、フォーカスはついていく。D43 は `tests/spec` の前提なので変えない。この違いは `docs/` の差分表に残す。
