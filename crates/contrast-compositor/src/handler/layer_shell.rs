@@ -67,6 +67,8 @@ impl WlrLayerShellHandler for Contrast {
                 );
             }
         }
+        // 排他ゾーンが消えたぶん、窓の領域を広げる。
+        self.sync_output_insets();
         if self.layer_focus.as_ref() == Some(&wl) {
             self.layer_focus = None;
             self.restore_window_focus();
@@ -92,6 +94,10 @@ pub fn handle_commit(state: &mut Contrast, surface: &WlSurface) {
     };
     let mut map = layer_map_for_output(&output);
     map.arrange();
+    // 排他ゾーンが変わったかもしれない。窓の領域を取り直す（`map` を手放してから）。
+    drop(map);
+    state.sync_output_insets();
+    let map = layer_map_for_output(&output);
     let Some(layer) = map
         .layer_for_surface(surface, WindowSurfaceType::TOPLEVEL)
         .cloned()

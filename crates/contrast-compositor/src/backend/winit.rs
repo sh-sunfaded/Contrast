@@ -92,7 +92,10 @@ pub fn init_winit(
                     tracing::info!(changed, zone = ?map.non_exclusive_zone(), "layers re-arranged");
                 }
                 match output_rect(size) {
-                    Some(rect) => state.output_changed(rect),
+                    Some(rect) => {
+                        state.output_changed(rect);
+                        state.sync_output_insets();
+                    }
                     None => tracing::warn!(?size, "output size is not positive, layout skipped"),
                 }
             }

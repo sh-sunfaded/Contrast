@@ -130,11 +130,43 @@ impl Contrast {
             .collect()
     }
 
-    /// core が窓を並べる領域（今は出力の論理矩形。排他領域はまだ core に渡していない）。出力がなければ `None`。
+    /// core が窓を並べる領域（出力の論理矩形から、layer-shell の排他ゾーンを引いたもの）。出力がなければ `None`。
     fn work_area(&self) -> Option<Rect> {
         let output = self.space.outputs().next()?;
         let geo = self.space.output_geometry(output)?;
-        Rect::new(geo.loc.x, geo.loc.y, geo.size.w, geo.size.h)
+        let zone = smithay::desktop::layer_map_for_output(output).non_exclusive_zone();
+        Rect::new(
+            geo.loc.x.saturating_add(zone.loc.x),
+            geo.loc.y.saturating_add(zone.loc.y),
+            zone.size.w,
+            zone.size.h,
+        )
+    }
+
+    /// layer-shell の排他ゾーン（バーなど）を core の出力の余白として渡す。layer の追加・削除・サイズ変更（`arrange` のあと）と、
+    /// 出力の大きさが変わったあとに呼ぶ。同じ値なら core は何もしない。
+    pub fn sync_output_insets(&mut self) {
+        let Some(key) = self.shell.output_key else {
+            return;
+        };
+        let Some(output) = self.space.outputs().next().cloned() else {
+            return;
+        };
+        let Some(geo) = self.space.output_geometry(&output) else {
+            return;
+        };
+        let zone = smithay::desktop::layer_map_for_output(&output).non_exclusive_zone();
+        let (top, right, bottom, left) = crate::geometry::insets_from_zone(
+            (geo.size.w, geo.size.h),
+            (zone.loc.x, zone.loc.y, zone.size.w, zone.size.h),
+        );
+        let Some(insets) = contrast_core::Insets::new(top, right, bottom, left) else {
+            return;
+        };
+        // 窓が出力の変更に追いついて動くので、補間は付けない（バーが出る・消えるときは窓を直ちに置く）。
+        self.anim.suppress(true);
+        self.submit(Command::OutputInsetsChanged { key, insets });
+        self.anim.suppress(false);
     }
 
     /// 表示中の窓に全画面のものがあるか。

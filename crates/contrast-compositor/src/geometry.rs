@@ -16,6 +16,17 @@ fn shrink(rect: Rect, l: i32, t: i32, r: i32, b: i32) -> Rect {
     .unwrap_or(rect)
 }
 
+/// 出力の大きさ `(幅, 高さ)` と、layer-shell の排他ゾーンを除いた領域 `zone`（`(x, y, 幅, 高さ)`、出力の左上が原点）から、
+/// core に渡す余白 `(上, 右, 下, 左)` を求める。出力からはみ出す分は 0 に丸める。
+pub fn insets_from_zone(output: (i32, i32), zone: (i32, i32, i32, i32)) -> (i32, i32, i32, i32) {
+    let (x, y, w, h) = zone;
+    let top = y.max(0);
+    let left = x.max(0);
+    let right = output.0.saturating_sub(x.saturating_add(w)).max(0);
+    let bottom = output.1.saturating_sub(y.saturating_add(h)).max(0);
+    (top, right, bottom, left)
+}
+
 /// `rects` をすべて含む最小の矩形。空なら `None`。
 pub fn bounds_of(rects: impl IntoIterator<Item = Rect>) -> Option<Rect> {
     let mut it = rects.into_iter();
@@ -72,6 +83,30 @@ pub fn outset(frame: Rect, border: i32) -> Rect {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn insets_come_from_the_non_exclusive_zone() {
+        // 上部バー（高さ 30）と左のドック（幅 50）。
+        assert_eq!(
+            insets_from_zone((1000, 800), (50, 30, 950, 770)),
+            (30, 0, 0, 50)
+        );
+        // 排他ゾーンが無ければ余白は 0。
+        assert_eq!(
+            insets_from_zone((1000, 800), (0, 0, 1000, 800)),
+            (0, 0, 0, 0)
+        );
+        // 下と右。
+        assert_eq!(
+            insets_from_zone((1000, 800), (0, 0, 940, 760)),
+            (0, 60, 40, 0)
+        );
+        // はみ出しは 0 に丸める。
+        assert_eq!(
+            insets_from_zone((100, 100), (-5, -5, 200, 200)),
+            (0, 0, 0, 0)
+        );
+    }
+
     use super::*;
 
     fn r(x: i32, y: i32, w: i32, h: i32) -> Rect {
