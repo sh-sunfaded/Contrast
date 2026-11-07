@@ -1,8 +1,10 @@
 //! `Contrast` の状態から作るワークスペースの一覧と、その差分（一覧の組み立てと差分は純粋）。
 //!
-//! core のワークスペースは全出力で共有され、数は変わらない。一覧の `id` と `idx` は `index + 1`（1 始まり）、
-//! `name` は `None`。出力が表示しているワークスペースの `output` はその出力、表示していない（隠れた）ものは
-//! 主出力（先頭の出力）。複数出力は対象外（プロトタイプは出力 1 つ）。
+//! 固定のワークスペース（core の `Fixed`）は全出力で共有される。一覧の `idx` は位置 + 1、`name` は `None`。
+//! 出力が表示しているワークスペースの `output` はその出力、表示していない（隠れた）ものは主出力（先頭の出力）。
+//! 動的なワークスペース（`Dynamic`）は出力ごとの列（core の D74）。niri と同じく、`idx` は出力の列の中の位置 + 1、
+//! `output` は持ち主の出力、`is_active` はその出力の表示中、`is_focused` はアクティブな出力の表示中（niri の
+//! `ipc_refresh_workspaces`）。
 
 use contrast_core::{IdKind, WorkspaceIndex};
 
@@ -37,6 +39,42 @@ pub(crate) fn build_workspaces(
                 is_focused: owner.is_some_and(|(name, _)| Some(name.as_str()) == focused_output),
                 active_window_id: None,
             }
+        })
+        .collect()
+}
+
+/// 出力ごとの列から、ワークスペースの一覧を作る（`Dynamic`）。
+///
+/// `outputs` は出力ごとの（名前, 列の id の並び, 表示中の位置）を OutputId 昇順に。`focused_output` はアクティブな出力の名前。
+/// 出力が無いときは `unowned`（持ち主の無い列）を、`output` が `None` で、どれも表示中でない一覧にする。
+pub(crate) fn build_per_output(
+    outputs: &[(String, Vec<u64>, usize)],
+    unowned: &[u64],
+    focused_output: Option<&str>,
+) -> Vec<Workspace> {
+    let entry = |id: u64, position: usize, output: Option<&str>, active: bool| Workspace {
+        id,
+        idx: u8::try_from(position.saturating_add(1)).unwrap_or(u8::MAX),
+        name: None,
+        output: output.map(str::to_owned),
+        is_urgent: false,
+        is_active: active,
+        is_focused: active && output.is_some() && output == focused_output,
+        active_window_id: None,
+    };
+    if outputs.is_empty() {
+        return unowned
+            .iter()
+            .enumerate()
+            .map(|(i, id)| entry(*id, i, None, false))
+            .collect();
+    }
+    outputs
+        .iter()
+        .flat_map(|(name, ids, shown)| {
+            ids.iter()
+                .enumerate()
+                .map(move |(i, id)| entry(*id, i, Some(name.as_str()), i == *shown))
         })
         .collect()
 }
@@ -88,22 +126,43 @@ impl Contrast {
     /// いまのワークスペースの一覧。出力が無ければ、`output` が `None` で、どれも表示中でない一覧。
     pub(crate) fn ipc_workspaces(&self) -> Vec<Workspace> {
         let view = self.core.view();
-        let shown: Vec<(String, u8)> = self
-            .space
-            .outputs()
-            .filter_map(|output| {
-                let id = view.output_id(self.shell.output_key?)?;
-                let index = view.shown_workspace(id)?;
-                Some((output.name(), index.get()))
-            })
-            .take(1)
+        let focused = self.active_output().map(|o| o.name());
+        // 出力を OutputId 昇順（core の全体の並びと同じ順）に。
+        let mut outputs: Vec<(contrast_core::OutputId, String)> = self
+            .shell
+            .outputs
+            .iter()
+            .filter_map(|(k, o)| Some((view.output_id(*k)?, o.name())))
             .collect();
-        let focused = shown.first().map(|(name, _)| name.as_str());
+        outputs.sort();
         let ids: Vec<u64> = (0..view.workspace_count())
             .filter_map(|i| view.workspace_id(WorkspaceIndex::new(i)))
             .map(|id| id.raw())
             .collect();
-        build_workspaces(&ids, &shown, focused)
+        if self.policy.workspace_mode() == contrast_core::WorkspaceMode::Dynamic {
+            let lists: Vec<(String, Vec<u64>, usize)> = outputs
+                .iter()
+                .map(|(id, name)| {
+                    let list: Vec<u64> = view
+                        .output_workspaces(*id)
+                        .iter()
+                        .map(|w| w.raw())
+                        .collect();
+                    let shown = view
+                        .shown_workspace(*id)
+                        .and_then(|i| view.workspace_id(i))
+                        .and_then(|w| list.iter().position(|x| *x == w.raw()))
+                        .unwrap_or(0);
+                    (name.clone(), list, shown)
+                })
+                .collect();
+            return build_per_output(&lists, &ids, focused.as_deref());
+        }
+        let shown: Vec<(String, u8)> = outputs
+            .iter()
+            .filter_map(|(id, name)| Some((name.clone(), view.shown_workspace(*id)?.get())))
+            .collect();
+        build_workspaces(&ids, &shown, focused.as_deref())
     }
 }
 
@@ -279,5 +338,37 @@ mod tests {
                 focused: true
             }]
         );
+    }
+
+    #[test]
+    fn per_output_lists_number_each_output_from_one_and_focus_only_the_active_output() {
+        let outputs = vec![
+            ("A".to_owned(), vec![1, 3], 0),
+            ("B".to_owned(), vec![2, 5, 4], 1),
+        ];
+        let list = build_per_output(&outputs, &[], Some("B"));
+        let summary: Vec<(u64, u8, Option<&str>, bool, bool)> = list
+            .iter()
+            .map(|w| (w.id, w.idx, w.output.as_deref(), w.is_active, w.is_focused))
+            .collect();
+        assert_eq!(
+            summary,
+            [
+                (1, 1, Some("A"), true, false),
+                (3, 2, Some("A"), false, false),
+                (2, 1, Some("B"), false, false),
+                (5, 2, Some("B"), true, true),
+                (4, 3, Some("B"), false, false),
+            ]
+        );
+    }
+
+    #[test]
+    fn without_outputs_the_unowned_list_has_no_output_and_nothing_active() {
+        let list = build_per_output(&[], &[7, 8], None);
+        let summary: Vec<(u64, u8, bool)> =
+            list.iter().map(|w| (w.id, w.idx, w.is_active)).collect();
+        assert_eq!(summary, [(7, 1, false), (8, 2, false)]);
+        assert!(list.iter().all(|w| w.output.is_none() && !w.is_focused));
     }
 }

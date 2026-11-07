@@ -338,7 +338,12 @@ impl Drm {
                 pointer_pos,
             )
         };
-        let elements = match scene_elements(state, renderer, &output_name, cursor) {
+        let origin = state
+            .space
+            .output_geometry(&output_name)
+            .map(|g| g.loc)
+            .unwrap_or_default();
+        let elements = match scene_elements(state, renderer, &output_name, origin, cursor) {
             Ok(e) => e,
             Err(e) => {
                 self.fail(state, DrmError::Frame(e.to_string()));
@@ -366,7 +371,7 @@ impl Drm {
         };
         match result {
             Ok(()) => {
-                finish_frame(state, &output_name);
+                finish_frame(state, std::slice::from_ref(&output_name));
                 if let CursorImageStatus::Surface(surface) = &cursor_status {
                     send_frames_surface_tree(
                         surface,
@@ -760,7 +765,7 @@ fn create_output(state: &mut Contrast, target: &Target) -> Result<Output, DrmErr
     state.space.map_output(&output, (0, 0));
     let rect = Rect::new(0, 0, mode.size.w, mode.size.h)
         .ok_or_else(|| DrmError::Config(format!("mode size {:?} is not positive", mode.size)))?;
-    state.output_added(&target.name, rect);
+    state.output_added(&output, rect);
     Ok(output)
 }
 

@@ -67,6 +67,12 @@ impl Contrast {
             Action::MoveColumnToWorkspace(n) => {
                 contrast_core::Action::MoveColumnToWorkspace(WorkspaceIndex::new(n))
             }
+            Action::FocusMonitor(direction) => {
+                return self.monitor_action(contrast_core::Action::FocusMonitor(direction));
+            }
+            Action::MoveColumnToMonitor(direction) => {
+                return self.monitor_action(contrast_core::Action::MoveColumnToMonitor(direction));
+            }
             Action::MoveWorkspaceDown => contrast_core::Action::MoveWorkspaceDown,
             Action::MoveWorkspaceUp => contrast_core::Action::MoveWorkspaceUp,
             Action::SwitchWorkspace(n) => {
@@ -77,6 +83,18 @@ impl Contrast {
             }
         };
         self.core_action(core_action);
+    }
+
+    /// 出力をまたぐ操作。アクティブな出力が変わったら、niri と同じくカーソルをその出力の中央へ動かす（`move_cursor_to_output`）。
+    fn monitor_action(&mut self, action: contrast_core::Action) {
+        let before = self.active_output();
+        self.core_action(action);
+        let after = self.active_output();
+        if after != before
+            && let Some(output) = after
+        {
+            self.warp_pointer_to(&output);
+        }
     }
 
     /// フォーカス列の幅を `percent` パーセントぶん増減する（core は絶対幅しか受けないので、ここで今の割合から求める）。
@@ -115,8 +133,8 @@ impl Contrast {
 
     /// 表示中のワークスペースの出力の作業領域の高さ。
     fn shown_area_height(&self) -> Option<i32> {
-        let output = self.space.outputs().next()?;
-        Some(self.space.output_geometry(output)?.size.h)
+        let output = self.active_output()?;
+        Some(self.space.output_geometry(&output)?.size.h)
     }
 
     /// フォーカス窓の矩形の高さ。
@@ -127,8 +145,8 @@ impl Contrast {
 
     /// 表示中のワークスペースの出力の作業領域の幅（core が窓を並べる領域の幅）。
     fn shown_area_width(&self) -> Option<i32> {
-        let output = self.space.outputs().next()?;
-        Some(self.space.output_geometry(output)?.size.w)
+        let output = self.active_output()?;
+        Some(self.space.output_geometry(&output)?.size.w)
     }
 
     /// フォーカス窓の矩形の幅（列の幅と同じ）。
@@ -137,11 +155,18 @@ impl Contrast {
         view.window(view.focus()?)?.rect.map(|r| r.width())
     }
 
-    /// 表示中のワークスペースの番号（0 始まり）。出力が無ければ `None`。
+    /// アクティブな出力の表示中のワークスペースの、その出力の列の中の番号（0 始まり。core の D73）。出力が無ければ `None`。
     pub(crate) fn shown_workspace_index(&self) -> Option<u8> {
+        self.shown_position(&self.active_output()?)
+    }
+
+    /// アクティブな出力の列のワークスペースの数（`Fixed` では全体の数）。
+    fn active_workspace_count(&self) -> u8 {
         let view = self.core.view();
-        let output = view.output_id(self.shell.output_key?)?;
-        view.shown_workspace(output).map(|i| i.get())
+        view.active_output()
+            .map(|o| view.output_workspaces(o).len())
+            .and_then(|n| u8::try_from(n).ok())
+            .unwrap_or_else(|| view.workspace_count())
     }
 
     /// 表示中の番号から `delta` だけ離れたワークスペースへ、`step` の操作をする。範囲外は何もしない。
@@ -150,7 +175,7 @@ impl Contrast {
         let Some(shown) = self.shown_workspace_index() else {
             return;
         };
-        let Some(target) = step_index(shown, delta, self.core.view().workspace_count()) else {
+        let Some(target) = step_index(shown, delta, self.active_workspace_count()) else {
             tracing::info!(
                 shown = shown + 1,
                 delta,

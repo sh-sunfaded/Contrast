@@ -12,12 +12,13 @@ use smithay::{
         element::{
             AsRenderElements, Kind, memory::MemoryRenderBufferRenderElement, render_elements,
             solid::SolidColorRenderElement, surface::WaylandSurfaceRenderElement,
+            utils::CropRenderElement,
         },
         gles::{GlesRenderer, GlesTarget, Uniform, element::PixelShaderElement},
     },
     desktop::{LayerSurface, layer_map_for_output},
     output::Output,
-    utils::{Buffer, Logical, Rectangle, Scale, Size},
+    utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size},
     wayland::dmabuf::{DmabufFeedback, DmabufFeedbackBuilder},
     wayland::shell::wlr_layer::Layer,
 };
@@ -79,11 +80,44 @@ render_elements! {
     Pixel=PixelShaderElement,
 }
 
+render_elements! {
+    /// 1 枚の描画先に複数の出力を並べて描くとき（winit で 1 窓を複数の出力に分ける検証用）の要素。
+    /// 出力ごとの要素を、その出力の範囲で切り抜く（スクロール列の画面外の窓が隣の出力に出ないように）。
+    pub FrameElement<=GlesRenderer>;
+    /// 切り抜かない要素（カーソルなど）。
+    Scene=SceneElement,
+    /// 出力の範囲で切り抜いた要素。
+    Cropped=CropRenderElement<SceneElement>,
+}
+
+/// 出力 `output` の要素を、描画先の原点が全体の論理座標の `origin` のときの位置で集め、出力の範囲で切り抜く。
+pub fn cropped_output_elements(
+    state: &mut Contrast,
+    renderer: &mut GlesRenderer,
+    output: &Output,
+    origin: Point<i32, Logical>,
+) -> Result<Vec<FrameElement>, RenderError> {
+    let Some(geo) = state.space.output_geometry(output) else {
+        return Ok(Vec::new());
+    };
+    let scale = output.current_scale().fractional_scale();
+    let crop: Rectangle<i32, Physical> =
+        Rectangle::new(geo.loc - origin, geo.size).to_physical_precise_round(scale);
+    let elements = scene_elements(state, renderer, output, origin, Vec::new())?;
+    Ok(elements
+        .into_iter()
+        .filter_map(|e| CropRenderElement::from_element(e, Scale::from(scale), crop))
+        .map(FrameElement::Cropped)
+        .collect())
+}
+
 /// 出力 1 枚分の要素を前から順に集める。`cursor` があれば最前面。
+/// `origin` は描画先の左上の、全体の論理座標（出力ごとの描画先なら出力の位置）。窓はこの出力に表示中のものだけ。
 pub fn scene_elements(
     state: &mut Contrast,
     renderer: &mut GlesRenderer,
     output: &Output,
+    origin: Point<i32, Logical>,
     cursor: Vec<SceneElement>,
 ) -> Result<Vec<SceneElement>, RenderError> {
     let appearance = state.policy.appearance();
@@ -105,11 +139,17 @@ pub fn scene_elements(
 
     let mut elements: Vec<SceneElement> = cursor;
     // 入力メソッドのポップアップ（候補ウィンドウ）は、カーソルの次に前面（枠・窓・レイヤー面より前）。
-    elements.extend(state.ime_popup_elements(renderer, scale));
+    elements.extend(state.ime_popup_elements(renderer, scale, origin));
     match shaders.as_ref().filter(|_| radius > 0) {
-        Some(sh) => elements.extend(ring_elements(state, sh, radius)),
-        None => elements.extend(border_elements(state).into_iter().map(SceneElement::Solid)),
+        Some(sh) => elements.extend(ring_elements(state, sh, radius, output, origin)),
+        None => elements.extend(
+            border_elements(state, output, origin)
+                .into_iter()
+                .map(SceneElement::Solid),
+        ),
     }
+    // レイヤー面の位置は出力の中の座標なので、描画先の原点からの出力のずれを足す。
+    let output_offset = geo.loc - origin;
 
     let layer_map = layer_map_for_output(output);
     let (lower, upper): (Vec<&LayerSurface>, Vec<&LayerSurface>) = layer_map
@@ -128,7 +168,7 @@ pub fn scene_elements(
                 >(
                     surface,
                     renderer,
-                    loc.to_physical_precise_round(scale),
+                    (loc + output_offset).to_physical_precise_round(scale),
                     Scale::from(scale),
                     1.0,
                 )
@@ -143,11 +183,37 @@ pub fn scene_elements(
     // 窓。角丸のときは、全画面の窓があるあいだは切り抜かない。
     let round = shaders
         .as_ref()
-        .filter(|_| radius > 0 && !state.has_visible_fullscreen());
-    for e in state
+        .filter(|_| radius > 0 && !state.has_visible_fullscreen(output));
+    // この出力に表示中の窓だけを、上に描かれるものから（Space の重なりの順）。
+    let on_output: Vec<smithay::desktop::Window> = {
+        let ids: Vec<contrast_core::WindowId> =
+            state.windows_on(output).iter().map(|w| w.id).collect();
+        let view = state.core.view();
+        ids.iter()
+            .filter_map(|id| view.window_key(*id))
+            .filter_map(|k| state.shell.windows.get(&k).cloned())
+            .collect()
+    };
+    let window_elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = state
         .space
-        .render_elements_for_region(renderer, &geo, scale, 1.0)
-    {
+        .elements()
+        .rev()
+        .filter(|w| on_output.contains(w))
+        .filter_map(|w| {
+            let loc = state.space.element_location(w)? - w.geometry().loc - origin;
+            Some(AsRenderElements::<GlesRenderer>::render_elements::<
+                WaylandSurfaceRenderElement<GlesRenderer>,
+            >(
+                w,
+                renderer,
+                loc.to_physical_precise_round(scale),
+                Scale::from(scale),
+                1.0,
+            ))
+        })
+        .flatten()
+        .collect();
+    for e in window_elements {
         elements.push(match round {
             Some(sh) => {
                 SceneElement::Rounded(RoundedSurface::new(e, sh.rounded.clone(), radius as f32))
@@ -157,7 +223,14 @@ pub fn scene_elements(
     }
 
     if let Some(sh) = shaders.as_ref() {
-        elements.extend(shadow_elements(state, sh, &appearance, radius));
+        elements.extend(shadow_elements(
+            state,
+            sh,
+            &appearance,
+            radius,
+            output,
+            origin,
+        ));
     }
     elements.extend(layer_elements(renderer, lower));
     Ok(elements)
@@ -174,7 +247,10 @@ pub fn render_scene(
     damage_tracker: &mut OutputDamageTracker,
 ) -> Result<(), RenderError> {
     let background = state.policy.background();
-    let elements = scene_elements(state, renderer, output, Vec::new())?;
+    let elements = match state.space.output_geometry(output) {
+        Some(geo) => scene_elements(state, renderer, output, geo.loc, Vec::new())?,
+        None => Vec::new(),
+    };
     damage_tracker
         .render_output(renderer, framebuffer, 0, &elements, background)
         .map(|_| ())
@@ -192,10 +268,10 @@ pub struct Shot {
 }
 
 /// `elements` を出力と同じ大きさのオフスクリーンに描いて、画素を読み出す（スクリーンショット）。
-pub fn capture(
+pub fn capture<E: smithay::backend::renderer::element::RenderElement<GlesRenderer>>(
     renderer: &mut GlesRenderer,
     output: &Output,
-    elements: &[SceneElement],
+    elements: &[E],
     background: [f32; 4],
 ) -> Result<Shot, RenderError> {
     let fail = |e: &dyn fmt::Display| RenderError::Render(format!("screenshot: {e}"));
@@ -244,11 +320,13 @@ pub fn capture(
 
 /// `screenshot-screen` が押されていれば、`elements` を読み出して保存する（押されていなければ何もしない）。
 /// 失敗しても描画は止めない（ログに出す）。
-pub fn take_screenshot_if_pending(
+pub fn take_screenshot_if_pending<
+    E: smithay::backend::renderer::element::RenderElement<GlesRenderer>,
+>(
     state: &mut Contrast,
     renderer: &mut GlesRenderer,
     output: &Output,
-    elements: &[SceneElement],
+    elements: &[E],
 ) {
     if !std::mem::take(&mut state.screenshot_pending) {
         return;
@@ -278,31 +356,49 @@ pub fn take_screenshot_if_pending(
 }
 
 /// 提出したあとの後始末: クライアントへ frame コールバックを送り、Space・popup・レイヤーを整理する。
-pub fn finish_frame(state: &mut Contrast, output: &Output) {
-    state.space.elements().for_each(|window| {
-        window.send_frame(
-            output,
-            state.start_time.elapsed(),
-            Some(Duration::ZERO),
-            |_, _| Some(output.clone()),
-        )
-    });
+/// `outputs` はこのフレームで描いた出力。窓には、表示している出力（なければ先頭の出力）で 1 回だけ送る。
+pub fn finish_frame(state: &mut Contrast, outputs: &[Output]) {
+    let Some(first) = outputs.first() else {
+        return;
+    };
+    let elapsed = state.start_time.elapsed();
+    let windows: Vec<(smithay::desktop::Window, Output)> = state
+        .space
+        .elements()
+        .map(|window| {
+            let output = window
+                .toplevel()
+                .and_then(|t| state.key_of_surface(t.wl_surface()))
+                .and_then(|k| state.core.view().window_id(k))
+                .and_then(|id| state.output_of_window(id))
+                .filter(|o| outputs.contains(o))
+                .unwrap_or_else(|| first.clone());
+            (window.clone(), output)
+        })
+        .collect();
+    for (window, output) in windows {
+        window.send_frame(&output, elapsed, Some(Duration::ZERO), |_, _| {
+            Some(output.clone())
+        });
+    }
 
     // 入力メソッドのポップアップにも frame コールバックを送る（消えたものは外す）。
     state.ime_popups.retain(|p| p.alive());
     for popup in &state.ime_popups {
         smithay::desktop::utils::send_frames_surface_tree(
             popup.wl_surface(),
-            output,
-            state.start_time.elapsed(),
+            first,
+            elapsed,
             Some(Duration::ZERO),
-            |_, _| Some(output.clone()),
+            |_, _| Some(first.clone()),
         );
     }
 
     state.space.refresh();
     state.popups.cleanup();
-    smithay::desktop::layer_map_for_output(output).cleanup();
+    for output in outputs {
+        smithay::desktop::layer_map_for_output(output).cleanup();
+    }
     let _ = state.display_handle.flush_clients();
 }
 
@@ -334,7 +430,13 @@ fn premultiplied(c: [f32; 4]) -> [f32; 4] {
 }
 
 /// 角丸のときの枠の輪（フォーカス窓と、設定があればフォーカス外の窓）。
-fn ring_elements(state: &mut Contrast, sh: &Shaders, radius: i32) -> Vec<SceneElement> {
+fn ring_elements(
+    state: &mut Contrast,
+    sh: &Shaders,
+    radius: i32,
+    output: &Output,
+    origin: Point<i32, Logical>,
+) -> Vec<SceneElement> {
     let b = state.policy.border_width();
     if b <= 0 {
         return Vec::new();
@@ -342,7 +444,12 @@ fn ring_elements(state: &mut Contrast, sh: &Shaders, radius: i32) -> Vec<SceneEl
     let ring = |rect: contrast_core::Rect, thickness: i32, color: [f32; 4]| {
         SceneElement::Pixel(PixelShaderElement::new(
             sh.ring.clone(),
-            logical(rect.x(), rect.y(), rect.width(), rect.height()),
+            logical(
+                rect.x() - origin.x,
+                rect.y() - origin.y,
+                rect.width(),
+                rect.height(),
+            ),
             None,
             1.0,
             vec![
@@ -355,7 +462,7 @@ fn ring_elements(state: &mut Contrast, sh: &Shaders, radius: i32) -> Vec<SceneEl
     };
     let mut out = Vec::new();
     // 枠は窓（フレーム）の外側に描く（niri のフォーカスリングと同じ）。
-    if let Some(frame) = state.focused_tile() {
+    if let Some(frame) = state.focused_tile(output) {
         out.push(ring(
             crate::geometry::outset(frame, b),
             b,
@@ -365,7 +472,7 @@ fn ring_elements(state: &mut Contrast, sh: &Shaders, radius: i32) -> Vec<SceneEl
     if let Some(color) = state.policy.unfocused_border_color() {
         let thin = unfocused_width(b, state.policy.appearance().inactive_border_width);
         if thin > 0 {
-            for frame in state.unfocused_tiles() {
+            for frame in state.unfocused_tiles(output) {
                 out.push(ring(crate::geometry::outset(frame, thin), thin, color));
             }
         }
@@ -379,6 +486,8 @@ fn shadow_elements(
     sh: &Shaders,
     appearance: &contrast_policy::Appearance,
     radius: i32,
+    output: &Output,
+    origin: Point<i32, Logical>,
 ) -> Vec<SceneElement> {
     let s = appearance.shadow;
     if s.blur <= 0 {
@@ -386,16 +495,16 @@ fn shadow_elements(
     }
     let border = appearance.border_width.max(0);
     let frame_radius = (radius + border) as f32;
-    let mut frames: Vec<contrast_core::Rect> = state.focused_tile().into_iter().collect();
-    frames.extend(state.unfocused_tiles());
+    let mut frames: Vec<contrast_core::Rect> = state.focused_tile(output).into_iter().collect();
+    frames.extend(state.unfocused_tiles(output));
     frames
         .into_iter()
         // 影は枠の外側の矩形に付ける。
         .map(|f| crate::geometry::outset(f, border))
         .map(|f| {
             let area = logical(
-                f.x() - s.blur + s.offset_x,
-                f.y() - s.blur + s.offset_y,
+                f.x() - s.blur + s.offset_x - origin.x,
+                f.y() - s.blur + s.offset_y - origin.y,
                 f.width() + 2 * s.blur,
                 f.height() + 2 * s.blur,
             );
@@ -421,18 +530,22 @@ fn unfocused_width(border: i32, inactive: Option<i32>) -> i32 {
 }
 
 /// フォーカス窓の枠（`focusColor`）と、設定があればフォーカス外の窓の枠（`borderColor`）の帯。
-fn border_elements(state: &mut Contrast) -> Vec<SolidColorRenderElement> {
+fn border_elements(
+    state: &mut Contrast,
+    output: &Output,
+    origin: Point<i32, Logical>,
+) -> Vec<SolidColorRenderElement> {
     let b = state.policy.border_width();
     let mut bands: Vec<(Band, [f32; 4])> = Vec::new();
     // 枠は窓（フレーム）の外側に描く。
-    if let Some(tile) = state.focused_tile()
+    if let Some(tile) = state.focused_tile(output)
         && let Some(es) = edges(crate::geometry::outset(tile, b), b)
     {
         let color = state.policy.focus_border_color();
         bands.extend(es.into_iter().map(|e| (e, color)));
     }
     if let Some(color) = state.policy.unfocused_border_color() {
-        for tile in state.unfocused_tiles() {
+        for tile in state.unfocused_tiles(output) {
             let thin = unfocused_width(b, state.policy.appearance().inactive_border_width);
             if let Some(es) = edges(crate::geometry::outset(tile, thin), thin) {
                 bands.extend(es.into_iter().map(|e| (e, color)));
@@ -449,7 +562,13 @@ fn border_elements(state: &mut Contrast) -> Vec<SolidColorRenderElement> {
         .zip(bands)
         .map(|(buffer, ((ex, ey, ew, eh), color))| {
             buffer.update((ew, eh), color);
-            SolidColorRenderElement::from_buffer(buffer, (ex, ey), 1.0, 1.0, Kind::Unspecified)
+            SolidColorRenderElement::from_buffer(
+                buffer,
+                (ex - origin.x, ey - origin.y),
+                1.0,
+                1.0,
+                Kind::Unspecified,
+            )
         })
         .collect()
 }

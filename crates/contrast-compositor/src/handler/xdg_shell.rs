@@ -84,10 +84,16 @@ impl Contrast {
         let Some(window) = self.window_of_surface(&root) else {
             return;
         };
-        let Some(output) = self.space.outputs().next() else {
+        // 窓を表示している出力（なければアクティブな出力）の中に収める。
+        let output = self
+            .key_of_surface(&root)
+            .and_then(|k| self.core.view().window_id(k))
+            .and_then(|id| self.output_of_window(id))
+            .or_else(|| self.active_output());
+        let Some(output) = output else {
             return;
         };
-        let Some(output_geo) = self.space.output_geometry(output) else {
+        let Some(output_geo) = self.space.output_geometry(&output) else {
             return;
         };
         let Some(window_geo) = self.space.element_geometry(&window) else {

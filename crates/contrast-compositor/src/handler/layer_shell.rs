@@ -33,7 +33,8 @@ impl WlrLayerShellHandler for Contrast {
         let output = output
             .as_ref()
             .and_then(Output::from_resource)
-            .or_else(|| self.space.outputs().next().cloned());
+            // 出力の指定が無ければ、アクティブな出力（niri と同じ）。
+            .or_else(|| self.active_output());
         let Some(output) = output else {
             tracing::warn!(namespace, "layer surface without an output, closing");
             surface.send_close();
@@ -68,7 +69,7 @@ impl WlrLayerShellHandler for Contrast {
             }
         }
         // 排他ゾーンが消えたぶん、窓の領域を広げる。
-        self.sync_output_insets();
+        self.sync_all_output_insets();
         if self.layer_focus.as_ref() == Some(&wl) {
             self.layer_focus = None;
             self.restore_window_focus();
@@ -96,7 +97,7 @@ pub fn handle_commit(state: &mut Contrast, surface: &WlSurface) {
     map.arrange();
     // 排他ゾーンが変わったかもしれない。窓の領域を取り直す（`map` を手放してから）。
     drop(map);
-    state.sync_output_insets();
+    state.sync_output_insets(&output);
     let map = layer_map_for_output(&output);
     let Some(layer) = map
         .layer_for_surface(surface, WindowSurfaceType::TOPLEVEL)
@@ -156,14 +157,21 @@ impl Contrast {
         &mut self,
         pos: smithay::utils::Point<f64, smithay::utils::Logical>,
     ) -> bool {
-        let Some(output) = self.space.outputs().next().cloned() else {
+        let Some(output) = self.output_at(pos.x, pos.y) else {
             return false;
         };
+        // レイヤー面の位置は出力の中の座標。
+        let origin = self
+            .space
+            .output_geometry(&output)
+            .map(|g| g.loc.to_f64())
+            .unwrap_or_default();
+        let local = pos - origin;
         let hit = {
             let map = layer_map_for_output(&output);
             [Layer::Overlay, Layer::Top]
                 .into_iter()
-                .find_map(|l| map.layer_under(l, pos).cloned())
+                .find_map(|l| map.layer_under(l, local).cloned())
         };
         let Some(layer) = hit else {
             return false;

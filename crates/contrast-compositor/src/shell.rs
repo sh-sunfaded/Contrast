@@ -11,6 +11,7 @@ use std::collections::BTreeMap;
 
 use smithay::{
     desktop::Window,
+    output::Output,
     reexports::{
         wayland_protocols::xdg::shell::server::xdg_toplevel,
         wayland_server::protocol::wl_surface::WlSurface,
@@ -20,8 +21,8 @@ use smithay::{
 };
 
 use contrast_core::{
-    Columns, Command, Core, CoreError, Effect, EntityId, ExternalKey, IdKind, OutputName, Point,
-    Rect, StateView, WindowId, WindowMeta, WindowState,
+    Columns, Command, Core, CoreError, Effect, EntityId, ExternalKey, IdKind, OutputId, OutputName,
+    Point, Rect, StateView, WindowId, WindowMeta, WindowState, WindowView,
 };
 
 use contrast_policy::{Policy, PortPlacement};
@@ -41,8 +42,8 @@ pub struct Shell {
     pub windows: BTreeMap<ExternalKey, Window>,
     /// 作られたが最初の commit をまだ受けていない窓（core には未登録）。
     pub pending: Vec<Window>,
-    /// 出力の ExternalKey（winit の出力は 1 つだけ）。
-    pub output_key: Option<ExternalKey>,
+    /// 出力の ExternalKey ⇔ Smithay の出力（core に登録済みのもの）。
+    pub outputs: BTreeMap<ExternalKey, Output>,
 }
 
 impl Shell {
@@ -100,15 +101,120 @@ impl Contrast {
             .and_then(|k| self.shell.windows.get(&k).cloned())
     }
 
-    /// フォーカス枠を描くべきタイル（表示中のフォーカス窓のもの。全画面なら枠なし）。
-    pub fn focused_tile(&self) -> Option<Rect> {
+    // ---- 出力 ----
+
+    /// 出力の ExternalKey の Smithay の出力。
+    pub fn output_of_key(&self, key: ExternalKey) -> Option<&Output> {
+        self.shell.outputs.get(&key)
+    }
+
+    /// Smithay の出力の ExternalKey。
+    pub fn key_of_output(&self, output: &Output) -> Option<ExternalKey> {
+        self.shell
+            .outputs
+            .iter()
+            .find(|(_, o)| *o == output)
+            .map(|(k, _)| *k)
+    }
+
+    /// core の OutputId の Smithay の出力。
+    pub fn output_of_id(&self, id: OutputId) -> Option<Output> {
+        let view = self.core.view();
+        self.shell
+            .outputs
+            .iter()
+            .find(|(k, _)| view.output_id(**k) == Some(id))
+            .map(|(_, o)| o.clone())
+    }
+
+    /// Smithay の出力の core の OutputId。
+    pub fn core_output(&self, output: &Output) -> Option<OutputId> {
+        self.core.view().output_id(self.key_of_output(output)?)
+    }
+
+    /// アクティブな出力（core の D75。`Fixed` では D5 のフォーカス出力）。出力が無ければ `None`。
+    pub fn active_output(&self) -> Option<Output> {
+        self.output_of_id(self.core.view().active_output()?)
+    }
+
+    /// 点 `(x, y)`（全体の論理座標）を含む出力。
+    pub fn output_at(&self, x: f64, y: f64) -> Option<Output> {
+        self.space.output_under((x, y)).next().cloned()
+    }
+
+    /// 窓 `id` を表示している出力（表示中でなければ `None`）。
+    pub fn output_of_window(&self, id: WindowId) -> Option<Output> {
+        let view = self.core.view();
+        let w = view.window(id)?;
+        if !w.visible {
+            return None;
+        }
+        self.output_of_id(view.workspace_output(w.workspace_id)?)
+    }
+
+    /// 出力 `output` に表示中の窓。
+    pub fn windows_on(&self, output: &Output) -> Vec<WindowView> {
+        let Some(id) = self.core_output(output) else {
+            return Vec::new();
+        };
+        let view = self.core.view();
+        view.visible_windows()
+            .into_iter()
+            .filter(|w| view.workspace_output(w.workspace_id) == Some(id))
+            .collect()
+    }
+
+    /// ポインタを出力 `output` の中央（niri の `center`: 位置 + 大きさ / 2）へ動かす。
+    pub fn warp_pointer_to(&mut self, output: &Output) {
+        let Some(geo) = self.space.output_geometry(output) else {
+            return;
+        };
+        let Some(pointer) = self.seat.get_pointer() else {
+            return;
+        };
+        let location = (
+            f64::from(geo.loc.x + geo.size.w / 2),
+            f64::from(geo.loc.y + geo.size.h / 2),
+        )
+            .into();
+        let under = self.surface_under_point(location);
+        pointer.motion(
+            self,
+            under,
+            &smithay::input::pointer::MotionEvent {
+                location,
+                serial: SERIAL_COUNTER.next_serial(),
+                time: 0,
+            },
+        );
+        pointer.frame(self);
+        tracing::info!(output = output.name(), "pointer warped to output");
+    }
+
+    /// 出力 `output` の表示中のワークスペースの、その出力の列の中の位置（0 始まり）。
+    pub fn shown_position(&self, output: &Output) -> Option<u8> {
+        let id = self.core_output(output)?;
+        let view = self.core.view();
+        let shown = view.workspace_id(view.shown_workspace(id)?)?;
+        let at = view
+            .output_workspaces(id)
+            .iter()
+            .position(|w| *w == shown)?;
+        u8::try_from(at).ok()
+    }
+
+    /// フォーカス枠を描くべきタイル（出力 `output` に表示中のフォーカス窓のもの。全画面なら枠なし）。
+    pub fn focused_tile(&self, output: &Output) -> Option<Rect> {
         let view = self.core.view();
         let w = view.window(view.focus()?)?;
         if !w.visible || w.state == WindowState::Fullscreen {
             return None;
         }
+        if self.output_of_window(w.id).as_ref() != Some(output) {
+            return None;
+        }
         w.rect
-            .map(|tile| self.displayed_frame(w.id, self.frame_of(tile, w.state)))
+            .map(|tile| self.displayed_frame(w.id, self.frame_of(tile, w.state, Some(output))))
     }
 
     /// 窓 `id` を今描くフレーム。補間の途中なら途中の矩形、そうでなければ行き先の `target`。
@@ -116,23 +222,22 @@ impl Contrast {
         self.anim.displayed(id).unwrap_or(target)
     }
 
-    /// フォーカス外の表示中の窓のタイル（全画面は除く）。フォーカス外の枠を描くのに使う。
-    pub fn unfocused_tiles(&self) -> Vec<Rect> {
-        let view = self.core.view();
-        let focus = view.focus();
-        view.visible_windows()
+    /// 出力 `output` のフォーカス外の表示中の窓のタイル（全画面は除く）。フォーカス外の枠を描くのに使う。
+    pub fn unfocused_tiles(&self, output: &Output) -> Vec<Rect> {
+        let focus = self.core.view().focus();
+        self.windows_on(output)
             .iter()
             .filter(|w| Some(w.id) != focus && w.state != WindowState::Fullscreen)
             .filter_map(|w| {
-                w.rect
-                    .map(|tile| self.displayed_frame(w.id, self.frame_of(tile, w.state)))
+                w.rect.map(|tile| {
+                    self.displayed_frame(w.id, self.frame_of(tile, w.state, Some(output)))
+                })
             })
             .collect()
     }
 
     /// core が窓を並べる領域（出力の論理矩形から、layer-shell の排他ゾーンを引いたもの）。出力がなければ `None`。
-    fn work_area(&self) -> Option<Rect> {
-        let output = self.space.outputs().next()?;
+    pub fn work_area(&self, output: &Output) -> Option<Rect> {
         let geo = self.space.output_geometry(output)?;
         let zone = smithay::desktop::layer_map_for_output(output).non_exclusive_zone();
         Rect::new(
@@ -145,17 +250,14 @@ impl Contrast {
 
     /// layer-shell の排他ゾーン（バーなど）を core の出力の余白として渡す。layer の追加・削除・サイズ変更（`arrange` のあと）と、
     /// 出力の大きさが変わったあとに呼ぶ。同じ値なら core は何もしない。
-    pub fn sync_output_insets(&mut self) {
-        let Some(key) = self.shell.output_key else {
+    pub fn sync_output_insets(&mut self, output: &Output) {
+        let Some(key) = self.key_of_output(output) else {
             return;
         };
-        let Some(output) = self.space.outputs().next().cloned() else {
+        let Some(geo) = self.space.output_geometry(output) else {
             return;
         };
-        let Some(geo) = self.space.output_geometry(&output) else {
-            return;
-        };
-        let zone = smithay::desktop::layer_map_for_output(&output).non_exclusive_zone();
+        let zone = smithay::desktop::layer_map_for_output(output).non_exclusive_zone();
         let (top, right, bottom, left) = crate::geometry::insets_from_zone(
             (geo.size.w, geo.size.h),
             (zone.loc.x, zone.loc.y, zone.size.w, zone.size.h),
@@ -169,28 +271,35 @@ impl Contrast {
         self.anim.suppress(false);
     }
 
-    /// 表示中の窓に全画面のものがあるか。
-    pub fn has_visible_fullscreen(&self) -> bool {
-        self.core
-            .view()
-            .visible_windows()
+    /// すべての出力の余白を取り直す。
+    pub fn sync_all_output_insets(&mut self) {
+        let outputs: Vec<Output> = self.shell.outputs.values().cloned().collect();
+        for output in outputs {
+            self.sync_output_insets(&output);
+        }
+    }
+
+    /// 出力 `output` に表示中の窓に全画面のものがあるか。
+    pub fn has_visible_fullscreen(&self, output: &Output) -> bool {
+        self.windows_on(output)
             .iter()
             .any(|w| w.state == WindowState::Fullscreen)
     }
 
     /// タイルから、隙間（`gap`・`outerGap`）を引いたフレーム（枠線の外側の矩形）。浮動・全画面は隙間なし。
-    pub fn frame_of(&self, tile: Rect, state: WindowState) -> Rect {
+    /// `output` は窓を表示している出力（スクロール列で、画面の端に接する辺に `outerGap` を引く基準）。
+    pub fn frame_of(&self, tile: Rect, state: WindowState, output: Option<&Output>) -> Rect {
         let layout = self.policy.layout_settings();
         if state != WindowState::Tiled || (layout.gap <= 0 && layout.outer_gap <= 0) {
             return tile;
         }
         let bounds = if self.layout_mode == contrast_core::LayoutMode::Scrolling {
             // スクロール列では、タイルが画面の外まで続く。画面（作業領域）の端に接する辺に `outerGap` を引く。
-            self.work_area()
+            output.and_then(|o| self.work_area(o))
         } else {
-            let view = self.core.view();
-            let tiles = view
-                .visible_windows()
+            let tiles = output
+                .map(|o| self.windows_on(o))
+                .unwrap_or_default()
                 .into_iter()
                 .filter(|w| w.state == WindowState::Tiled)
                 .filter_map(|w| w.rect);
@@ -214,11 +323,13 @@ impl Contrast {
         self.sync_space();
     }
 
-    /// 表示中で、タイル（枠を含む）が点 `(x, y)` を含む窓の ExternalKey。上に描かれている窓を優先する。
+    /// 点 `(x, y)` の出力に表示中で、タイル（枠を含む）がその点を含む窓の ExternalKey。上に描かれている窓を優先する。
+    /// 隣の出力の範囲にはみ出したスクロール列の窓は、その出力では当たらない。
     pub fn visible_key_at(&self, x: i32, y: i32) -> Option<ExternalKey> {
         let p = Point::new(x, y);
+        let output = self.output_at(f64::from(x), f64::from(y))?;
         let view = self.core.view();
-        let mut visible = view.visible_windows();
+        let mut visible = self.windows_on(&output);
         visible.sort_by_key(|w| stacking(w.state));
         visible
             .iter()
@@ -229,20 +340,37 @@ impl Contrast {
 
     // ---- Wayland のイベント → Command ----
 
-    /// 出力ができた。
-    pub fn output_added(&mut self, name: &str, geometry: Rect) {
+    /// 出力ができた（Space に置いたあとに呼ぶ）。
+    pub fn output_added(&mut self, output: &Output, geometry: Rect) {
         let key = self.shell.issue_key();
-        self.shell.output_key = Some(key);
-        self.submit(Command::OutputAdded {
+        self.shell.outputs.insert(key, output.clone());
+        // 出力が増えると、別の出力のワークスペースが移ってくることがある（D76）。窓はすぐ新しい矩形に置く。
+        self.anim.suppress(true);
+        let ok = self.submit(Command::OutputAdded {
             key,
-            name: OutputName::new(name),
+            name: OutputName::new(output.name()),
             geometry,
         });
+        self.anim.suppress(false);
+        if !ok {
+            self.shell.outputs.remove(&key);
+        }
     }
 
-    /// 出力の大きさが変わった。
-    pub fn output_changed(&mut self, geometry: Rect) {
-        let Some(key) = self.shell.output_key else {
+    /// 出力が外れた（Space から外す前に呼ぶ）。窓のあるワークスペースは、ほかの出力へ移る（D77）。
+    pub fn output_removed(&mut self, output: &Output) {
+        let Some(key) = self.key_of_output(output) else {
+            return;
+        };
+        self.shell.outputs.remove(&key);
+        self.anim.suppress(true);
+        self.submit(Command::OutputRemoved(key));
+        self.anim.suppress(false);
+    }
+
+    /// 出力の大きさか位置が変わった。
+    pub fn output_changed(&mut self, output: &Output, geometry: Rect) {
+        let Some(key) = self.key_of_output(output) else {
             return;
         };
         // 出力の大きさが変わるときは、窓をすぐ新しい矩形に置く（大きさの変更を追いかけて補間しない）。
@@ -335,6 +463,12 @@ impl Contrast {
     /// 座標の下の窓へのフォーカス要求（クリック）。窓の外なら何もしない。
     pub fn focus_at(&mut self, x: f64, y: f64) {
         let Some(key) = self.visible_key_at(x.floor() as i32, y.floor() as i32) else {
+            // 窓の無い所: その出力をアクティブにする（niri の `focus_output`。D80）。
+            if let Some(output) = self.output_at(x, y)
+                && let Some(key) = self.key_of_output(&output)
+            {
+                self.submit(Command::OutputFocusRequested(key));
+            }
             return;
         };
         let id = self.core.view().window_id(key);
@@ -407,14 +541,17 @@ impl Contrast {
                 ..
             } => tracing::info!(output = ?id, "output registered"),
             Effect::ShowWorkspace { output, .. } => {
-                let shown = self.core.view().shown_workspace(output);
+                let smithay_output = self.output_of_id(output);
+                let shown = smithay_output.as_ref().and_then(|o| self.shown_position(o));
                 tracing::info!(
+                    output = smithay_output.as_ref().map(|o| o.name()),
                     "show workspace={}",
-                    fmt_id(shown.map(|i| u64::from(i.get()) + 1))
+                    fmt_id(shown.map(|i| u64::from(i) + 1))
                 );
                 // 新しく見える窓が、切り替えの向きに合わせて画面の外から入ってくる（`Configure` の補間）。
-                if let (Some(shown), Some(area)) = (shown, self.work_area()) {
-                    self.anim.workspace_shown(shown.get(), area.height());
+                let area = smithay_output.as_ref().and_then(|o| self.work_area(o));
+                if let (Some(o), Some(shown), Some(area)) = (smithay_output.as_ref(), shown, area) {
+                    self.anim.workspace_shown(&o.name(), shown, area.height());
                 }
                 self.sync_space();
             }
@@ -446,9 +583,10 @@ impl Contrast {
             return;
         };
         let border = self.policy.border_width().max(0);
+        let output = self.output_of_window(id);
         let frame = match state {
             WindowState::Fullscreen => tile,
-            _ => self.frame_of(tile, state),
+            _ => self.frame_of(tile, state, output.as_ref()),
         };
         // 窓はフレームそのもの（枠は外側に描く）。
         let to_window = |frame: Rect| frame;
@@ -569,7 +707,10 @@ impl Contrast {
             // 補間の途中の窓は、途中の矩形に置く（行き先ではない）。
             let rect = match w.state {
                 WindowState::Fullscreen => tile,
-                _ => self.displayed_frame(w.id, self.frame_of(tile, w.state)),
+                _ => {
+                    let output = self.output_of_window(w.id);
+                    self.displayed_frame(w.id, self.frame_of(tile, w.state, output.as_ref()))
+                }
             };
             shown.push((window, rect));
         }

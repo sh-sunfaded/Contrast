@@ -84,7 +84,7 @@ impl Contrast {
         let tile = w.rect?;
         Some(match w.state {
             WindowState::Fullscreen => tile,
-            state => self.frame_of(tile, state),
+            state => self.frame_of(tile, state, self.output_of_window(w.id).as_ref()),
         })
     }
 
@@ -106,8 +106,11 @@ impl Contrast {
         if size.w <= 0 || size.h <= 0 {
             return None;
         }
-        let output = self.space.outputs().next()?;
-        let bounds = self.space.output_geometry(output)?;
+        // 候補ウィンドウは、カーソル（入力位置）のある出力の中に収める。
+        let output = self
+            .output_at(f64::from(origin.x), f64::from(origin.y))
+            .or_else(|| self.space.outputs().next().cloned())?;
+        let bounds = self.space.output_geometry(&output)?;
         let rect = popup.text_input_rectangle();
         let cursor = Rectangle::new(origin + rect.loc, rect.size);
         Some(place_popup(cursor, size, bounds))
@@ -118,13 +121,13 @@ impl Contrast {
         &self,
         renderer: &mut GlesRenderer,
         scale: f64,
+        origin: Point<i32, Logical>,
     ) -> Vec<SceneElement> {
         self.ime_popups
             .iter()
             .filter(|p| p.alive())
             .filter_map(|p| {
-                let at: Point<i32, Physical> = self
-                    .popup_placement(p)?
+                let at: Point<i32, Physical> = (self.popup_placement(p)? - origin)
                     .to_f64()
                     .to_physical_precise_round(scale);
                 Some(

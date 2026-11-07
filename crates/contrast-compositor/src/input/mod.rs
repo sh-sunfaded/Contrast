@@ -35,27 +35,65 @@ fn to_mods(m: &ModifiersState) -> Mods {
 }
 
 impl Contrast {
+    /// 全部の出力を囲む矩形（全体の論理座標）。出力が無ければ `None`。
+    pub fn outputs_bounds(&self) -> Option<smithay::utils::Rectangle<i32, Logical>> {
+        self.space
+            .outputs()
+            .filter_map(|o| self.space.output_geometry(o))
+            .reduce(|a, b| a.merge(b))
+    }
+
+    /// 座標の下にある surface と、その surface の原点の位置（ほかのモジュールから使う口）。
+    pub(crate) fn surface_under_point(
+        &self,
+        pos: Point<f64, Logical>,
+    ) -> Option<(WlSurface, Point<f64, Logical>)> {
+        self.surface_under(pos)
+    }
+
     /// 座標の下にある surface と、その surface の原点の位置。
     fn surface_under(&self, pos: Point<f64, Logical>) -> Option<(WlSurface, Point<f64, Logical>)> {
         use smithay::{desktop::layer_map_for_output, wayland::shell::wlr_layer::Layer};
-        let output = self.space.outputs().next().cloned();
+        let output = self.output_at(pos.x, pos.y);
+        // レイヤー面の位置は出力の中の座標なので、出力の位置を引いて探し、足して返す。
+        let origin = output
+            .as_ref()
+            .and_then(|o| self.space.output_geometry(o))
+            .map(|g| g.loc)
+            .unwrap_or_default();
         let layer_hit = |layers: [Layer; 2]| {
             let output = output.as_ref()?;
             let map = layer_map_for_output(output);
+            let local = pos - origin.to_f64();
             layers.into_iter().find_map(|l| {
-                let layer = map.layer_under(l, pos)?;
+                let layer = map.layer_under(l, local)?;
                 let geo = map.layer_geometry(layer)?;
                 layer
-                    .surface_under(pos - geo.loc.to_f64(), WindowSurfaceType::ALL)
-                    .map(|(s, p)| (s, (p + geo.loc).to_f64()))
+                    .surface_under(local - geo.loc.to_f64(), WindowSurfaceType::ALL)
+                    .map(|(s, p)| (s, (p + geo.loc + origin).to_f64()))
             })
         };
         if let Some(hit) = layer_hit([Layer::Overlay, Layer::Top]) {
             return Some(hit);
         }
+        // 窓は、その出力に表示中のものだけ（隣の出力にはみ出したスクロール列の窓は当たらない）。
+        let on_output: Vec<smithay::desktop::Window> = output
+            .as_ref()
+            .map(|o| {
+                let view = self.core.view();
+                self.windows_on(o)
+                    .iter()
+                    .filter_map(|w| view.window_key(w.id))
+                    .filter_map(|k| self.shell.windows.get(&k).cloned())
+                    .collect()
+            })
+            .unwrap_or_default();
         self.space
-            .element_under(pos)
-            .and_then(|(window, location)| {
+            .elements()
+            .rev()
+            .filter(|w| on_output.contains(w))
+            .find_map(|window| {
+                let location = self.space.element_location(window)? - window.geometry().loc;
                 window
                     .surface_under(pos - location.to_f64(), WindowSurfaceType::ALL)
                     .map(|(s, p)| (s, (p + location).to_f64()))
@@ -92,9 +130,11 @@ impl Contrast {
                 self.on_key(event.key_code(), event.state(), Event::time_msec(&event))
             }
             InputEvent::PointerMotionAbsolute { event, .. } => {
-                let output = self.space.outputs().next().expect("one output").clone();
-                let output_geo = self.space.output_geometry(&output).expect("mapped output");
-                let pos = event.position_transformed(output_geo.size) + output_geo.loc.to_f64();
+                // 絶対座標（winit のホストの窓）は、全部の出力を囲む矩形に対する位置（winit で 1 窓を複数の出力に分けるとき）。
+                let Some(bounds) = self.outputs_bounds() else {
+                    return;
+                };
+                let pos = event.position_transformed(bounds.size) + bounds.loc.to_f64();
                 let serial = SERIAL_COUNTER.next_serial();
                 let pointer = self.seat.get_pointer().expect("seat has pointer");
                 let under = self.surface_under(pos);
@@ -111,19 +151,26 @@ impl Contrast {
                 self.follow_focus(pos);
             }
             InputEvent::PointerMotion { event, .. } => {
-                let Some(output) = self.space.outputs().next().cloned() else {
-                    return;
-                };
-                let Some(output_geo) = self.space.output_geometry(&output) else {
-                    return;
-                };
                 let Some(pointer) = self.seat.get_pointer() else {
                     return;
                 };
-                let pos = clamp_to(
-                    pointer.current_location() + event.delta(),
-                    output_geo.to_f64(),
-                );
+                let current = pointer.current_location();
+                let moved = current + event.delta();
+                // 出力の外へ出るなら、今いる出力（なければ最初の出力）の中に留める（niri と同じ）。
+                let pos = if self.output_at(moved.x, moved.y).is_some() {
+                    moved
+                } else {
+                    let Some(output) = self
+                        .output_at(current.x, current.y)
+                        .or_else(|| self.space.outputs().next().cloned())
+                    else {
+                        return;
+                    };
+                    let Some(output_geo) = self.space.output_geometry(&output) else {
+                        return;
+                    };
+                    clamp_to(moved, output_geo.to_f64())
+                };
                 let under = self.surface_under(pos);
                 pointer.motion(
                     self,

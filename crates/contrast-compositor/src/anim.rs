@@ -135,7 +135,7 @@ pub struct Animator {
     /// ワークスペースの切り替えで新しく見える窓が、縦にこれだけずれた位置から入ってくる（px）。
     slide: Option<i32>,
     /// 最後に表示したワークスペースの番号。切り替えの向きを決める。
-    last_workspace: Option<u8>,
+    last_workspace: std::collections::BTreeMap<String, u8>,
     /// 補間を止めている間（出力の大きさの変更中など）。矩形はすぐ行き先になる。
     suppressed: bool,
 }
@@ -235,8 +235,9 @@ impl Animator {
 
     /// 表示するワークスペースが `workspace` になった。前と違えば、新しく見える窓は、番号が大きくなる向きなら
     /// 下から、小さくなる向きなら上から（`height` だけずれた位置から）入ってくる。`submit` の終わりに `end_slide` で戻す。
-    pub fn workspace_shown(&mut self, workspace: u8, height: i32) {
-        if let Some(previous) = self.last_workspace
+    /// 出力ごとに覚える（`output` は出力の名前。番号はその出力の列の中の位置）。
+    pub fn workspace_shown(&mut self, output: &str, workspace: u8, height: i32) {
+        if let Some(previous) = self.last_workspace.get(output).copied()
             && previous != workspace
         {
             self.slide = Some(if workspace > previous {
@@ -245,7 +246,7 @@ impl Animator {
                 height.saturating_neg()
             });
         }
-        self.last_workspace = Some(workspace);
+        self.last_workspace.insert(output.to_string(), workspace);
     }
 
     /// ワークスペースの切り替えによる縦のずれをやめる。
@@ -398,25 +399,25 @@ mod tests {
         let (mut a, t0) = (Animator::default(), Instant::now());
         let to = r(0, 0, 100, 100);
         // 最初の表示では、ずらさない。
-        a.workspace_shown(0, 600);
+        a.workspace_shown("out", 0, 600);
         assert_eq!(a.retarget(v[0], to, t0, MS, true), to);
         a.end_slide();
         // 0 → 1: 新しく見える窓は下から入る。
-        a.workspace_shown(1, 600);
+        a.workspace_shown("out", 1, 600);
         assert_eq!(a.retarget(v[1], to, t0, MS, true), r(0, 600, 100, 100));
         // 表示済みの窓は、ずらさない。
         assert_eq!(a.retarget(v[0], to, t0, MS, true), to);
         a.end_slide();
         // 1 → 0: 上から入る。
         let mut b = Animator::default();
-        b.workspace_shown(1, 600);
+        b.workspace_shown("out", 1, 600);
         b.end_slide();
-        b.workspace_shown(0, 600);
+        b.workspace_shown("out", 0, 600);
         assert_eq!(b.retarget(v[1], to, t0, MS, true), r(0, -600, 100, 100));
         // 同じワークスペースの再表示では、ずらさない。
         let mut c = Animator::default();
-        c.workspace_shown(2, 600);
-        c.workspace_shown(2, 600);
+        c.workspace_shown("out", 2, 600);
+        c.workspace_shown("out", 2, 600);
         assert_eq!(c.retarget(v[0], to, t0, MS, true), to);
     }
 
