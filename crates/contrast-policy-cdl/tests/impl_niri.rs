@@ -161,9 +161,15 @@ fn niri_example_binds_resolve_to_the_expected_actions() -> Result<(), String> {
     assert_eq!(s.resolve_key(ctrl, "k"), Some(Action::MoveUp));
     assert_eq!(s.resolve_key(ctrl, "Down"), Some(Action::MoveDown));
     assert_eq!(s.resolve_key(m, "c"), Some(Action::CenterColumn));
-    // まだ対応しないキーは何もしない（consume-or-expel-window-left/right）。
-    assert_eq!(s.resolve_key(m, "BracketLeft"), None);
-    assert_eq!(s.resolve_key(m, "BracketRight"), None);
+    // consume-or-expel-window-left/right（niri の Mod+[ と Mod+]）。
+    assert_eq!(
+        s.resolve_key(m, "BracketLeft"),
+        Some(Action::ConsumeOrExpelWindowLeft)
+    );
+    assert_eq!(
+        s.resolve_key(m, "BracketRight"),
+        Some(Action::ConsumeOrExpelWindowRight)
+    );
     Ok(())
 }
 
