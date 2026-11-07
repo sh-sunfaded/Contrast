@@ -17,6 +17,9 @@ fn outcome(result: DeviceConfigResult) -> &'static str {
     }
 }
 
+/// タッチパッドの dwtp（トラックポイント操作中の無効化）。niri の既定に合わせて off に固定する。
+const DISABLE_WHILE_TRACKPOINTING: bool = false;
+
 /// タッチパッドに `settings` を適用する。タッチパッドでなければ何もしない。適用した項目をログに出す。
 pub fn apply(device: &mut Device, settings: &InputSettings) {
     // タップのできるポインタデバイスをタッチパッドとみなす（マウスには触らない）。
@@ -39,12 +42,20 @@ pub fn apply(device: &mut Device, settings: &InputSettings) {
     } else {
         "unsupported"
     };
+    // niri はタッチパッドの dwtp（トラックポイント操作中の無効化）を毎回 off に設定する（`dwtp` の設定の既定が off。
+    // 作者の config.kdl は書いていない）。libinput の既定に任せない。
+    let dwtp = if device.config_dwtp_is_available() {
+        outcome(device.config_dwtp_set_enabled(DISABLE_WHILE_TRACKPOINTING))
+    } else {
+        "unsupported"
+    };
     tracing::info!(
         device = device.name(),
         tap,
         natural_scroll = scroll,
         accel,
         disable_while_typing = dwt,
+        disable_while_trackpointing = dwtp,
         "input: touchpad configured"
     );
 }
