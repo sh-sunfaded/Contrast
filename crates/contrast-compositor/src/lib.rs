@@ -16,6 +16,7 @@ mod reload;
 mod render;
 mod shell;
 mod spawn;
+mod spring;
 mod state;
 
 use std::path::PathBuf;

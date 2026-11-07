@@ -421,10 +421,10 @@ impl Contrast {
         // 窓はフレームそのもの（枠は外側に描く）。
         let to_window = |frame: Rect| frame;
         // 全画面にするときは補間しない（全画面から戻るときは、全画面の矩形から補間する）。
-        let duration = self.animation_duration();
+        let motion = self.animation_motion();
         let animate = state != WindowState::Fullscreen;
         let now = std::time::Instant::now();
-        let shown = self.anim.retarget(id, frame, now, duration, animate);
+        let shown = self.anim.retarget(id, frame, now, motion, animate);
         self.apply_rect(&window, to_window(shown), state);
         let rect = to_window(frame);
         tracing::info!(
@@ -439,9 +439,17 @@ impl Contrast {
         );
     }
 
-    /// 補間にかける時間（`Layout.animationMs`）。
-    fn animation_duration(&self) -> std::time::Duration {
-        std::time::Duration::from_millis(u64::from(self.policy.layout_settings().animation_ms))
+    /// 補間の曲線（`Layout.animation` と `Layout.animationMs`）。`animationMs` が 0 なら補間しない。
+    fn animation_motion(&self) -> crate::anim::Motion {
+        use contrast_policy::AnimationKind;
+        let settings = self.policy.layout_settings();
+        let off = settings.animation_ms == 0;
+        match settings.animation {
+            AnimationKind::Spring if !off => crate::anim::Motion::Spring,
+            _ => crate::anim::Motion::Easing(std::time::Duration::from_millis(u64::from(
+                settings.animation_ms,
+            ))),
+        }
     }
 
     /// 窓に大きさと状態を伝え、Space 上の位置を合わせる（ログなし。補間の毎フレームからも呼ぶ）。
@@ -466,8 +474,7 @@ impl Contrast {
 
     /// 補間を 1 フレーム進める（描画の前に呼ぶ）。まだ続くなら `true`（次のフレームも描く）。
     pub fn tick_animations(&mut self) -> bool {
-        let duration = self.animation_duration();
-        for (id, frame) in self.anim.tick(std::time::Instant::now(), duration) {
+        for (id, frame) in self.anim.tick(std::time::Instant::now()) {
             let Some(window) = self.window_of_id(id) else {
                 continue;
             };

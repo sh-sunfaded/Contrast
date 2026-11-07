@@ -13,7 +13,8 @@ use contrast_policy::settings::{
     MAX_HIDE_AFTER_INACTIVE_MS, MAX_WINDOW_HEIGHT_PX, MAX_WORKSPACES, rgba8,
 };
 use contrast_policy::{
-    Action, ConfigDiagnostic, KeyBinding, KeySpec, ModKey, Settings, StartupCommand, codes,
+    Action, AnimationKind, ConfigDiagnostic, KeyBinding, KeySpec, ModKey, Settings, StartupCommand,
+    codes,
 };
 
 use crate::diag::{at, convert};
@@ -297,6 +298,15 @@ fn read_layout(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
                 format!("`defaultColumnWidth` は 0 より大きく 1 以下の数（{w} は使えない）"),
             ),
         }
+    }
+    match cx.optional::<String>(node, "animation").as_deref() {
+        None | Some("easing") => {}
+        Some("spring") => settings.layout.animation = AnimationKind::Spring,
+        Some(other) => cx.error(
+            node,
+            codes::BAD_PROP,
+            format!("`animation` は \"easing\" か \"spring\"（`{other}` は使えない）"),
+        ),
     }
     if let Some(ms) = cx.optional::<f64>(node, "animationMs") {
         match integer_in(ms, 0, MAX_ANIMATION_MS) {

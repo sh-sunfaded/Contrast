@@ -121,6 +121,16 @@ impl Default for Shadow {
     }
 }
 
+/// 窓の移動・大きさの変化・ワークスペース切替の補間の曲線。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AnimationKind {
+    /// ease-out の 3 次。かける時間は `animation_ms`。
+    #[default]
+    Easing,
+    /// niri の既定のバネ（窓の移動・リサイズ・ビューの横移動、ワークスペースの切り替え）。`animation_ms` が 0 なら補間しない。
+    Spring,
+}
+
 /// 窓の並べ方の設定。
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct LayoutSettings {
@@ -136,8 +146,10 @@ pub struct LayoutSettings {
     pub preset_column_widths: Vec<contrast_core::Ratio>,
     /// プリセットの窓の高さ。空なら core の既定（1/3・1/2・2/3）。
     pub window_height_presets: Vec<contrast_core::Ratio>,
-    /// 窓の移動・大きさの変化・ワークスペース切替の補間にかける時間（ミリ秒）。0 で補間しない。
+    /// 窓の移動・大きさの変化・ワークスペース切替の補間にかける時間（ミリ秒。`Easing` のとき）。0 で補間しない（`Spring` も）。
     pub animation_ms: u32,
+    /// 補間の曲線。
+    pub animation: AnimationKind,
 }
 
 /// `set-window-height` の `heightPx` の上限（px）。

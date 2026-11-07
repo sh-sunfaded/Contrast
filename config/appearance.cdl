@@ -24,6 +24,7 @@ export const layout = (
     outerGap={GAP}
     defaultColumnWidth={DEFAULT_COLUMN_WIDTH}
     presetColumnWidths={PRESET_COLUMN_WIDTHS}
+    animation="spring"
     animationMs={ANIMATION_MS}
   />
 );

@@ -13,7 +13,7 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
 | `Contrast` | `modKey?: "alt" \| "super"`（省略時は下記の優先順位で決まる） | `Appearance` \| `Workspaces` \| `Layout` \| `Cursor` \| `Input` \| `Startup` \| `DataControlClient` \| `Environment` \| `Keybind` | `Appearance`、`Workspaces`、`Layout`、`Cursor`、`Input`、`Environment` |
 | `Appearance` | `borderWidth: Length`、`focusColor: Color`、`borderColor?: Color`、`background?: Color`、`radius?: Length`、`shadowBlur?: Length`、`shadowOffsetX?: Length`、`shadowOffsetY?: Length`、`shadowColor?: Color`、`inactiveBorderWidth?: Length` | なし | — |
 | `Workspaces` | `count: number`（整数、1〜32）、`mode?: "fixed" \| "dynamic"`（既定 `"fixed"`） | なし | — |
-| `Layout` | `gap?: Length`、`outerGap?: Length`、`mode?: "equal" \| "scrolling"`（既定 `"equal"`）、`defaultColumnWidth?: number`、`presetColumnWidths?: string`、`windowHeightPresets?: string`、`animationMs?: number`（既定 0） | なし | — |
+| `Layout` | `gap?: Length`、`outerGap?: Length`、`mode?: "equal" \| "scrolling"`（既定 `"equal"`）、`defaultColumnWidth?: number`、`presetColumnWidths?: string`、`windowHeightPresets?: string`、`animation?: "easing" \| "spring"`（既定 `"easing"`）、`animationMs?: number`（既定 0） | なし | — |
 | `Cursor` | `theme?: string`、`size?: number`、`hideAfterInactiveMs?: number` | なし | — |
 | `Input` | `tapToClick?: boolean`（既定 true）、`naturalScroll?: boolean`（既定 false）、`accelSpeed?: number`（-1〜1、既定 0）、`disableWhileTyping?: boolean`（既定 true）、`focusFollowsMouse?: boolean`（既定 false） | なし | — |
 | `Startup` | `command: string`、`ipc?: "niri"` | なし | —（複数可） |

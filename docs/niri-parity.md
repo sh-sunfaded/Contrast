@@ -18,7 +18,7 @@ niri の設定の既定値は niri の既定（wiki / パッケージの既定�
 | `shadow` | いいえ | △ → **N1 で実装**（`shadowBlur` / `shadowOffsetX/Y` / `shadowColor`） | 影のシェーダ | M |
 | `geometry-corner-radius` | いいえ | △ → **N1 で実装**（`Appearance.radius`） | 窓の角丸シェーダ（カスタムテクスチャシェーダ） | M |
 | 背景 | はい（swaybg） | ○ 背景色 `Appearance.background`。壁紙は swaybg が layer-shell の背景面で動く | — | — |
-| `animations`（既定のまま） | 既定 | ○ **N2 で実装**（`Layout.animationMs`。窓の移動・大きさ・ワークスペース切替の矩形の補間）。窓の開閉の補間は未 | 開閉（出ていく窓・開く窓）の補間 | M |
+| `animations`（既定のまま） | 既定 | ○ **N2 で実装**（`Layout.animation="spring"`＝niri の既定のバネ曲線、`Layout.animationMs` は無効化（0）。窓の移動・大きさ・ワークスペース切替の矩形の補間）。窓の開閉の補間は未 | 開閉（出ていく窓・開く窓）の補間 | M |
 | `cursor`（xcursor-theme Cecilia、size 24） | はい | ○ `XCURSOR_THEME` / `XCURSOR_SIZE`。→ N1 で CDL の `Cursor` を足した | CDL > 環境変数 | S |
 | `cursor.hide-after-inactive-ms` | いいえ | ○ **N2 で実装**（`Cursor.hideAfterInactiveMs`） | — | — |
 | `hotkey-overlay` | いいえ | × 該当なし | オーバーレイ描画 | M |

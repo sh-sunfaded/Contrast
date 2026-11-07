@@ -66,7 +66,7 @@
 | `layout { gaps 16 }` | `Layout.gap`・`outerGap` | |
 | `default-column-width { proportion 0.5; }`、`preset-column-widths` | `Layout.defaultColumnWidth`・`presetColumnWidths` | 0.33333 0.5 0.66667 |
 | スクロールするレイアウト | `Layout.mode="scrolling"` | |
-| `animations`（既定） | `Layout.animationMs` | 150 |
+| `animations`（既定） | `Layout.animation="spring"`（niri の既定のバネ: 減衰比 1.0、stiffness 800／ワークスペース切替は 1000）と `Layout.animationMs`（0 で無効） | 150 |
 | `focus-ring`（width 4、active #7fc8ff、inactive #505050） | `Appearance.borderWidth`・`focusColor`・`borderColor` | |
 | `cursor`（Cecilia、24） | `Cursor.theme`・`size` | |
 | `input.touchpad`（tap、natural-scroll） | `Input.tapToClick`・`naturalScroll` | |

@@ -50,6 +50,7 @@ fn the_config_loads_without_diagnostics() -> Result<(), String> {
     assert_eq!(s.layout.gap, 16);
     assert_eq!(s.layout.outer_gap, 16);
     assert_eq!(s.layout.animation_ms, 150);
+    assert_eq!(s.layout.animation, contrast_policy::AnimationKind::Spring);
     assert_eq!(s.layout.preset_column_widths.len(), 3);
     assert_eq!(s.appearance.border_width, 4);
     assert_eq!(s.appearance.radius, 0);

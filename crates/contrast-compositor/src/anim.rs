@@ -1,13 +1,72 @@
 //! 窓の矩形の補間（移動・大きさの変化・ワークスペース切替のアニメーション）。
 //!
 //! 補間するのは、窓ごとの「フレーム」（隙間を引いたあと、枠の外側の矩形）。配置の判断は core がするので、
-//! ここは core が決めた行き先の矩形へ、今の矩形から滑らかに近づけるだけ（イージングは ease-out の 3 次）。
-//! 時刻は呼び出し側が渡す（この型は時計を読まない）。
+//! ここは core が決めた行き先の矩形へ、今の矩形から滑らかに近づけるだけ。曲線は、ease-out の 3 次（`Layout.animationMs`）か、
+//! niri の既定のバネ（`Layout.animation="spring"`。窓の移動・リサイズ・ビューの横移動は stiffness 800、ワークスペースの切り替えで
+//! 新しく見える窓は 1000。どちらも減衰比 1.0）。時刻は呼び出し側が渡す（この型は時計を読まない）。
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
 
 use contrast_core::{Rect, WindowId};
+
+use crate::spring::{Spring, SpringParams};
+
+/// 補間の曲線の指定。
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Motion {
+    /// ease-out の 3 次。`Duration` はかける時間（0 なら補間しない）。
+    Easing(Duration),
+    /// niri の既定のバネ（窓の移動・リサイズは stiffness 800。ワークスペースの切り替えは 1000）。
+    Spring,
+}
+
+impl From<Duration> for Motion {
+    fn from(duration: Duration) -> Self {
+        Self::Easing(duration)
+    }
+}
+
+/// 始まるときに決めた曲線と、その所要時間。
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Curve {
+    /// ease-out の 3 次と、かける時間。
+    Easing(Duration),
+    /// 0 から 1 へのバネと、収束までの時間。
+    Spring(Spring, Duration),
+}
+
+impl Curve {
+    /// 時刻 `elapsed` の進み具合（0.0〜1.0）と、終わったか。
+    fn at(self, elapsed: Duration) -> (f64, bool) {
+        match self {
+            Self::Easing(total) => {
+                let t = progress(elapsed, total);
+                (ease_out(t), t >= 1.0)
+            }
+            Self::Spring(spring, settle) => (
+                spring.value_at(elapsed.as_secs_f64()).clamp(0.0, 1.0),
+                elapsed >= settle,
+            ),
+        }
+    }
+
+    /// 曲線を作る。バネは、ワークスペースの切り替え（`workspace`）かどうかでパラメータが違う。
+    fn new(motion: Motion, workspace: bool) -> Self {
+        match motion {
+            Motion::Easing(total) => Self::Easing(total),
+            Motion::Spring => {
+                let params = if workspace {
+                    SpringParams::workspace_switch()
+                } else {
+                    SpringParams::movement()
+                };
+                let spring = Spring::progress(params);
+                Self::Spring(spring, spring.settle_time())
+            }
+        }
+    }
+}
 
 /// 進行中の補間 1 つ。
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -18,6 +77,8 @@ struct Anim {
     to: Rect,
     /// 始まりの時刻。
     start: Instant,
+    /// 曲線。
+    curve: Curve,
 }
 
 /// 経過時間 `elapsed` が `total` のどこまで進んだか（0.0〜1.0）。`total` が 0 なら 1.0。
@@ -84,28 +145,30 @@ impl Animator {
     ///
     /// 始まりは、いま表示している矩形（補間の途中なら途中の矩形）。まだ表示していない窓は、
     /// ワークスペースの切り替え中なら縦にずらした位置、そうでなければ補間せず `to`。
-    /// `animate` が偽、`duration` が 0、補間を止めている間、始まりと行き先が同じ、のときは補間せず `to`。
+    /// `animate` が偽、イージングの時間が 0、補間を止めている間、始まりと行き先が同じ、のときは補間せず `to`。
     pub fn retarget(
         &mut self,
         id: WindowId,
         to: Rect,
         now: Instant,
-        duration: Duration,
+        motion: impl Into<Motion>,
         animate: bool,
     ) -> Rect {
-        let from = self
-            .shown
-            .get(&id)
-            .copied()
-            .or_else(|| self.slide.and_then(|dy| shifted(to, dy)));
+        let motion = motion.into();
+        let shown = self.shown.get(&id).copied();
+        // 表示済みでない窓が、ワークスペースの切り替えで縦にずれた位置から入ってくるとき。
+        let slid = shown.is_none() && self.slide.is_some();
+        let from = shown.or_else(|| self.slide.and_then(|dy| shifted(to, dy)));
+        let enabled = !matches!(motion, Motion::Easing(d) if d.is_zero());
         match from {
-            Some(from) if animate && !self.suppressed && !duration.is_zero() && from != to => {
+            Some(from) if animate && !self.suppressed && enabled && from != to => {
                 self.running.insert(
                     id,
                     Anim {
                         from,
                         to,
                         start: now,
+                        curve: Curve::new(motion, slid),
                     },
                 );
                 self.shown.insert(id, from);
@@ -120,13 +183,19 @@ impl Animator {
     }
 
     /// 時刻 `now` までの補間を進める。矩形が変わった窓の (id, 矩形) を返す。終わった補間は消える。
-    pub fn tick(&mut self, now: Instant, duration: Duration) -> Vec<(WindowId, Rect)> {
+    pub fn tick(&mut self, now: Instant) -> Vec<(WindowId, Rect)> {
         let mut updates = Vec::new();
         let mut done = Vec::new();
         for (id, anim) in &self.running {
-            let t = progress(now.saturating_duration_since(anim.start), duration);
-            updates.push((*id, lerp_rect(anim.from, anim.to, ease_out(t))));
-            if t >= 1.0 {
+            let (value, finished) = anim.curve.at(now.saturating_duration_since(anim.start));
+            // 終わったら、丸めずに行き先そのもの。
+            let rect = if finished {
+                anim.to
+            } else {
+                lerp_rect(anim.from, anim.to, value)
+            };
+            updates.push((*id, rect));
+            if finished {
                 done.push(*id);
             }
         }
@@ -279,18 +348,18 @@ mod tests {
         assert!(a.is_running());
         assert_eq!(a.displayed(id), Some(from));
 
-        let mid = a.tick(t0 + Duration::from_millis(50), MS);
+        let mid = a.tick(t0 + Duration::from_millis(50));
         assert_eq!(mid.len(), 1);
         let x = mid[0].1.x();
         assert!(x > 100 && x < 200, "ease-out は半分より先まで進む: {x}");
         assert_eq!(a.displayed(id).map(|r| r.x()), Some(x));
 
-        let end = a.tick(t0 + Duration::from_millis(100), MS);
+        let end = a.tick(t0 + Duration::from_millis(100));
         assert_eq!(end, [(id, to)]);
         assert!(!a.is_running());
         assert_eq!(a.displayed(id), None);
         // 終わったあとは、何も返さない。
-        assert!(a.tick(t0 + Duration::from_millis(200), MS).is_empty());
+        assert!(a.tick(t0 + Duration::from_millis(200)).is_empty());
     }
 
     #[test]
@@ -299,7 +368,7 @@ mod tests {
         let (mut a, t0) = (Animator::default(), Instant::now());
         a.retarget(id, r(0, 0, 100, 100), t0, MS, true);
         a.retarget(id, r(300, 0, 100, 100), t0, MS, true);
-        let mid = a.tick(t0 + Duration::from_millis(40), MS)[0].1;
+        let mid = a.tick(t0 + Duration::from_millis(40))[0].1;
         let t1 = t0 + Duration::from_millis(40);
         // 途中で行き先が変わっても、飛ばずに、いまの矩形から始まる。
         assert_eq!(a.retarget(id, r(0, 0, 100, 100), t1, MS, true), mid);

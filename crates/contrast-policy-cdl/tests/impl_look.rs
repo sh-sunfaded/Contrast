@@ -278,6 +278,24 @@ fn bad_animation_ms_is_ct003() -> Result<(), String> {
 }
 
 #[test]
+fn animation_kind_defaults_to_easing_and_accepts_spring() -> Result<(), String> {
+    use contrast_policy::AnimationKind;
+    let none = load("kind-none", "")?.map_err(|d| format!("{d:?}"))?;
+    assert_eq!(none.layout.animation, AnimationKind::Easing);
+    for (dir, v, want) in [
+        ("kind-easing", "easing", AnimationKind::Easing),
+        ("kind-spring", "spring", AnimationKind::Spring),
+    ] {
+        let s =
+            load(dir, &format!("<Layout animation=\"{v}\" />"))?.map_err(|d| format!("{d:?}"))?;
+        assert_eq!(s.layout.animation, want, "{v}");
+    }
+    let bad = load("kind-bad", "<Layout animation=\"bounce\" />")?;
+    assert_eq!(bad.err(), Some(vec!["CT003".to_owned()]));
+    Ok(())
+}
+
+#[test]
 fn niri_example_animates() -> Result<(), String> {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/niri.cdl");
     match CdlLoader::new().load(&path) {
