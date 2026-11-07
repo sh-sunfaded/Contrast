@@ -25,6 +25,9 @@ use crate::state::Contrast;
 /// 開発シェルのビルド用の値で、利用者のセッションのものではない。
 /// シェルに入る前の値は残っていないので、戻すのではなく、取り除く。
 const DEVSHELL_VARS: &[&str] = &[
+    // `nix develop` は SHELL を stdenv の bash（readline なし）にする。端末がこれを起動すると、プロンプトの
+    // `\[` `\]` が文字のまま出る。外すと、端末は利用者のログインシェル（passwd）を使う。
+    "SHELL",
     "LD_LIBRARY_PATH",
     "LIBRARY_PATH",
     "PKG_CONFIG",
@@ -436,7 +439,12 @@ mod tests {
     fn devshell_vars_are_removed_only_inside_a_devshell() {
         assert!(devshell_vars(false).is_empty());
         let scrub = devshell_vars(true);
-        for name in ["LD_LIBRARY_PATH", "IN_NIX_SHELL", "NIX_CFLAGS_COMPILE"] {
+        for name in [
+            "LD_LIBRARY_PATH",
+            "IN_NIX_SHELL",
+            "NIX_CFLAGS_COMPILE",
+            "SHELL",
+        ] {
             assert!(scrub.contains(&name), "{name}");
         }
         // システムの変数は残す。
