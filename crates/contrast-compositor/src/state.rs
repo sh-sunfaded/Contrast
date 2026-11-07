@@ -32,10 +32,7 @@ use smithay::{
             data_device::DataDeviceState, primary_selection::PrimarySelectionState,
             wlr_data_control::DataControlState,
         },
-        shell::{
-            wlr_layer::WlrLayerShellState,
-            xdg::{XdgShellState, decoration::XdgDecorationState},
-        },
+        shell::{wlr_layer::WlrLayerShellState, xdg::XdgShellState},
         shm::ShmState,
         socket::ListeningSocketSource,
         text_input::TextInputManagerState,
@@ -87,7 +84,6 @@ pub struct Contrast {
     pub suppressed_keys: Vec<Keycode>,
 
     pub xdg_shell_state: XdgShellState,
-    pub xdg_decoration_state: XdgDecorationState,
     pub compositor_state: CompositorState,
     pub shm_state: ShmState,
     pub output_manager_state: OutputManagerState,
@@ -148,7 +144,6 @@ impl Contrast {
 
         let compositor_state = CompositorState::new::<Self>(&dh);
         let xdg_shell_state = XdgShellState::new::<Self>(&dh);
-        let xdg_decoration_state = XdgDecorationState::new::<Self>(&dh);
         let shm_state = ShmState::new::<Self>(&dh, vec![]);
         let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&dh);
         let mut seat_state = SeatState::new();
@@ -205,7 +200,6 @@ impl Contrast {
             data_control_state,
             data_control_clients,
             xdg_shell_state,
-            xdg_decoration_state,
             compositor_state,
             shm_state,
             output_manager_state,
@@ -303,6 +297,11 @@ impl Contrast {
     }
 }
 
+/// キーリピートの間隔（ミリ秒）。niri の既定（`niri-config` の `repeat-delay 600`）。
+const KEY_REPEAT_DELAY_MS: i32 = 600;
+/// キーリピートの速さ（1 秒あたりの回数）。niri の既定（`repeat-rate 25`）。
+const KEY_REPEAT_RATE: i32 = 25;
+
 /// キーボードを seat に足す。配列は `CONTRAST_XKB_LAYOUT` / `_VARIANT` / `_MODEL` / `_OPTIONS`、
 /// 未指定は xkbcommon の既定。指定が不正でキーマップを作れなければ、警告して既定にする。
 fn add_keyboard(seat: &mut Seat<Contrast>) {
@@ -320,9 +319,10 @@ fn add_keyboard(seat: &mut Seat<Contrast>) {
         options: options.clone(),
         ..Default::default()
     };
-    if let Err(e) = seat.add_keyboard(config, 200, 25) {
+    if let Err(e) = seat.add_keyboard(config, KEY_REPEAT_DELAY_MS, KEY_REPEAT_RATE) {
         tracing::warn!(?e, %layout, %variant, %model, ?options, "xkb: invalid keymap settings, using the default");
-        if let Err(e) = seat.add_keyboard(Default::default(), 200, 25) {
+        if let Err(e) = seat.add_keyboard(Default::default(), KEY_REPEAT_DELAY_MS, KEY_REPEAT_RATE)
+        {
             tracing::error!(?e, "xkb: failed to add a keyboard");
         }
     }

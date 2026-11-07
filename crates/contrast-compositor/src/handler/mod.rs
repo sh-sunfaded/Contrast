@@ -1,4 +1,4 @@
-//! Wayland プロトコルのハンドラ実装（compositor / shm / seat / data device / output / xdg-shell / xdg-decoration）。
+//! Wayland プロトコルのハンドラ実装（compositor / shm / seat / data device / output / xdg-shell。xdg-decoration は公開しない）。
 
 mod decoration;
 mod layer_shell;

@@ -451,19 +451,7 @@ impl Contrast {
         let toplevel = window.toplevel().expect("wayland toplevel");
         toplevel.with_pending_state(|s| {
             s.size = Some((rect.width(), rect.height()).into());
-            let tiled = [
-                xdg_toplevel::State::TiledLeft,
-                xdg_toplevel::State::TiledRight,
-                xdg_toplevel::State::TiledTop,
-                xdg_toplevel::State::TiledBottom,
-            ];
-            for t in tiled {
-                if state == WindowState::Tiled {
-                    s.states.set(t);
-                } else {
-                    s.states.unset(t);
-                }
-            }
+            // Tiled 状態は送らない（niri の `prefer-no-csd` が無効のときと同じ。クライアントが CSD の角丸などを保つ）。
             if state == WindowState::Fullscreen {
                 s.states.set(xdg_toplevel::State::Fullscreen);
             } else {
