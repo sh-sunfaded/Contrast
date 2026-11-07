@@ -60,6 +60,8 @@ pub struct Contrast {
     pub socket_name: OsString,
     /// niri 互換の IPC のソケットのパス（IPC が起動していなければ `None`）。`Startup` の `ipc="niri"` の子に渡す。
     pub ipc_socket: Option<std::path::PathBuf>,
+    /// niri 互換の IPC のサーバー（起動していなければ `None`）。`Drop` でソケットを消す。
+    pub(crate) ipc: Option<crate::ipc::IpcServer>,
     /// Display のハンドル。
     pub display_handle: DisplayHandle,
     /// 窓と出力を置く 2 次元平面。
@@ -188,6 +190,7 @@ impl Contrast {
             start_time: std::time::Instant::now(),
             socket_name,
             ipc_socket: None,
+            ipc: None,
             display_handle: dh,
             space: Space::default(),
             loop_signal: event_loop.get_signal(),

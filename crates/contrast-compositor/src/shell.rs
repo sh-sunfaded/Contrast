@@ -339,6 +339,8 @@ impl Contrast {
                     self.run_effect(effect);
                 }
                 self.anim.end_slide();
+                // ワークスペースの表示・フォーカスの変化を、IPC の購読者に伝える。
+                self.ipc_sync();
                 true
             }
             Err(CoreError::NoFocusedWindow) => {

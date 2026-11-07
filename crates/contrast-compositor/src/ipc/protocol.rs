@@ -73,8 +73,8 @@ pub(crate) enum Request {
     Workspaces,
     /// id でワークスペースに切り替える。
     FocusWorkspaceId(u64),
-    /// 名前でワークスペースに切り替える（未対応）。
-    FocusWorkspaceName,
+    /// 名前でワークスペースに切り替える（未対応。名前はログ用）。
+    FocusWorkspaceName(String),
     /// 上記以外（解析できないものを含む）。
     Unsupported,
 }
@@ -107,7 +107,7 @@ pub(crate) fn parse_request(line: &[u8]) -> Request {
         Ok(Wire::Workspaces) => Request::Workspaces,
         Ok(Wire::Action(WireAction::FocusWorkspace { reference })) => match reference {
             WireReference::Id(id) => Request::FocusWorkspaceId(id),
-            WireReference::Name(_) => Request::FocusWorkspaceName,
+            WireReference::Name(name) => Request::FocusWorkspaceName(name),
         },
         Err(_) => Request::Unsupported,
     }
@@ -172,7 +172,7 @@ mod tests {
         assert_eq!(parse_request(br#""Workspaces""#), Request::Workspaces);
         assert_eq!(
             parse_request(br#"{"Action":{"FocusWorkspace":{"reference":{"Name":"web"}}}}"#),
-            Request::FocusWorkspaceName
+            Request::FocusWorkspaceName("web".to_owned())
         );
     }
 
@@ -301,6 +301,28 @@ mod tests {
                 focused: false
             }
         ));
+
+        // `Workspaces` の返事（`niri msg workspaces` 用）も、ironbar の型で読める。
+        let reply: ironbar::Reply = serde_json::from_slice(&encode_reply(&Ok(
+            Response::Workspaces(vec![ws(1, true, true)]),
+        )))
+        .map_err(|e| e.to_string())?;
+        match reply {
+            Ok(ironbar::Response::Workspaces(list)) => assert_eq!(list.len(), 1),
+            other => return Err(format!("not Workspaces: {other:?}")),
+        }
+        // ironbar が読める `WorkspaceUrgencyChanged`（Contrast は送らない）と、読めない行は `Other` になる側の型。
+        let urgent: ironbar::Event =
+            serde_json::from_str(r#"{"WorkspaceUrgencyChanged":{"id":2,"urgent":true}}"#)
+                .map_err(|e| e.to_string())?;
+        assert!(matches!(
+            urgent,
+            ironbar::Event::WorkspaceUrgencyChanged {
+                id: 2,
+                urgent: true
+            }
+        ));
+        assert!(matches!(ironbar::Event::Other, ironbar::Event::Other));
         Ok(())
     }
 }

@@ -93,6 +93,9 @@ pub fn run(store: Rc<ConfigStore>, source: ConfigSource) -> Result<(), Box<dyn s
         state.socket_name.to_string_lossy()
     );
 
+    // `Startup` の `ipc="niri"` の子に渡すので、コマンドの起動より前に IPC のソケットを作る。
+    state.start_ipc(&event_loop.handle());
+
     // Wayland のソケットを公開したので、`Startup` のコマンドを起動する（起動時に一度だけ。リロードでは再実行しない）。
     state.run_startup();
 
