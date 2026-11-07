@@ -12,6 +12,7 @@ mod handler;
 mod ime;
 mod input;
 mod ipc;
+mod power;
 mod reload;
 mod render;
 mod shell;

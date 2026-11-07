@@ -20,9 +20,9 @@
 
 ## binds 111 個の内訳
 
-元の `binds { … }` は 111 行。**変換したもの 90、変換しなかったもの 21**（90 + 21 = 111）。
-`keybinds.cdl` には、これに niri の既定の `Mod+V`（`toggle-floating`。作者の config.kdl の binds には無い）を足して 91 個ある。
-`crates/contrast-policy-cdl/tests/impl_config.rs` が、この数（`keybinds.cdl` の 91 と、`unsupported.cdl` の `//>` の 21）と、キーの重複がないことを確かめる。
+元の `binds { … }` は 111 行。**変換したもの 91、変換しなかったもの 20**（91 + 20 = 111）。
+`keybinds.cdl` には、これに niri の既定の `Mod+V`（`toggle-floating`。作者の config.kdl の binds には無い）を足して 92 個ある。
+`crates/contrast-policy-cdl/tests/impl_config.rs` が、この数（`keybinds.cdl` の 92 と、`unsupported.cdl` の `//>` の 20）と、キーの重複がないことを確かめる。
 `impl_binds_parity.rs` が、`config/` と基準の `examples/niri.cdl` で、同じキーに同じ操作が割り当てられていること（`mod` が Super でも Alt でも）を確かめる。
 
 ### (a) 変換したもの（90 個。niri の既定の `Mod+V` を足して 91 個）
@@ -47,13 +47,13 @@
 - 音量キー（`allow-when-locked=true`）の `allow-when-locked` は移さない（Contrast にロック画面が無い）。
 - キーは `Mod+Q` → `mod+q`、`Mod+Ctrl+Home` → `mod+ctrl+Home` のように、`+` で区切り、修飾キーを小文字にする（キー名の大文字小文字は問われない）。
 
-### (b) 変換しなかったもの（21 個）
+### (b) 変換しなかったもの（20 個）
 
 | 待っている機能 | 個数 | 内容 |
 | --- | --- | --- |
 | 複数モニタ（N4） | 16 | `focus-monitor-*`（8）と `move-column-to-monitor-*`（8） |
 | スクリーンショット（N5a） | 3 | `screenshot`・`screenshot-screen`・`screenshot-window`（`screenshot-path` は bind ではない設定で、これも N5a） |
-| オーバーレイ・DPMS | 2 | `show-hotkey-overlay`、`power-off-monitors` |
+| オーバーレイ | 1 | `show-hotkey-overlay` |
 
 元の KDL の行は `config/unsupported.cdl` に、待っている機能ごとに残してある。
 

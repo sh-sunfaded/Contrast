@@ -658,6 +658,7 @@ fn read_action(cx: &mut Ctx<'_>, node: Node<'_>, name: &str, args: ActionArgs) -
         "move-workspace-up" => Some(Action::MoveWorkspaceUp),
         "reload-config" => Some(Action::ReloadConfig),
         "quit" => Some(Action::Quit),
+        "power-off-monitors" => Some(Action::PowerOffMonitors),
         "focus-up" => Some(Action::FocusUp),
         "focus-down" => Some(Action::FocusDown),
         "move-up" => Some(Action::MoveUp),
@@ -774,7 +775,7 @@ fn read_action(cx: &mut Ctx<'_>, node: Node<'_>, name: &str, args: ActionArgs) -
                      focus-column-last / move-column-first / move-column-last / consume-window-into-column / \
                      expel-window-from-column / consume-or-expel-window-left / consume-or-expel-window-right / \
                      switch-preset-column-width / maximize-column / set-column-width / adjust-column-width / center-column / switch-preset-window-height / reset-window-height / \
-                     set-window-height / adjust-window-height / toggle-floating / toggle-fullscreen / reload-config / quit）"
+                     set-window-height / adjust-window-height / toggle-floating / toggle-fullscreen / reload-config / quit / power-off-monitors）"
                 ),
             );
             None

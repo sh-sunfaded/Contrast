@@ -28,10 +28,9 @@
 //> Ctrl+Print { screenshot-screen; }
 //> Alt+Print { screenshot-window; }
 
-// ---- ホットキーのオーバーレイと、モニタの電源（2 個） ----
-// オーバーレイの描画と、DPMS（モニタの電源）の操作が無い。
+// ---- ホットキーのオーバーレイ（1 個） ----
+// オーバーレイの描画（文字の描画）が無い。`Mod+Shift+P` の `power-off-monitors` は `keybinds.cdl` に移した。
 //> Mod+Shift+Slash { show-hotkey-overlay; }
-//> Mod+Shift+P { power-off-monitors; }
 
 // ---- bind ではない設定 ----
 // screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"  （スクリーンショット N5a の保存先）

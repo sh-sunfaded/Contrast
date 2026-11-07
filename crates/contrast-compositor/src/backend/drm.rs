@@ -236,6 +236,8 @@ struct Drm {
     vt_switching_since: Option<Instant>,
     /// 描画の依頼を見送った（`vt_switching` か、`EACCES` を待った）。再開のときに描き直す。
     stalled: bool,
+    /// `power-off-monitors` で CRTC を止めている間 true。描かず、入力で戻る。
+    monitors_off: bool,
     frames: u64,
     last_log: Instant,
     error: Option<DrmError>,
@@ -297,7 +299,7 @@ impl Drm {
     /// 次のフレームを描いて queue し、成功したら frame callback を送る。
     /// クライアントの commit を拾うため、毎回バッファの age を捨てて全面を描き直す（プロトタイプ）。
     fn render(&mut self, state: &mut Contrast, shared: &Shared) {
-        if !self.active {
+        if !self.active || self.monitors_off {
             return;
         }
         if self.vt_switching() {
@@ -392,8 +394,35 @@ impl Drm {
         }
     }
 
+    /// 画面の電源を切る（`on` が false。CRTC を止め、描画を止める）／戻す（true。次の描画の `queue_frame` が CRTC を有効にし直す）。
+    fn set_monitors(&mut self, on: bool, handle: &LoopHandle<'static, Contrast>, shared: &Shared) {
+        self.monitors_off = !on;
+        if !on {
+            if let Some(output) = self.gpu.as_mut().and_then(|g| g.output.as_mut())
+                && let Err(e) = output.with_compositor(|c| c.clear())
+            {
+                tracing::warn!("drm: power off monitors failed: {e}");
+            }
+            tracing::info!("drm: monitors off");
+            return;
+        }
+        tracing::info!("drm: monitors on");
+        // 入力を処理している最中なので、描画はイベントループに戻ってから行う。
+        let shared = shared.clone();
+        let scheduled = handle.insert_source(Timer::immediate(), move |_, _, state| {
+            with(&shared.clone(), |d| d.render(state, &shared));
+            TimeoutAction::Drop
+        });
+        if let Err(e) = scheduled {
+            tracing::warn!("drm: cannot schedule the redraw after monitors on: {e}");
+        }
+    }
+
     /// vblank: 提出済みのフレームを確定して、次を出す。
     fn on_vblank(&mut self, state: &mut Contrast, shared: &Shared) {
+        if self.monitors_off {
+            return;
+        }
         let Some(output) = self.gpu.as_mut().and_then(|g| g.output.as_mut()) else {
             return;
         };
@@ -552,6 +581,7 @@ pub fn init(
         active: session.is_active(),
         vt_switching_since: None,
         stalled: false,
+        monitors_off: false,
         frames: 0,
         last_log: Instant::now(),
         error: None,
@@ -611,6 +641,16 @@ pub fn init(
         }
     }));
 
+    // power-off-monitors: 電源を切る・戻す。戻すのは `process_input_event` が、どんな入力でも呼ぶ。
+    {
+        let power_shared = drm.clone();
+        let power_handle = handle.clone();
+        state.monitors.set_hook(Box::new(move |on| {
+            with(&power_shared.clone(), |d| {
+                d.set_monitors(on, &power_handle, &power_shared)
+            });
+        }));
+    }
     {
         let shared = drm.clone();
         handle

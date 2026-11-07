@@ -159,6 +159,7 @@ const others: Spec[] = [
   { keys: "mod+shift+Minus", action: "adjust-window-height", delta: -RESIZE_STEP },
   { keys: "mod+shift+Equal", action: "adjust-window-height", delta: RESIZE_STEP },
   { keys: "mod+shift+e", action: "quit" },
+  { keys: "mod+shift+p", action: "power-off-monitors" },
 ];
 
 // ---- すべてを 1 つにまとめて、要素にする ----

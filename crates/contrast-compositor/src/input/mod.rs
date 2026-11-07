@@ -86,6 +86,7 @@ impl Contrast {
     /// winit からの入力イベントを 1 つ処理する。
     pub fn process_input_event<I: InputBackend>(&mut self, event: InputEvent<I>) {
         self.last_input = std::time::Instant::now();
+        self.monitors.wake();
         match event {
             InputEvent::Keyboard { event, .. } => {
                 self.on_key(event.key_code(), event.state(), Event::time_msec(&event))

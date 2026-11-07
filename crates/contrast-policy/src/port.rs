@@ -106,6 +106,8 @@ pub enum Action {
     ReloadConfig,
     /// コンポジタを終了する。
     Quit,
+    /// 画面を消す（DPMS。niri の `power-off-monitors`）。どんな入力でも戻る。
+    PowerOffMonitors,
 }
 
 /// 新しい窓の配置の判断（`Policy::place_window` の結果）。

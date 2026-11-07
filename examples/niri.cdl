@@ -66,6 +66,7 @@ export default (
     {/* 窓を閉じる・終了 */}
     <Keybind keys="mod+q" action="close" />
     <Keybind keys="mod+shift+e" action="quit" />
+    <Keybind keys="mod+shift+p" action="power-off-monitors" />
 
     {/* フォーカス移動（niri と同じ。Left/Right/H/L は列、Up/Down/K/J は列の中の窓） */}
     <Keybind keys="mod+Left" action="focus-left" />

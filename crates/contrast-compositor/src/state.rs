@@ -121,6 +121,8 @@ pub struct Contrast {
     pub dmabuf_importer: Option<DmabufImporter>,
     /// VT を切り替える関数（DRM バックエンドだけが入れる）。キーボードをコンポジタが持つので、これが無いと VT を移れない。
     pub vt_switch: Option<Box<dyn FnMut(i32)>>,
+    /// 画面の電源（`power-off-monitors`。DRM バックエンドだけが関数を入れる）。
+    pub monitors: crate::power::Monitors,
     /// クライアントが指定した（または既定の）カーソル。DRM バックエンドが描く。
     pub cursor_status: smithay::input::pointer::CursorImageStatus,
     /// 起動時に決まった窓の並べ方。リロードでは変わらない（core を作り直さないため）。
@@ -233,6 +235,7 @@ impl Contrast {
             dmabuf_importer: None,
             vt_switch: None,
             pending_vt: None,
+            monitors: crate::power::Monitors::default(),
             anim: crate::anim::Animator::default(),
             last_input: std::time::Instant::now(),
             host_cursor_hidden: false,

@@ -7,12 +7,12 @@ use std::path::{Path, PathBuf};
 use contrast_policy::{Action, ConfigLoader, LoadOutcome, ModKey, Mods, Settings};
 use contrast_policy_cdl::CdlLoader;
 
-/// `keybinds.cdl` のバインドの数（`docs/config-migration.md`）。niri の binds 90 個と、niri の既定の `Mod+V` の 1 個。
-const CONVERTED: usize = 91;
+/// `keybinds.cdl` のバインドの数（`docs/config-migration.md`）。niri の binds 91 個と、niri の既定の `Mod+V` の 1 個。
+const CONVERTED: usize = 92;
 /// そのうち、作者の config.kdl に無いもの（niri の既定の `Mod+V`）。
 const NOT_IN_NIRI_CONFIG: usize = 1;
 /// 変換しなかったバインドの数（`unsupported.cdl` の `//>` の行）。
-const UNSUPPORTED: usize = 21;
+const UNSUPPORTED: usize = 20;
 /// 元の niri の config.kdl の binds の数。
 const NIRI_BINDS: usize = 111;
 

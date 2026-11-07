@@ -65,7 +65,8 @@ niri の設定の既定値は niri の既定（wiki / パッケージの既定�
 | `close-window`・`quit` | はい | ○ | — | — |
 | 音量などの `XF86Audio*`（`allow-when-locked`） | はい | ○（`spawn`。ロック画面は無い） | — | — |
 | `Mod+ホイール`系 | はい | × ポインタ軸のバインドが無い | 軸イベントのバインド | M |
-| `show-hotkey-overlay`・`power-off-monitors` | はい | × | オーバーレイ / DPMS | M |
+| `show-hotkey-overlay` | はい | × | オーバーレイ | M |
+| `power-off-monitors` | はい | ○（DRM のみ。実機で確認） | — | — |
 | `screenshot` / `screenshot-screen` / `screenshot-window`（`screenshot-path`） | はい | × screencopy も UI も無い | スクリーンショットの描画読み出しと保存、操作 UI | L |
 | `Super+Alt+L`（swaylock） | はい | △ spawn は ○。swaylock には `ext-session-lock` が要る | session-lock プロトコル | M |
 

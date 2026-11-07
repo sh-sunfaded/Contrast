@@ -18,6 +18,12 @@ impl Contrast {
                 return self.loop_signal.stop();
             }
             Action::ReloadConfig => return self.reload_config(),
+            Action::PowerOffMonitors => {
+                if !self.monitors.power_off() {
+                    tracing::info!("power-off-monitors ignored: not on a session backend");
+                }
+                return;
+            }
             Action::CloseFocused => contrast_core::Action::CloseFocused,
             Action::FocusPrev => contrast_core::Action::FocusDirection(Direction::Left),
             Action::FocusNext => contrast_core::Action::FocusDirection(Direction::Right),

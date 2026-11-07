@@ -75,7 +75,7 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
 
 `spawn` / `close` / `focus-left` / `focus-right` / `move-left` / `move-right` / `workspace` / `move-to-workspace` /
 `workspace-next` / `workspace-prev` / `move-to-workspace-next` / `move-to-workspace-prev` / `move-column-to-workspace` / `move-column-to-workspace-next` / `move-column-to-workspace-prev` / `move-workspace-down` / `move-workspace-up` /
-`toggle-floating` / `toggle-fullscreen` / `reload-config` / `quit` /
+`toggle-floating` / `toggle-fullscreen` / `reload-config` / `quit` / `power-off-monitors`（画面の電源を切る。DRM のみ。どんな入力でも戻る）/
 `focus-up` / `focus-down` / `move-up` / `move-down` /
 `focus-column-first` / `focus-column-last` / `move-column-first` / `move-column-last` /
 `consume-window-into-column` / `expel-window-from-column` / `consume-or-expel-window-left` / `consume-or-expel-window-right` / `switch-preset-column-width` / `maximize-column` /
