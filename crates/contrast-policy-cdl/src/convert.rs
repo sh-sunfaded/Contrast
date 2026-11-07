@@ -645,6 +645,8 @@ fn read_action(cx: &mut Ctx<'_>, node: Node<'_>, name: &str, args: ActionArgs) -
         "move-column-last" => Some(Action::MoveColumnLast),
         "consume-window-into-column" => Some(Action::ConsumeWindowIntoColumn),
         "expel-window-from-column" => Some(Action::ExpelWindowFromColumn),
+        "consume-or-expel-window-left" => Some(Action::ConsumeOrExpelWindowLeft),
+        "consume-or-expel-window-right" => Some(Action::ConsumeOrExpelWindowRight),
         "switch-preset-column-width" => Some(Action::SwitchPresetColumnWidth),
         "maximize-column" => Some(Action::MaximizeColumn),
         "center-column" => Some(Action::CenterColumn),
@@ -746,8 +748,8 @@ fn read_action(cx: &mut Ctx<'_>, node: Node<'_>, name: &str, args: ActionArgs) -
                      workspace / move-to-workspace / workspace-next / workspace-prev / move-to-workspace-next / \
                      move-to-workspace-prev / focus-up / focus-down / move-up / move-down / focus-column-first / \
                      focus-column-last / move-column-first / move-column-last / consume-window-into-column / \
-                     expel-window-from-column / switch-preset-column-width / maximize-column / set-column-width / \
-                     adjust-column-width / center-column / switch-preset-window-height / reset-window-height / \
+                     expel-window-from-column / consume-or-expel-window-left / consume-or-expel-window-right / \
+                     switch-preset-column-width / maximize-column / set-column-width / adjust-column-width / center-column / switch-preset-window-height / reset-window-height / \
                      set-window-height / adjust-window-height / toggle-floating / toggle-fullscreen / reload-config / quit）"
                 ),
             );

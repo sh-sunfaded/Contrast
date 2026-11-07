@@ -20,12 +20,12 @@
 
 ## binds 111 個の内訳
 
-元の `binds { … }` は 111 行。**変換したもの 72、変換しなかったもの 39**（72 + 39 = 111）。
-`keybinds.cdl` には、これに niri の既定の `Mod+V`（`toggle-floating`。作者の config.kdl の binds には無い）を足して 73 個ある。
-`crates/contrast-policy-cdl/tests/impl_config.rs` が、この数（`keybinds.cdl` の 73 と、`unsupported.cdl` の `//>` の 39）と、キーの重複がないことを確かめる。
+元の `binds { … }` は 111 行。**変換したもの 86、変換しなかったもの 25**（86 + 25 = 111）。
+`keybinds.cdl` には、これに niri の既定の `Mod+V`（`toggle-floating`。作者の config.kdl の binds には無い）を足して 87 個ある。
+`crates/contrast-policy-cdl/tests/impl_config.rs` が、この数（`keybinds.cdl` の 87 と、`unsupported.cdl` の `//>` の 25）と、キーの重複がないことを確かめる。
 `impl_binds_parity.rs` が、`config/` と基準の `examples/niri.cdl` で、同じキーに同じ操作が割り当てられていること（`mod` が Super でも Alt でも）を確かめる。
 
-### (a) 変換したもの（72 個。niri の既定の `Mod+V` を足して 73 個）
+### (a) 変換したもの（86 個。niri の既定の `Mod+V` を足して 87 個）
 
 | 区分 | 個数 | niri の action → CDL の action |
 | --- | --- | --- |
@@ -36,7 +36,8 @@
 | 列の端 | 4 | `focus-column-first/last` → `focus-column-first/last`、`move-column-to-first/last` → `move-column-first/last` |
 | ワークスペース N | 18 | `focus-workspace N` → `workspace`（`workspace`）、`move-column-to-workspace N` → `move-to-workspace`（N = 1〜9） |
 | ワークスペースの上下 | 8 | `focus-workspace-down/up` → `workspace-next/prev`、`move-column-to-workspace-down/up` → `move-to-workspace-next/prev`（Page_Down/Up と U/I の 2 通り） |
-| 列への積み | 2 | `consume-window-into-column`、`expel-window-from-column`（同名） |
+| 列への積み | 4 | `consume-window-into-column`、`expel-window-from-column`、`consume-or-expel-window-left/right`（同名）。`expel-window-from-column` は niri と細部が違う（下記） |
+| ホイール | 12 | `Mod+WheelScroll…` → `workspace-next` などと同じ action を、キー名 `WheelScrollDown/Up/Left/Right` に割り当てる。縦のワークスペースの 4 つは `cooldown={150}`（niri の `cooldown-ms=150`） |
 | 幅・高さのプリセット | 3 | `switch-preset-column-width`（同名）、`switch-preset-window-height`（同名）、`reset-window-height`（同名） |
 | 列・窓の状態 | 3 | `maximize-column`（同名）、`fullscreen-window` → `toggle-fullscreen`、`center-column`（同名） |
 | （niri の既定） | 1 | `Mod+V` → `toggle-floating`。作者の binds には無いが、`examples/niri.cdl` が niri の既定どおり持つので合わせた |
@@ -45,14 +46,12 @@
 - 音量キー（`allow-when-locked=true`）の `allow-when-locked` は移さない（Contrast にロック画面が無い）。
 - キーは `Mod+Q` → `mod+q`、`Mod+Ctrl+Home` → `mod+ctrl+Home` のように、`+` で区切り、修飾キーを小文字にする（キー名の大文字小文字は問われない）。
 
-### (b) 変換しなかったもの（39 個）
+### (b) 変換しなかったもの（25 個）
 
 | 待っている機能 | 個数 | 内容 |
 | --- | --- | --- |
-| ホイールのバインド（N5） | 12 | `Mod+WheelScroll…`（ワークスペース・列の切り替えと移動） |
 | 複数モニタ（N4） | 16 | `focus-monitor-*`（8）と `move-column-to-monitor-*`（8） |
 | ワークスペースの並べ替え（N4） | 4 | `move-workspace-down/up` |
-| core の追加 | 2 | `consume-or-expel-window-left/right` |
 | スクリーンショット（N5a） | 3 | `screenshot`・`screenshot-screen`・`screenshot-window`（`screenshot-path` は bind ではない設定で、これも N5a） |
 | オーバーレイ・DPMS | 2 | `show-hotkey-overlay`、`power-off-monitors` |
 

@@ -29,11 +29,6 @@
 //> Mod+Shift+U { move-workspace-down; }
 //> Mod+Shift+I { move-workspace-up; }
 
-// ---- consume-or-expel-window-left/right（2 個） ----
-// core に、隣の列へ取り込むか、出すかの操作が無い（core の追加が要る）。
-//> Mod+BracketLeft { consume-or-expel-window-left; }
-//> Mod+BracketRight { consume-or-expel-window-right; }
-
 // ---- スクリーンショット（3 個） ----
 // スクリーンショット（screencopy と保存の UI）が無い（N5a）。
 //> Print { screenshot; }

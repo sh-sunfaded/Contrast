@@ -33,6 +33,8 @@ impl Contrast {
             Action::MoveColumnLast => contrast_core::Action::MoveColumnToLast,
             Action::ConsumeWindowIntoColumn => contrast_core::Action::ConsumeWindowIntoColumn,
             Action::ExpelWindowFromColumn => contrast_core::Action::ExpelWindowFromColumn,
+            Action::ConsumeOrExpelWindowLeft => contrast_core::Action::ConsumeOrExpelWindowLeft,
+            Action::ConsumeOrExpelWindowRight => contrast_core::Action::ConsumeOrExpelWindowRight,
             Action::SwitchPresetColumnWidth => contrast_core::Action::SwitchPresetColumnWidth,
             Action::MaximizeColumn => contrast_core::Action::MaximizeColumn,
             Action::SetColumnWidth(ratio) => {

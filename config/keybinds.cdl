@@ -140,6 +140,8 @@ const others: Spec[] = [
   { keys: "mod+ctrl+End", action: "move-column-last" },
   { keys: "mod+Comma", action: "consume-window-into-column" },
   { keys: "mod+Period", action: "expel-window-from-column" },
+  { keys: "mod+BracketLeft", action: "consume-or-expel-window-left" },
+  { keys: "mod+BracketRight", action: "consume-or-expel-window-right" },
   { keys: "mod+r", action: "switch-preset-column-width" },
   { keys: "mod+shift+r", action: "switch-preset-window-height" },
   { keys: "mod+ctrl+r", action: "reset-window-height" },

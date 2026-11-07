@@ -35,7 +35,7 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
 - 見た目の追加 prop はすべて省略でき、省略時は今の見た目と同じ（角丸 0・影なし・隙間 0・非フォーカスの枠の幅は `borderWidth`）。
   - `gap` は窓と窓の間、`outerGap` は出力の端と窓の間（px）。core の矩形は変えず、描画側で縮める。
   - `radius` は窓と枠の角丸の半径。`shadowBlur` が 0 のとき影は描かない。`shadowOffsetX/Y` は負も使える。
-  - `inactiveBorderWidth` はフォーカス外の窓の枠の太さ。窓の大きさは常に `borderWidth` で決まる（フォーカスで大きさは変わらない）。
+  - 枠（フォーカスリング）は窓の**外側**に描く（niri と同じ）。窓の大きさは枠の太さで変わらない（隙間 `gap` の中に枠が広がる）。`inactiveBorderWidth` はフォーカス外の窓の枠の太さ（`borderColor` があるときだけ描く）。
     `borderColor` が無いとフォーカス外の枠は描かない。
   - 長さの範囲は 0〜512 の整数 px（`shadowOffsetX/Y` は -512〜512）。外れると CT003。`Cursor.size` は 8〜256 の整数。
   - `Cursor` は環境変数 `XCURSOR_THEME` / `XCURSOR_SIZE` より優先する。リロードで更新する。
@@ -78,7 +78,7 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
 `toggle-floating` / `toggle-fullscreen` / `reload-config` / `quit` /
 `focus-up` / `focus-down` / `move-up` / `move-down` /
 `focus-column-first` / `focus-column-last` / `move-column-first` / `move-column-last` /
-`consume-window-into-column` / `expel-window-from-column` / `switch-preset-column-width` / `maximize-column` /
+`consume-window-into-column` / `expel-window-from-column` / `consume-or-expel-window-left` / `consume-or-expel-window-right` / `switch-preset-column-width` / `maximize-column` /
 `set-column-width` / `adjust-column-width` /
 `center-column` / `switch-preset-window-height` / `reset-window-height` / `set-window-height` / `adjust-window-height`。
 

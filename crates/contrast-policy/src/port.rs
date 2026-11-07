@@ -66,6 +66,10 @@ pub enum Action {
     ConsumeWindowIntoColumn,
     /// フォーカス窓を、右隣の新しい列へ出す（スクロール列レイアウトのみ）。
     ExpelWindowFromColumn,
+    /// 列に窓が 1 枚なら左隣の列の最下段へ、2 枚以上なら左隣に新しい列として出す（スクロール列レイアウトのみ）。
+    ConsumeOrExpelWindowLeft,
+    /// 列に窓が 1 枚なら右隣の列の最下段へ、2 枚以上なら右隣に新しい列として出す（スクロール列レイアウトのみ）。
+    ConsumeOrExpelWindowRight,
     /// フォーカス列の幅を、次のプリセットへ変える（スクロール列レイアウトのみ）。
     SwitchPresetColumnWidth,
     /// フォーカス列を最大化する。最大化中なら元の幅に戻す（スクロール列レイアウトのみ）。

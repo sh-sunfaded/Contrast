@@ -142,6 +142,8 @@ export default (
     <Keybind keys="mod+ctrl+End" action="move-column-last" />
     <Keybind keys="mod+Comma" action="consume-window-into-column" />
     <Keybind keys="mod+Period" action="expel-window-from-column" />
+    <Keybind keys="mod+BracketLeft" action="consume-or-expel-window-left" />
+    <Keybind keys="mod+BracketRight" action="consume-or-expel-window-right" />
     <Keybind keys="mod+r" action="switch-preset-column-width" />
     <Keybind keys="mod+f" action="maximize-column" />
     <Keybind keys="mod+Minus" action="adjust-column-width" delta={-10} />

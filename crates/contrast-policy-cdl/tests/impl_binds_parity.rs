@@ -85,6 +85,21 @@ fn config_and_the_niri_example_bind_the_same_keys_to_the_same_actions() -> Resul
 }
 
 #[test]
+fn the_consume_or_expel_keys_resolve_in_config() -> Result<(), String> {
+    let m = ModKey::Super;
+    let s = load(&repo("config/config.cdl"), m)?;
+    assert_eq!(
+        s.resolve_key(m.mods(), "BracketLeft"),
+        Some(Action::ConsumeOrExpelWindowLeft)
+    );
+    assert_eq!(
+        s.resolve_key(m.mods(), "BracketRight"),
+        Some(Action::ConsumeOrExpelWindowRight)
+    );
+    Ok(())
+}
+
+#[test]
 fn the_keys_that_were_missing_resolve_in_config() -> Result<(), String> {
     let m = ModKey::Super;
     let s = load(&repo("config/config.cdl"), m)?;

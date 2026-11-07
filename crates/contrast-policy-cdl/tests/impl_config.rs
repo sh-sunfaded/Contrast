@@ -7,12 +7,12 @@ use std::path::{Path, PathBuf};
 use contrast_policy::{Action, ConfigLoader, LoadOutcome, ModKey, Mods, Settings};
 use contrast_policy_cdl::CdlLoader;
 
-/// `keybinds.cdl` のバインドの数（`docs/config-migration.md`）。niri の binds 84 個と、niri の既定の `Mod+V` の 1 個。
-const CONVERTED: usize = 85;
+/// `keybinds.cdl` のバインドの数（`docs/config-migration.md`）。niri の binds 86 個と、niri の既定の `Mod+V` の 1 個。
+const CONVERTED: usize = 87;
 /// そのうち、作者の config.kdl に無いもの（niri の既定の `Mod+V`）。
 const NOT_IN_NIRI_CONFIG: usize = 1;
 /// 変換しなかったバインドの数（`unsupported.cdl` の `//>` の行）。
-const UNSUPPORTED: usize = 27;
+const UNSUPPORTED: usize = 25;
 /// 元の niri の config.kdl の binds の数。
 const NIRI_BINDS: usize = 111;
 
@@ -277,9 +277,13 @@ fn the_main_binds_resolve_to_the_expected_actions() -> Result<(), String> {
         ),
         spawn("swaylock")
     );
-    // 変換しなかったキーは何もしない（ホイール以外の例: モニタ、スクリーンショット）。
+    // 変換しなかったキーは何もしない（例: モニタ、スクリーンショット）。
     assert_eq!(s.resolve_key(shift, "Left"), None);
     assert_eq!(s.resolve_key(Mods::default(), "Print"), None);
-    assert_eq!(s.resolve_key(mod_only, "BracketLeft"), None);
+    // consume-or-expel は変換した。
+    assert_eq!(
+        s.resolve_key(mod_only, "BracketLeft"),
+        Some(Action::ConsumeOrExpelWindowLeft)
+    );
     Ok(())
 }
