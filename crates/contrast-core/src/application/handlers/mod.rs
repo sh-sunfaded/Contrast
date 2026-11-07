@@ -5,6 +5,7 @@
 
 mod center_column;
 mod close_focused;
+mod consume_or_expel;
 mod consume_window;
 mod expel_window;
 mod focus_column;
@@ -96,6 +97,9 @@ fn dispatch_action(state: &mut State, action: Action) -> Result<Vec<Effect>, Cor
         Action::SwitchPresetWindowHeight => switch_preset_height::handle(state),
         Action::ResetWindowHeight => reset_window_height::handle(state),
         Action::CenterColumn => center_column::handle(state),
+        // D57〜D61: 隣の列への取り込みと、隣への押し出し。`Equal` では状態不変で `Ok`。
+        Action::ConsumeOrExpelWindowLeft => consume_or_expel::handle(state, true),
+        Action::ConsumeOrExpelWindowRight => consume_or_expel::handle(state, false),
     }
 }
 

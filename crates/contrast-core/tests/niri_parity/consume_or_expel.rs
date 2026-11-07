@@ -3,9 +3,7 @@
 //! 具体例のテストと、参照モデルとの比較（proptest）。モデルは、spec の文章（D58・D59）をそのまま書いたもので、
 //! 実装のコードは見ていない。
 
-use contrast_core::{
-    Action, ColumnWidth, Command, CoreError, Direction, LayoutMode, WindowHeight,
-};
+use contrast_core::{Action, ColumnWidth, Command, CoreError, Direction, LayoutMode, WindowHeight};
 use proptest::prelude::*;
 
 use crate::common::{
@@ -114,7 +112,10 @@ fn an_expelled_window_gets_the_width_of_the_column_it_left() {
 fn a_window_that_moves_to_another_column_loses_its_height() {
     let mut c = scrolling(3);
     left(&mut c); // [[11], [12, 13]]
-    act(&mut c, Action::SetWindowHeight(WindowHeight::fixed(100).expect("1 以上")));
+    act(
+        &mut c,
+        Action::SetWindowHeight(WindowHeight::fixed(100).expect("1 以上")),
+    );
     assert_eq!(rect_of(&c, 13).height(), 100);
     // 2 枚の列から出ると、別の列の窓になる（D52: 高さは Auto に戻る）。
     left(&mut c);

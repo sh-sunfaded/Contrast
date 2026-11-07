@@ -1,8 +1,5 @@
 //! niri_parity のテスト共通の補助。公開 API だけを使う。
-#![allow(
-    dead_code,
-    reason = "補助関数はファイルごとに使うものが違う"
-)]
+#![allow(dead_code, reason = "補助関数はファイルごとに使うものが違う")]
 
 use contrast_core::{
     Action, Columns, Command, Core, CoreConfig, CoreError, DefaultPolicy, ExternalKey, LayoutMode,
@@ -76,7 +73,10 @@ pub fn apply_err(c: &mut TestCore, cmd: Command) -> CoreError {
 /// 窓 `k` の矩形。
 pub fn rect_of(c: &TestCore, k: u64) -> Rect {
     let id = c.view().window_id(ExternalKey::new(k)).expect("窓がある");
-    c.view().window(id).and_then(|w| w.rect).expect("矩形がある")
+    c.view()
+        .window(id)
+        .and_then(|w| w.rect)
+        .expect("矩形がある")
 }
 
 /// フォーカス窓のキー。

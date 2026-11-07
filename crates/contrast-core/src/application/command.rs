@@ -104,6 +104,10 @@ pub enum Action {
     ResetWindowHeight,
     /// フォーカス列の中心を作業領域の中心に合わせる（`Scrolling` のみ、D51・D53）。
     CenterColumn,
+    /// 列に窓が 1 枚なら左隣の列の最下段へ、2 枚以上なら左隣に新しい列として出す（`Scrolling` のみ、D57・D58）。
+    ConsumeOrExpelWindowLeft,
+    /// 列に窓が 1 枚なら右隣の列の最下段へ、2 枚以上なら右隣に新しい列として出す（`Scrolling` のみ、D57・D59）。
+    ConsumeOrExpelWindowRight,
 }
 
 /// 方向。
