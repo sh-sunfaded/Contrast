@@ -10,14 +10,17 @@ mod consume_window;
 mod expel_window;
 mod focus_column;
 mod focus_direction;
+mod focus_monitor;
 mod maximize_column;
 mod move_column;
+mod move_column_to_monitor;
 mod move_column_to_workspace;
 mod move_to_workspace;
 mod move_window;
 mod move_workspace;
 mod output_added;
 mod output_changed;
+mod output_focus_requested;
 mod output_insets_changed;
 mod output_removed;
 mod reset_window_height;
@@ -35,9 +38,9 @@ mod window_unmapped;
 
 use alloc::vec::Vec;
 
-use crate::application::command::{Action, Command};
+use crate::application::command::{Action, Command, Direction};
 use crate::application::effect::Effect;
-use crate::domain::id::WorkspaceIndex;
+use crate::domain::id::{OutputId, WindowId, WorkspaceId, WorkspaceIndex};
 use crate::domain::state::State;
 use crate::domain::window::WindowState;
 use crate::error::CoreError;
@@ -67,6 +70,7 @@ pub fn dispatch<P: Policy>(
         Command::WindowUnmapped(key) => window_unmapped::handle(state, key),
         Command::WindowMetaChanged { key, meta } => window_meta_changed::handle(state, key, meta),
         Command::WindowFocusRequested(key) => window_focus_requested::handle(state, key),
+        Command::OutputFocusRequested(key) => output_focus_requested::handle(state, key),
         Command::Action(action) => dispatch_action(state, action),
     }
 }
@@ -106,6 +110,9 @@ fn dispatch_action(state: &mut State, action: Action) -> Result<Vec<Effect>, Cor
         Action::MoveColumnToWorkspace(index) => move_column_to_workspace::handle(state, index),
         Action::MoveWorkspaceDown => move_workspace::handle(state, true),
         Action::MoveWorkspaceUp => move_workspace::handle(state, false),
+        // D78・D79: 複数モニタ（`Dynamic` のみ）。
+        Action::FocusMonitor(direction) => focus_monitor::handle(state, direction),
+        Action::MoveColumnToMonitor(direction) => move_column_to_monitor::handle(state, direction),
     }
 }
 
@@ -113,11 +120,11 @@ fn dispatch_action(state: &mut State, action: Action) -> Result<Vec<Effect>, Cor
 ///
 /// # Errors
 /// フォーカスが None なら `NoFocusedWindow`。
-fn focused(state: &State) -> Result<crate::domain::id::WindowId, CoreError> {
+fn focused(state: &State) -> Result<WindowId, CoreError> {
     state.focus.ok_or(CoreError::NoFocusedWindow)
 }
 
-/// `index` が範囲内か確かめる。
+/// `index` が範囲内か確かめる（`Fixed`。全体の個数で）。
 ///
 /// # Errors
 /// `workspace_count` 以上なら `WorkspaceIndexOutOfRange`。
@@ -129,42 +136,46 @@ fn check_index(state: &State, index: WorkspaceIndex) -> Result<(), CoreError> {
     }
 }
 
-/// 出力 `output` が表示するワークスペースを `index` にする。`index` を別の出力が表示していれば、その出力には元のワークスペースを表示させる（入れ替え）。
-fn show_workspace(state: &mut State, output: crate::domain::id::OutputId, index: WorkspaceIndex) {
+/// 出力 `output` が表示するワークスペースを `target` にする。`Fixed` で `target` を別の出力が表示していれば、
+/// その出力には元のワークスペースを表示させる（D12 の入れ替え）。`Dynamic` の列は他の出力に表示されない（D81）。
+fn show_workspace(state: &mut State, output: OutputId, target: WorkspaceId) {
     let Some(current) = state.outputs.get(&output).map(|o| o.shown) else {
         return;
     };
-    let other = state.output_showing(index);
+    let other = state.output_showing(target);
     if let Some(o) = other.and_then(|id| state.outputs.get_mut(&id)) {
         o.shown = current;
     }
     if let Some(o) = state.outputs.get_mut(&output) {
-        o.shown = index;
+        o.shown = target;
     }
 }
 
-/// 命令の `index` を、有効なワークスペースの位置にする（D66）。
-/// `Dynamic` は末尾に丸める。`Fixed` は範囲外ならエラー。
+/// 命令の `index` を、ワークスペースの id にする（D66・D73・D81）。
+/// `Dynamic` はアクティブな出力の列の中の位置で、末尾に丸める。`Fixed` は全体の位置で、範囲外ならエラー。
 ///
 /// # Errors
 /// `Fixed` で `workspace_count` 以上なら `WorkspaceIndexOutOfRange`。
-fn resolve_index(state: &State, index: WorkspaceIndex) -> Result<WorkspaceIndex, CoreError> {
+fn resolve_index(state: &State, index: WorkspaceIndex) -> Result<WorkspaceId, CoreError> {
     if state.is_dynamic() {
-        let last = state.workspace_count().saturating_sub(1);
-        return Ok(WorkspaceIndex::new(index.get().min(last)));
+        let list = state.active_list();
+        let last = list.len().saturating_sub(1);
+        return list
+            .get(usize::from(index.get()).min(last))
+            .copied()
+            .ok_or(CoreError::WorkspaceIndexOutOfRange);
     }
     check_index(state, index)?;
-    Ok(index)
+    state
+        .workspace_at(index)
+        .map(|ws| ws.id)
+        .ok_or(CoreError::WorkspaceIndexOutOfRange)
 }
 
-/// D9: ワークスペース `index` の全画面窓のうち `except` 以外を元の状態に戻す。
-fn demote_other_fullscreen(
-    state: &mut State,
-    index: WorkspaceIndex,
-    except: crate::domain::id::WindowId,
-) {
+/// D9: ワークスペース `ws` の全画面窓のうち `except` 以外を元の状態に戻す。
+fn demote_other_fullscreen(state: &mut State, ws: WorkspaceId, except: WindowId) {
     let ids = state
-        .workspace(index)
+        .workspace(ws)
         .map(|ws| ws.windows.clone())
         .unwrap_or_default();
     for id in ids {
@@ -179,4 +190,64 @@ fn demote_other_fullscreen(
             w.state = w.restore_state;
         }
     }
+}
+
+/// D76・D77 の最後: `Dynamic` で、フォーカスがアクティブな出力の表示中のワークスペースの窓でなければ（None を含む）、
+/// そのワークスペースの D12 の規則のフォーカスにする（I13）。出力が無ければ None。
+fn fix_focus_on_active_output(state: &mut State) {
+    if !state.is_dynamic() {
+        return;
+    }
+    let Some(active) = state.focused_output() else {
+        state.set_focus(None);
+        return;
+    };
+    let shown = state.outputs.get(&active).map(|o| o.shown);
+    let ok = state
+        .focus
+        .and_then(|f| state.windows.get(&f))
+        .is_some_and(|w| Some(w.workspace) == shown);
+    if !ok {
+        let next = state.preferred_focus_on(active);
+        state.set_focus(next);
+    }
+}
+
+/// D78: アクティブな出力から見て、`direction` の出力。中心がその方向にあり、直交する軸で（端が接するだけでなく）重なる
+/// 出力のうち、その軸の中心の距離が最小のもの（同じなら OutputId が小さい方）。無ければ `None`。
+fn neighbor_output(state: &State, direction: Direction) -> Option<OutputId> {
+    let current = state.focused_output()?;
+    let here = state.outputs.get(&current)?.geometry;
+    let span = |start: i32, len: i32| {
+        (
+            i64::from(start),
+            i64::from(start).saturating_add(i64::from(len)),
+        )
+    };
+    let center =
+        |start: i32, len: i32| i64::from(start).saturating_add(i64::from(len).div_euclid(2));
+    let (cx, cy) = (
+        center(here.x(), here.width()),
+        center(here.y(), here.height()),
+    );
+    let (hx, hy) = (span(here.x(), here.width()), span(here.y(), here.height()));
+    let overlaps = |a: (i64, i64), b: (i64, i64)| a.0 < b.1 && b.0 < a.1;
+    let mut best: Option<(i64, OutputId)> = None;
+    for o in state.outputs.values() {
+        let g = o.geometry;
+        let (ox, oy) = (center(g.x(), g.width()), center(g.y(), g.height()));
+        let (gx, gy) = (span(g.x(), g.width()), span(g.y(), g.height()));
+        let candidate = match direction {
+            Direction::Left => (ox < cx && overlaps(gy, hy)).then(|| cx.saturating_sub(ox)),
+            Direction::Right => (ox > cx && overlaps(gy, hy)).then(|| ox.saturating_sub(cx)),
+            Direction::Up => (oy < cy && overlaps(gx, hx)).then(|| cy.saturating_sub(oy)),
+            Direction::Down => (oy > cy && overlaps(gx, hx)).then(|| oy.saturating_sub(cy)),
+        };
+        if let Some(distance) = candidate
+            && best.is_none_or(|(d, _)| distance < d)
+        {
+            best = Some((distance, o.id));
+        }
+    }
+    best.map(|(_, id)| id)
 }

@@ -3,7 +3,7 @@
 use alloc::vec::Vec;
 
 use crate::domain::geometry::Rect;
-use crate::domain::id::{ExternalKey, OutputId, WindowId, WorkspaceIndex};
+use crate::domain::id::{ExternalKey, OutputId, WindowId, WorkspaceId, WorkspaceIndex};
 use crate::domain::state::State;
 use crate::domain::window::WindowState;
 
@@ -17,8 +17,10 @@ pub struct WindowView {
     pub rect: Option<Rect>,
     /// 配置状態。
     pub state: WindowState,
-    /// 属するワークスペース。
+    /// 属するワークスペースの、全体の並びでの位置（D73）。
     pub workspace: WorkspaceIndex,
+    /// 属するワークスペースの id（D82）。
+    pub workspace_id: WorkspaceId,
     /// 表示中のワークスペースにあれば true。
     pub visible: bool,
 }
@@ -66,22 +68,59 @@ impl<'a> StateView<'a> {
         self.state.output_keys.id_of(key)
     }
 
-    /// 出力が表示しているワークスペース。
+    /// 出力が表示しているワークスペースの、全体の並びでの位置（D73）。
     #[must_use]
     pub fn shown_workspace(&self, output: OutputId) -> Option<WorkspaceIndex> {
-        self.state.outputs.get(&output).map(|o| o.shown)
+        self.state
+            .outputs
+            .get(&output)
+            .and_then(|o| self.state.index_of(o.shown))
     }
 
-    /// ワークスペースの id（D63。位置が変わっても変わらない通し番号）。
+    /// 全体の並びで位置 `index` のワークスペースの id（D63・D73。id は位置が変わっても変わらない通し番号）。
     #[must_use]
-    pub fn workspace_id(&self, index: WorkspaceIndex) -> Option<crate::domain::id::WorkspaceId> {
-        self.state.workspace(index).map(|ws| ws.id)
+    pub fn workspace_id(&self, index: WorkspaceIndex) -> Option<WorkspaceId> {
+        self.state.workspace_at(index).map(|ws| ws.id)
     }
 
-    /// ワークスペースの窓の順序列。
+    /// 全体の並びで位置 `index` のワークスペースの窓の順序列（D73）。
     #[must_use]
     pub fn workspace_windows(&self, index: WorkspaceIndex) -> Option<&'a [WindowId]> {
-        self.state.workspace(index).map(|ws| ws.windows.as_slice())
+        self.state
+            .workspace_at(index)
+            .map(|ws| ws.windows.as_slice())
+    }
+
+    /// アクティブな出力（D82）。`Dynamic` はアクティブな出力（D75）、`Fixed` は D5 のフォーカス出力。
+    #[must_use]
+    pub fn active_output(&self) -> Option<OutputId> {
+        self.state.focused_output()
+    }
+
+    /// 出力 `output` のワークスペースの列（D82）。`Dynamic` はその出力の列、`Fixed` は全体の並び。
+    /// 出力が無ければ空。
+    #[must_use]
+    pub fn output_workspaces(&self, output: OutputId) -> Vec<WorkspaceId> {
+        if !self.state.outputs.contains_key(&output) {
+            return Vec::new();
+        }
+        self.state.list_of(Some(output))
+    }
+
+    /// id のワークスペースの窓の順序列（D82）。
+    #[must_use]
+    pub fn workspace_windows_by_id(&self, id: WorkspaceId) -> Option<&'a [WindowId]> {
+        self.state.workspace(id).map(|ws| ws.windows.as_slice())
+    }
+
+    /// ワークスペース `id` の出力（D82）。`Dynamic` は持ち主、`Fixed` は表示している出力。
+    #[must_use]
+    pub fn workspace_output(&self, id: WorkspaceId) -> Option<OutputId> {
+        if self.state.is_dynamic() {
+            self.state.workspace(id).and_then(|ws| ws.output)
+        } else {
+            self.state.output_showing(id)
+        }
     }
 
     /// 窓 1 枚の情報。
@@ -92,7 +131,11 @@ impl<'a> StateView<'a> {
             id,
             rect: w.rect,
             state: w.state,
-            workspace: w.workspace,
+            workspace: self
+                .state
+                .index_of(w.workspace)
+                .unwrap_or(WorkspaceIndex::new(0)),
+            workspace_id: w.workspace,
             visible: self.state.is_window_visible(id),
         })
     }

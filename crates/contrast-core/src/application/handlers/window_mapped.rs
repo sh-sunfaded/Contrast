@@ -27,13 +27,17 @@ pub fn handle<P: Policy>(
     if state.window_keys.id_of(key).is_some() {
         return Err(CoreError::DuplicateKey);
     }
+    // D73: `Dynamic` はアクティブな出力の列の中の位置、`Fixed` は全体の位置。
+    let list = state.active_list();
     let focused_workspace = state
         .focused_output()
         .and_then(|o| state.outputs.get(&o))
-        .map(|o| o.shown);
+        .and_then(|o| list.iter().position(|ws| *ws == o.shown))
+        .and_then(|p| u8::try_from(p).ok())
+        .map(WorkspaceIndex::new);
     let ctx = PlacementContext::new(
         focused_workspace,
-        state.workspace_count(),
+        u8::try_from(list.len()).unwrap_or(u8::MAX),
         state.outputs.len(),
     );
     let placement = policy.place(&meta, &ctx);
@@ -42,23 +46,29 @@ pub fn handle<P: Policy>(
         .or(focused_workspace)
         .unwrap_or(WorkspaceIndex::new(0));
     // `Dynamic` で、存在しないワークスペースを指定されたときは、指定がなかったことにする（niri の窓ルールと同じ）。
-    if state.is_dynamic() && state.workspace(index).is_none() {
+    if state.is_dynamic() && list.get(usize::from(index.get())).is_none() {
         index = focused_workspace.unwrap_or(WorkspaceIndex::new(0));
     }
-    check_index(state, index)?;
-
+    if !state.is_dynamic() {
+        check_index(state, index)?;
+    }
+    let target = list
+        .get(usize::from(index.get()))
+        .copied()
+        .ok_or(CoreError::WorkspaceIndexOutOfRange)?;
     let id = state.window_ids.next()?;
     state.window_keys.insert(key, id)?;
     state
         .windows
-        .insert(id, Window::new(id, meta, placement.state, index));
-    if let Some(ws) = state.workspace_mut(index) {
+        .insert(id, Window::new(id, meta, placement.state, target));
+    if let Some(ws) = state.workspace_mut(target) {
         ws.push_window(id);
     }
+    state.claim_workspace(target);
     if placement.state == WindowState::Fullscreen {
-        demote_other_fullscreen(state, index, id);
+        demote_other_fullscreen(state, target, id);
     }
-    if placement.focus && state.output_showing(index).is_some() {
+    if placement.focus && state.output_showing(target).is_some() {
         state.set_focus(Some(id));
     }
     Ok(vec![Effect::Registered {

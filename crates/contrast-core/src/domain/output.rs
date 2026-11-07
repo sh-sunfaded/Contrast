@@ -8,7 +8,7 @@
 use alloc::string::String;
 
 use crate::domain::geometry::Rect;
-use crate::domain::id::{OutputId, WorkspaceIndex};
+use crate::domain::id::{OutputId, WorkspaceId};
 use crate::domain::insets::Insets;
 use crate::error::LayoutError;
 
@@ -40,8 +40,8 @@ pub struct Output {
     pub name: OutputName,
     /// 論理矩形。
     pub geometry: Rect,
-    /// 表示中のワークスペース（I3）。
-    pub shown: WorkspaceIndex,
+    /// 表示中のワークスペースの id（I3。D73）。
+    pub shown: WorkspaceId,
     /// 作業領域から除く余白（D31。追加時は 0）。
     pub insets: Insets,
 }

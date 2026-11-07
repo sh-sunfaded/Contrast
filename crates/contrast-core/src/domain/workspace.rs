@@ -4,19 +4,24 @@
 //! - I2 順序列に重複がない（`push_window` は重複を足さない）。列中の ID が存在する窓を指すことは
 //!   `State` の操作が保証し、`invariant.rs` が検査する。
 //! - フォーカス履歴は順序列の部分集合で、重複がない（最新が末尾）。
+//! - I13（`Dynamic`）持ち主の出力（`output`）は、出力が 1 台以上なら存在する出力を指す（`State` の操作が保証する）。
 
 use alloc::vec::Vec;
 
 use crate::domain::column::Column;
-use crate::domain::id::{WindowId, WorkspaceId, WorkspaceIndex};
+use crate::domain::id::{OutputId, WindowId, WorkspaceId};
+use crate::domain::output::OutputName;
 
-/// ワークスペース 1 つ。D1 により全出力で共有され、数は増減しない。
+/// ワークスペース 1 つ。`Fixed` では全出力で共有され（D1）、`Dynamic` では出力ごとの列に属する（D74）。
+/// 位置は持たない（`State.workspaces` の並びが位置。窓と出力は id で参照する。D73）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Workspace {
     /// ID。
     pub id: WorkspaceId,
-    /// 0 始まりのインデックス。
-    pub index: WorkspaceIndex,
+    /// 持ち主の出力（`Dynamic` のみ。出力が 0 台のとき・`Fixed` では `None`。D74）。
+    pub output: Option<OutputId>,
+    /// 元の出力の名前（`Dynamic` のみ。niri の `original_outputs`。D74）。
+    pub original_output: Option<OutputName>,
     /// 窓の順序列（タイル配置の並び順）。
     pub windows: Vec<WindowId>,
     /// フォーカス履歴。末尾が最新。
@@ -28,12 +33,13 @@ pub struct Workspace {
 }
 
 impl Workspace {
-    /// 空のワークスペースを作る。
+    /// 持ち主の無い空のワークスペースを作る。
     #[must_use]
-    pub const fn new(id: WorkspaceId, index: WorkspaceIndex) -> Self {
+    pub const fn new(id: WorkspaceId) -> Self {
         Self {
             id,
-            index,
+            output: None,
+            original_output: None,
             windows: Vec::new(),
             focus_history: Vec::new(),
             columns: Vec::new(),
@@ -116,7 +122,7 @@ mod tests {
 
     /// 窓 `ids` を 1 列ずつに入れたワークスペース。
     fn with_columns(ids: &[u64]) -> Workspace {
-        let mut ws = Workspace::new(WorkspaceId::from_raw(1), WorkspaceIndex::new(0));
+        let mut ws = Workspace::new(WorkspaceId::from_raw(1));
         for n in ids {
             ws.windows.push(wid(*n));
             ws.columns.push(Column::single(

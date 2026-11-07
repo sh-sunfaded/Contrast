@@ -7,7 +7,7 @@
 use alloc::string::String;
 
 use crate::domain::geometry::{Rect, Size};
-use crate::domain::id::{WindowId, WorkspaceIndex};
+use crate::domain::id::{WindowId, WorkspaceId};
 
 /// 窓の性質。シェルがクライアントから読み取って渡す。
 #[non_exhaustive]
@@ -46,8 +46,8 @@ pub struct Window {
     pub state: WindowState,
     /// 全画面にする前の状態。全画面を解くときにここへ戻す（D9）。
     pub restore_state: WindowState,
-    /// 属するワークスペース（I1）。
-    pub workspace: WorkspaceIndex,
+    /// 属するワークスペースの id（I1。位置ではなく id で参照する。D73）。
+    pub workspace: WorkspaceId,
     /// 最後に計算した矩形。一度も表示されていなければ `None`。
     pub rect: Option<Rect>,
     /// 浮動時の矩形（D8）。一度も浮動していなければ `None`。
@@ -61,7 +61,7 @@ impl Window {
         id: WindowId,
         meta: WindowMeta,
         state: WindowState,
-        workspace: WorkspaceIndex,
+        workspace: WorkspaceId,
     ) -> Self {
         Self {
             id,

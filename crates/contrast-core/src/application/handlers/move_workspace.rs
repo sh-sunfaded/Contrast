@@ -6,7 +6,6 @@
 use alloc::vec::Vec;
 
 use crate::application::effect::Effect;
-use crate::domain::id::WorkspaceIndex;
 use crate::domain::state::State;
 use crate::error::CoreError;
 
@@ -18,23 +17,27 @@ pub fn handle(state: &mut State, down: bool) -> Result<Vec<Effect>, CoreError> {
     if !state.is_dynamic() {
         return Ok(Vec::new());
     }
-    let Some(shown) = state
-        .focused_output()
-        .and_then(|o| state.outputs.get(&o))
-        .map(|o| o.shown)
-    else {
+    let Some(output) = state.focused_output() else {
         return Ok(Vec::new());
     };
-    let last = state.workspace_count().saturating_sub(1);
+    let Some(shown) = state.outputs.get(&output).map(|o| o.shown) else {
+        return Ok(Vec::new());
+    };
+    // D81: アクティブな出力の列の中で入れ替える。
+    let list = state.list_of(Some(output));
+    let Some(at) = list.iter().position(|ws| *ws == shown) else {
+        return Ok(Vec::new());
+    };
+    let last = list.len().saturating_sub(1);
     let next = if down {
-        shown.get().saturating_add(1).min(last)
+        at.saturating_add(1).min(last)
     } else {
-        shown.get().saturating_sub(1)
+        at.saturating_sub(1)
     };
-    if next == shown.get() {
+    let Some(other) = list.get(next).copied().filter(|_| next != at) else {
         return Ok(Vec::new());
-    }
-    state.swap_workspaces(shown, WorkspaceIndex::new(next));
-    state.clean_up_workspaces();
+    };
+    state.swap_workspaces(shown, other);
+    state.clean_up(Some(output));
     Ok(Vec::new())
 }

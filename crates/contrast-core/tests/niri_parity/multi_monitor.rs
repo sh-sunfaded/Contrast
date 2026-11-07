@@ -9,15 +9,23 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use contrast_core::{
     Action, Command, CoreConfig, CoreError, DefaultPolicy, Direction, Effect, ExternalKey,
-    LayoutMode, OutputId, OutputName, WindowState, WorkspaceId, WorkspaceIndex,
-    WorkspaceMode,
+    LayoutMode, OutputId, OutputName, WindowState, WorkspaceId, WorkspaceIndex, WorkspaceMode,
 };
 use proptest::prelude::*;
 
 use crate::common::{FIRST_KEY, TestCore, act, apply_err, apply_ok, focus_key, open, rect};
 
+/// 出力の名前・キー・矩形 `(x, y, 幅, 高さ)`。
+type OutputSpec = (&'static str, u64, (i32, i32, i32, i32));
+
+/// 出力ごとの観測: `(OUTPUTS の添字, ワークスペースごとの窓, 表示中の位置)`。
+type PerOutput = Vec<(usize, Vec<Vec<u64>>, usize)>;
+
+/// 観測全体: 出力ごとの観測と、全体の並び（ワークスペースごとの窓）。
+type Observed = (PerOutput, Vec<Vec<u64>>);
+
 /// 出力の名前とキーと矩形。A の右に B、A の下に C、B の右に D。
-const OUTPUTS: [(&str, u64, (i32, i32, i32, i32)); 4] = [
+const OUTPUTS: [OutputSpec; 4] = [
     ("A", 1, (0, 0, 900, 600)),
     ("B", 2, (900, 0, 900, 600)),
     ("C", 3, (0, 600, 900, 600)),
@@ -165,7 +173,11 @@ fn focus_monitor_moves_the_active_output_and_new_windows_follow_it() {
     assert_eq!(focus_key(&c), Some(12));
     act(&mut c, Action::FocusMonitor(Direction::Left));
     assert_eq!(active(&c), Some(0));
-    assert_eq!(focus_key(&c), Some(11), "A の表示中のワークスペースのフォーカスに戻る");
+    assert_eq!(
+        focus_key(&c),
+        Some(11),
+        "A の表示中のワークスペースのフォーカスに戻る"
+    );
 }
 
 #[test]
@@ -375,7 +387,9 @@ fn output_focus_requested_activates_the_output() {
     assert_eq!(focus_key(&c), Some(11));
     let before = c.snapshot();
     let applied = c
-        .apply(Command::OutputFocusRequested(ExternalKey::new(OUTPUTS[0].1)))
+        .apply(Command::OutputFocusRequested(ExternalKey::new(
+            OUTPUTS[0].1,
+        )))
         .expect("ok");
     assert!(applied.effects.is_empty(), "すでにアクティブ");
     assert_eq!(c.snapshot(), before);
@@ -425,7 +439,10 @@ fn move_column_to_workspace_uses_the_active_outputs_list() {
     act(&mut c, Action::FocusMonitor(Direction::Right));
     open(&mut c, 12);
     open(&mut c, 13);
-    act(&mut c, Action::MoveColumnToWorkspace(WorkspaceIndex::new(1)));
+    act(
+        &mut c,
+        Action::MoveColumnToWorkspace(WorkspaceIndex::new(1)),
+    );
     assert_eq!(list(&c, 1), [vec![12], vec![13], vec![]]);
     assert_eq!(list(&c, 0), [vec![11], vec![]]);
     assert_eq!(shown_at(&c, 1), 1);
@@ -606,11 +623,7 @@ impl Model {
     /// 各列の末尾を空にする。
     fn ensure_trailing(&mut self) {
         for i in 0..self.mons.len() {
-            if self.mons[i]
-                .ws
-                .last()
-                .is_none_or(|w| !w.windows.is_empty())
-            {
+            if self.mons[i].ws.last().is_none_or(|w| !w.windows.is_empty()) {
                 let o = self.mons[i].output;
                 let ws = self.new_ws(Some(o));
                 self.mons[i].ws.push(ws);
@@ -671,10 +684,7 @@ impl Model {
                 ws.push(e);
             }
             let want = self.last_active.remove(&output);
-            let active = ws
-                .iter()
-                .position(|w| Some(w.id) == want)
-                .unwrap_or(0);
+            let active = ws.iter().position(|w| Some(w.id) == want).unwrap_or(0);
             self.mons.push(MMon { output, ws, active });
             self.active = 0;
             self.primary = 0;
@@ -700,10 +710,7 @@ impl Model {
         let e = self.new_ws(Some(output));
         moved.push(e);
         let want = self.last_active.remove(&output);
-        let active = moved
-            .iter()
-            .position(|w| Some(w.id) == want)
-            .unwrap_or(0);
+        let active = moved.iter().position(|w| Some(w.id) == want).unwrap_or(0);
         self.mons.push(MMon {
             output,
             ws: moved,
@@ -930,27 +937,24 @@ fn op() -> impl Strategy<Value = Op> {
 }
 
 /// Core の、出力ごとの列（窓のキーの集合）と表示中の位置。出力が 0 台なら全体の並び。
-fn observed(c: &TestCore) -> (Vec<(usize, Vec<Vec<u64>>, usize)>, Vec<Vec<u64>>) {
+fn observed(c: &TestCore) -> Observed {
     let mut per = Vec::new();
-    for n in 0..3 {
-        if c.view().output_id(ExternalKey::new(OUTPUTS[n].1)).is_some() {
+    for (n, spec) in OUTPUTS.iter().enumerate().take(3) {
+        if c.view().output_id(ExternalKey::new(spec.1)).is_some() {
             per.push((n, list(c, n), shown_at(c, n)));
         }
     }
     let whole = (0..c.view().workspace_count())
         .map(|i| {
-            let id = c
-                .view()
-                .workspace_id(WorkspaceIndex::new(i))
-                .expect("id");
+            let id = c.view().workspace_id(WorkspaceIndex::new(i)).expect("id");
             keys_in(c, id)
         })
         .collect();
     (per, whole)
 }
 
-fn expected(m: &Model) -> (Vec<(usize, Vec<Vec<u64>>, usize)>, Vec<Vec<u64>>) {
-    let mut per: Vec<(usize, Vec<Vec<u64>>, usize)> = m
+fn expected(m: &Model) -> Observed {
+    let mut per: PerOutput = m
         .mons
         .iter()
         .map(|mon| {
@@ -971,7 +975,11 @@ fn expected(m: &Model) -> (Vec<(usize, Vec<Vec<u64>>, usize)>, Vec<Vec<u64>>) {
         whole.extend(mon.ws.iter().map(|w| w.windows.iter().copied().collect()));
     }
     if m.mons.is_empty() {
-        whole.extend(m.unowned.iter().map(|w| w.windows.iter().copied().collect()));
+        whole.extend(
+            m.unowned
+                .iter()
+                .map(|w| w.windows.iter().copied().collect()),
+        );
     }
     (per, whole)
 }
@@ -1054,7 +1062,13 @@ proptest! {
                 }
                 Op::FocusColumn(left) => {
                     let d = if left { Direction::Left } else { Direction::Right };
-                    act(&mut c, Action::FocusDirection(d));
+                    // フォーカスが無ければ NoFocusedWindow（既存の仕様）。
+                    if focus_key(&c).is_none() {
+                        let err = apply_err(&mut c, Command::Action(Action::FocusDirection(d)));
+                        prop_assert_eq!(err, CoreError::NoFocusedWindow);
+                    } else {
+                        act(&mut c, Action::FocusDirection(d));
+                    }
                 }
             }
             prop_assert_eq!(observed(&c), expected(&m));

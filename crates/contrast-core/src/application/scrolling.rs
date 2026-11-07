@@ -14,7 +14,7 @@ use alloc::vec::Vec;
 
 use crate::domain::column::{Column, ColumnWidth, WindowHeight};
 use crate::domain::geometry::Rect;
-use crate::domain::id::{WindowId, WorkspaceIndex};
+use crate::domain::id::{WindowId, WorkspaceId};
 use crate::domain::state::State;
 use crate::domain::window::WindowState;
 use crate::domain::workspace::Workspace;
@@ -139,7 +139,7 @@ pub fn column_layout(ws: &Workspace, area_width: i32) -> Option<(Vec<i32>, Vec<i
 
 /// ワークスペース `index` を表示している出力の作業領域の幅。出力がなければ `None`。
 #[must_use]
-pub fn shown_area_width(state: &State, index: WorkspaceIndex) -> Option<i32> {
+pub fn shown_area_width(state: &State, index: WorkspaceId) -> Option<i32> {
     let output = state
         .output_showing(index)
         .and_then(|o| state.outputs.get(&o))?;
@@ -148,7 +148,7 @@ pub fn shown_area_width(state: &State, index: WorkspaceIndex) -> Option<i32> {
 
 /// ワークスペース `index` を表示している出力の作業領域。出力がなければ `None`。
 #[must_use]
-pub fn shown_area(state: &State, index: WorkspaceIndex) -> Option<Rect> {
+pub fn shown_area(state: &State, index: WorkspaceId) -> Option<Rect> {
     let output = state
         .output_showing(index)
         .and_then(|o| state.outputs.get(&o))?;
@@ -173,7 +173,7 @@ pub fn center_view(left: i32, width: i32, area_width: i32, total: i32) -> i32 {
 pub fn sync(state: &mut State) {
     let default_width = ColumnWidth::Proportion(state.layout.default_width);
     let focus = state.focus;
-    let tiled: Vec<(WorkspaceIndex, Vec<WindowId>)> = state
+    let tiled: Vec<(WorkspaceId, Vec<WindowId>)> = state
         .workspaces
         .iter()
         .map(|ws| {
@@ -188,7 +188,7 @@ pub fn sync(state: &mut State) {
                         .is_some_and(|w| w.state == WindowState::Tiled)
                 })
                 .collect();
-            (ws.index, ids)
+            (ws.id, ids)
         })
         .collect();
     for (index, ids) in tiled {
@@ -247,7 +247,7 @@ pub fn sync_workspace(
 /// 列の足し算や座標が i32 に収まらなければ `GeometryOverflow`。1 つの列の窓が高さより多ければ `Layout(AreaTooSmall)`。
 pub fn arrange_workspace(
     state: &mut State,
-    index: WorkspaceIndex,
+    index: WorkspaceId,
     area: Rect,
 ) -> Result<(), CoreError> {
     let Some(ws) = state.workspace(index) else {
@@ -293,7 +293,7 @@ pub fn arrange_workspace(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FocusPos {
     /// 属するワークスペース。
-    pub ws: WorkspaceIndex,
+    pub ws: WorkspaceId,
     /// 列の位置。
     pub col: usize,
     /// 列の中の行。
@@ -581,7 +581,7 @@ mod tests {
     }
 
     fn workspace() -> Workspace {
-        Workspace::new(WorkspaceId::from_raw(1), WorkspaceIndex::new(0))
+        Workspace::new(WorkspaceId::from_raw(1))
     }
 
     #[test]

@@ -68,6 +68,6 @@ pub fn handle(state: &mut State, index: WorkspaceIndex) -> Result<Vec<Effect>, C
         show_workspace(state, output, target);
     }
     state.set_focus(Some(id));
-    state.clean_up_workspaces();
+    state.clean_up_active();
     Ok(Vec::new())
 }

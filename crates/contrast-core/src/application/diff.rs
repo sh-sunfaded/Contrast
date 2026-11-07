@@ -8,14 +8,14 @@ use alloc::vec::Vec;
 
 use crate::application::effect::Effect;
 use crate::domain::geometry::Rect;
-use crate::domain::id::{OutputId, WindowId, WorkspaceIndex};
+use crate::domain::id::{OutputId, WindowId, WorkspaceId};
 use crate::domain::state::State;
 use crate::domain::window::WindowState;
 
 /// 出力の表示内容（D15 の比較対象）: 論理矩形、表示ワークスペース、窓の並び・矩形・状態、そこにあるフォーカス。
 type Display = (
     Rect,
-    WorkspaceIndex,
+    WorkspaceId,
     Vec<(WindowId, Option<Rect>, WindowState)>,
     Option<WindowId>,
 );

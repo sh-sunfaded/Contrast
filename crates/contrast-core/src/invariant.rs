@@ -1,10 +1,10 @@
-//! 不変条件 I1〜I6・I9〜I11 の検査（テストから呼ぶ）。I7・I8 は状態機械テストで確かめる。
+//! 不変条件 I1〜I6・I9〜I13 の検査（テストから呼ぶ）。I7・I8 は状態機械テストで確かめる。
 
 use alloc::vec::Vec;
 
 use crate::application::scrolling;
 use crate::domain::column::LayoutMode;
-use crate::domain::id::{OutputId, WindowId, WorkspaceIndex};
+use crate::domain::id::{OutputId, WindowId, WorkspaceId, WorkspaceIndex};
 use crate::domain::state::State;
 use crate::domain::window::WindowState;
 
@@ -31,9 +31,11 @@ pub enum InvariantViolation {
     I10(WorkspaceIndex),
     /// I11: `Scrolling` で、フォーカスが Tiled の窓にあるのに、その列が D39 の条件を満たしていない。
     I11(WindowId),
-    /// I12: ワークスペースの位置と id の整合が崩れている（位置が `Workspace.index` と違う、id の重複）。
-    /// `Dynamic` では、末尾が空でない・個数が 0 のときも（D70）。
+    /// I12: ワークスペースの id が重複している。
+    /// `Dynamic` では、列の末尾が空でない・列が空のときも（D70・D74）。
     I12(WorkspaceIndex),
+    /// I13（D83）: `Dynamic` で、持ち主の出力・表示・アクティブな出力・フォーカスの整合が崩れている。
+    I13,
 }
 
 /// I7 の比較用の状態の複製。
@@ -60,28 +62,91 @@ pub fn check(state: &State) -> Result<(), InvariantViolation> {
     check_i9(state)?;
     check_i10(state)?;
     check_i11(state)?;
-    check_i12(state)
+    check_i12(state)?;
+    check_i13(state)
 }
 
-/// I12（D63・D70）: `Workspace.index` は位置と一致し、id は互いに異なる。`Dynamic` では、個数は 1 以上で、末尾は空。
+/// ワークスペースの全体の並びでの位置（違反の報告用）。
+fn pos(state: &State, id: WorkspaceId) -> WorkspaceIndex {
+    state.index_of(id).unwrap_or(WorkspaceIndex::new(u8::MAX))
+}
+
+/// I12（D63・D70・D74）: id は互いに異なる。`Dynamic` では、各出力の列（出力が 0 台なら持ち主の無い列）は
+/// 1 個以上で、末尾は空（個数の上限のときを除く）。
 fn check_i12(state: &State) -> Result<(), InvariantViolation> {
     let mut seen = alloc::collections::BTreeSet::new();
-    for (position, ws) in state.workspaces.iter().enumerate() {
-        if usize::from(ws.index.get()) != position || !seen.insert(ws.id) {
-            return Err(InvariantViolation::I12(ws.index));
+    for ws in &state.workspaces {
+        if !seen.insert(ws.id) {
+            return Err(InvariantViolation::I12(pos(state, ws.id)));
         }
     }
     if state.is_dynamic() {
         let at_limit = state.workspaces.len() >= crate::domain::state::MAX_DYNAMIC_WORKSPACES;
-        match state.workspaces.last() {
-            None => return Err(InvariantViolation::I12(WorkspaceIndex::new(0))),
-            Some(last) if !last.windows.is_empty() && !at_limit => {
-                return Err(InvariantViolation::I12(last.index));
+        let owners: Vec<Option<OutputId>> = if state.outputs.is_empty() {
+            alloc::vec![None]
+        } else {
+            state.outputs.keys().copied().map(Some).collect()
+        };
+        for owner in owners {
+            match state
+                .list_of(owner)
+                .last()
+                .and_then(|id| state.workspace(*id))
+            {
+                None => return Err(InvariantViolation::I12(WorkspaceIndex::new(0))),
+                Some(last) if !last.windows.is_empty() && !at_limit => {
+                    return Err(InvariantViolation::I12(pos(state, last.id)));
+                }
+                Some(_) => {}
             }
-            Some(_) => {}
         }
     }
     Ok(())
+}
+
+/// I13（D83）: `Dynamic` の持ち主の出力・表示・アクティブな出力・フォーカス。全体の並びは D73 の順。
+fn check_i13(state: &State) -> Result<(), InvariantViolation> {
+    if !state.is_dynamic() {
+        return Ok(());
+    }
+    if state.outputs.is_empty() {
+        if state.active_output.is_some() || state.workspaces.iter().any(|ws| ws.output.is_some()) {
+            return Err(InvariantViolation::I13);
+        }
+        return Ok(());
+    }
+    let owners_ok = state
+        .workspaces
+        .iter()
+        .all(|ws| ws.output.is_some_and(|o| state.outputs.contains_key(&o)));
+    let shown_ok = state.outputs.values().all(|o| {
+        state
+            .workspace(o.shown)
+            .is_some_and(|ws| ws.output == Some(o.id))
+    });
+    let ordered = state
+        .workspaces
+        .windows(2)
+        .all(|pair| matches!(pair, [a, b] if a.output <= b.output));
+    let active = state
+        .active_output
+        .filter(|o| state.outputs.contains_key(o));
+    let focus_ok = match (state.focus, active) {
+        (None, _) => true,
+        (Some(f), Some(a)) => {
+            let shown = state.outputs.get(&a).map(|o| o.shown);
+            state
+                .windows
+                .get(&f)
+                .is_some_and(|w| Some(w.workspace) == shown)
+        }
+        (Some(_), None) => false,
+    };
+    if owners_ok && shown_ok && ordered && active.is_some() && focus_ok {
+        Ok(())
+    } else {
+        Err(InvariantViolation::I13)
+    }
 }
 
 /// I1・I2: 所属と順序列の整合。
@@ -89,17 +154,14 @@ fn check_i1_i2(state: &State) -> Result<(), InvariantViolation> {
     for ws in &state.workspaces {
         let mut seen: Vec<WindowId> = Vec::with_capacity(ws.windows.len());
         for id in &ws.windows {
-            let belongs = state
-                .windows
-                .get(id)
-                .is_some_and(|w| w.workspace == ws.index);
+            let belongs = state.windows.get(id).is_some_and(|w| w.workspace == ws.id);
             if seen.contains(id) || !belongs {
-                return Err(InvariantViolation::I2(ws.index));
+                return Err(InvariantViolation::I2(pos(state, ws.id)));
             }
             seen.push(*id);
         }
         if ws.focus_history.iter().any(|id| !ws.windows.contains(id)) {
-            return Err(InvariantViolation::I2(ws.index));
+            return Err(InvariantViolation::I2(pos(state, ws.id)));
         }
     }
     for w in state.windows.values() {
@@ -118,7 +180,7 @@ fn check_i1_i2(state: &State) -> Result<(), InvariantViolation> {
 
 /// I3: 各出力の表示ワークスペースは範囲内で、互いに異なる。
 fn check_i3(state: &State) -> Result<(), InvariantViolation> {
-    let mut shown: Vec<WorkspaceIndex> = Vec::with_capacity(state.outputs.len());
+    let mut shown: Vec<WorkspaceId> = Vec::with_capacity(state.outputs.len());
     for o in state.outputs.values() {
         if state.workspace(o.shown).is_none() || shown.contains(&o.shown) {
             return Err(InvariantViolation::I3(o.id));
@@ -204,7 +266,7 @@ fn check_i9(state: &State) -> Result<(), InvariantViolation> {
             .filter(|w| w.state == WindowState::Fullscreen)
             .count();
         if fullscreen > 1 {
-            return Err(InvariantViolation::I9(ws.index));
+            return Err(InvariantViolation::I9(pos(state, ws.id)));
         }
     }
     Ok(())
@@ -241,7 +303,7 @@ fn check_i10(state: &State) -> Result<(), InvariantViolation> {
             })
             .count();
         if bad_column || !tiled_ok || in_columns != tiled_total {
-            return Err(InvariantViolation::I10(ws.index));
+            return Err(InvariantViolation::I10(pos(state, ws.id)));
         }
     }
     check_i10_heights(state)
@@ -267,7 +329,7 @@ fn check_i10_heights(state: &State) -> Result<(), InvariantViolation> {
                 sum.checked_add(rect.height())
             });
             if sum != Some(area.height()) {
-                return Err(InvariantViolation::I10(ws.index));
+                return Err(InvariantViolation::I10(pos(state, ws.id)));
             }
         }
     }
@@ -321,7 +383,7 @@ mod tests {
     use super::{InvariantViolation, check};
     use crate::domain::column::{Column, ColumnWidth, LayoutMode, Ratio};
     use crate::domain::geometry::Rect;
-    use crate::domain::id::{ExternalKey, IdKind, OutputId, WindowId, WorkspaceIndex};
+    use crate::domain::id::{ExternalKey, IdKind, OutputId, WindowId, WorkspaceId, WorkspaceIndex};
     use crate::domain::insets::Insets;
     use crate::domain::output::{Output, OutputName};
     use crate::domain::state::State;
@@ -335,7 +397,7 @@ mod tests {
     /// 窓 `raw` を Tiled・ワークスペース 0・作業領域全体で足す（キーも登録する）。
     fn add_window(state: &mut State, raw: u64, window_state: WindowState) -> Option<()> {
         let id = WindowId::from_raw(raw);
-        let index = WorkspaceIndex::new(0);
+        let index = WorkspaceId::from_raw(1);
         let mut w = Window::new(id, WindowMeta::default(), window_state, index);
         if window_state == WindowState::Tiled {
             w.rect = area();
@@ -353,7 +415,7 @@ mod tests {
             id: oid,
             name: OutputName::new("test"),
             geometry: area()?,
-            shown: WorkspaceIndex::new(0),
+            shown: WorkspaceId::from_raw(1),
             insets: Insets::default(),
         };
         state.outputs.insert(oid, output);
@@ -376,7 +438,7 @@ mod tests {
     fn detects_i1() -> Result<(), &'static str> {
         let mut state = valid().ok_or("setup")?;
         state
-            .workspace_mut(WorkspaceIndex::new(0))
+            .workspace_mut(WorkspaceId::from_raw(1))
             .ok_or("ws")?
             .windows
             .clear();
@@ -391,13 +453,16 @@ mod tests {
     #[test]
     fn detects_i2() -> Result<(), &'static str> {
         let mut state = valid().ok_or("setup")?;
-        let index = WorkspaceIndex::new(0);
+        let index = WorkspaceId::from_raw(1);
         state
             .workspace_mut(index)
             .ok_or("ws")?
             .windows
             .push(WindowId::from_raw(1));
-        assert_eq!(check(&state), Err(InvariantViolation::I2(index)));
+        assert_eq!(
+            check(&state),
+            Err(InvariantViolation::I2(WorkspaceIndex::new(0)))
+        );
         Ok(())
     }
 
@@ -406,7 +471,7 @@ mod tests {
     fn detects_i3() -> Result<(), &'static str> {
         let mut state = valid().ok_or("setup")?;
         let oid = OutputId::from_raw(1);
-        state.outputs.get_mut(&oid).ok_or("output")?.shown = WorkspaceIndex::new(9);
+        state.outputs.get_mut(&oid).ok_or("output")?.shown = WorkspaceId::from_raw(99);
         assert_eq!(check(&state), Err(InvariantViolation::I3(oid)));
         Ok(())
     }
@@ -420,7 +485,7 @@ mod tests {
             id: second,
             name: OutputName::new("second"),
             geometry: area().ok_or("area")?,
-            shown: WorkspaceIndex::new(0),
+            shown: WorkspaceId::from_raw(1),
             insets: Insets::default(),
         };
         state.outputs.insert(second, output);
@@ -485,7 +550,7 @@ mod tests {
     fn scrolling_valid() -> Option<State> {
         let mut state = valid()?;
         state.layout.mode = LayoutMode::Scrolling;
-        let ws = state.workspace_mut(WorkspaceIndex::new(0))?;
+        let ws = state.workspace_mut(WorkspaceId::from_raw(1))?;
         ws.columns.push(Column::single(
             WindowId::from_raw(1),
             ColumnWidth::Proportion(Ratio::FULL),
@@ -530,7 +595,7 @@ mod tests {
         let mut state = scrolling_valid().ok_or("setup")?;
         add_window(&mut state, 2, WindowState::Tiled).ok_or("setup")?;
         state
-            .workspace_mut(WorkspaceIndex::new(0))
+            .workspace_mut(WorkspaceId::from_raw(1))
             .ok_or("ws")?
             .columns
             .push(Column::single(
@@ -563,7 +628,7 @@ mod tests {
         let mut state = scrolling_valid().ok_or("setup")?;
         add_window(&mut state, 2, WindowState::Tiled).ok_or("add 2")?;
         add_window(&mut state, 3, WindowState::Tiled).ok_or("add 3")?;
-        let index = WorkspaceIndex::new(0);
+        let index = WorkspaceId::from_raw(1);
         let column = state
             .workspace_mut(index)
             .ok_or("ws")?
@@ -587,7 +652,10 @@ mod tests {
             .get_mut(&WindowId::from_raw(3))
             .ok_or("window")?
             .rect = Rect::new(0, 60, 100, 30);
-        assert_eq!(check(&state), Err(InvariantViolation::I10(index)));
+        assert_eq!(
+            check(&state),
+            Err(InvariantViolation::I10(WorkspaceIndex::new(0)))
+        );
         Ok(())
     }
 
@@ -595,9 +663,12 @@ mod tests {
     #[test]
     fn detects_i10_when_a_tiled_window_has_no_column() -> Result<(), &'static str> {
         let mut state = scrolling_valid().ok_or("setup")?;
-        let index = WorkspaceIndex::new(0);
+        let index = WorkspaceId::from_raw(1);
         state.workspace_mut(index).ok_or("ws")?.columns.clear();
-        assert_eq!(check(&state), Err(InvariantViolation::I10(index)));
+        assert_eq!(
+            check(&state),
+            Err(InvariantViolation::I10(WorkspaceIndex::new(0)))
+        );
         Ok(())
     }
 
@@ -605,7 +676,7 @@ mod tests {
     #[test]
     fn detects_i10_when_a_window_is_in_two_columns() -> Result<(), &'static str> {
         let mut state = scrolling_valid().ok_or("setup")?;
-        let index = WorkspaceIndex::new(0);
+        let index = WorkspaceId::from_raw(1);
         state
             .workspace_mut(index)
             .ok_or("ws")?
@@ -614,7 +685,10 @@ mod tests {
                 WindowId::from_raw(1),
                 ColumnWidth::Proportion(Ratio::FULL),
             ));
-        assert_eq!(check(&state), Err(InvariantViolation::I10(index)));
+        assert_eq!(
+            check(&state),
+            Err(InvariantViolation::I10(WorkspaceIndex::new(0)))
+        );
         Ok(())
     }
 
@@ -622,7 +696,7 @@ mod tests {
     #[test]
     fn detects_i10_when_a_column_is_empty() -> Result<(), &'static str> {
         let mut state = scrolling_valid().ok_or("setup")?;
-        let index = WorkspaceIndex::new(0);
+        let index = WorkspaceId::from_raw(1);
         let ws = state.workspace_mut(index).ok_or("ws")?;
         ws.columns.push(Column {
             windows: alloc::vec::Vec::new(),
@@ -631,7 +705,10 @@ mod tests {
             restore_width: None,
             heights: alloc::collections::BTreeMap::new(),
         });
-        assert_eq!(check(&state), Err(InvariantViolation::I10(index)));
+        assert_eq!(
+            check(&state),
+            Err(InvariantViolation::I10(WorkspaceIndex::new(0)))
+        );
         Ok(())
     }
 
@@ -639,10 +716,13 @@ mod tests {
     #[test]
     fn detects_i10_when_a_column_width_is_below_one() -> Result<(), &'static str> {
         let mut state = scrolling_valid().ok_or("setup")?;
-        let index = WorkspaceIndex::new(0);
+        let index = WorkspaceId::from_raw(1);
         let ws = state.workspace_mut(index).ok_or("ws")?;
         ws.columns.first_mut().ok_or("column")?.width = ColumnWidth::Fixed(0);
-        assert_eq!(check(&state), Err(InvariantViolation::I10(index)));
+        assert_eq!(
+            check(&state),
+            Err(InvariantViolation::I10(WorkspaceIndex::new(0)))
+        );
         Ok(())
     }
 
@@ -650,7 +730,7 @@ mod tests {
     #[test]
     fn detects_i10_when_a_floating_window_is_in_a_column() -> Result<(), &'static str> {
         let mut state = scrolling_valid().ok_or("setup")?;
-        let index = WorkspaceIndex::new(0);
+        let index = WorkspaceId::from_raw(1);
         add_window(&mut state, 2, WindowState::Floating).ok_or("setup")?;
         let ws = state.workspace_mut(index).ok_or("ws")?;
         ws.columns
@@ -658,7 +738,10 @@ mod tests {
             .ok_or("column")?
             .windows
             .push(WindowId::from_raw(2));
-        assert_eq!(check(&state), Err(InvariantViolation::I10(index)));
+        assert_eq!(
+            check(&state),
+            Err(InvariantViolation::I10(WorkspaceIndex::new(0)))
+        );
         Ok(())
     }
 
@@ -676,7 +759,7 @@ mod tests {
     fn detects_i11_when_the_view_is_out_of_range() -> Result<(), &'static str> {
         let mut state = scrolling_valid().ok_or("setup")?;
         state
-            .workspace_mut(WorkspaceIndex::new(0))
+            .workspace_mut(WorkspaceId::from_raw(1))
             .ok_or("ws")?
             .view_x = 50;
         assert_eq!(
@@ -690,14 +773,17 @@ mod tests {
     #[test]
     fn detects_i10_when_a_column_holds_a_window_that_does_not_exist() -> Result<(), &'static str> {
         let mut state = scrolling_valid().ok_or("setup")?;
-        let index = WorkspaceIndex::new(0);
+        let index = WorkspaceId::from_raw(1);
         let ws = state.workspace_mut(index).ok_or("ws")?;
         ws.columns.clear();
         ws.columns.push(Column::single(
             WindowId::from_raw(99),
             ColumnWidth::Proportion(Ratio::FULL),
         ));
-        assert_eq!(check(&state), Err(InvariantViolation::I10(index)));
+        assert_eq!(
+            check(&state),
+            Err(InvariantViolation::I10(WorkspaceIndex::new(0)))
+        );
         Ok(())
     }
 
@@ -715,7 +801,7 @@ mod tests {
     /// 窓 `raw` をキーなしで足す（ワークスペース 0・Tiled）。
     fn add_extra_window_without_key(state: &mut State, raw: u64) -> Option<()> {
         let id = WindowId::from_raw(raw);
-        let index = WorkspaceIndex::new(0);
+        let index = WorkspaceId::from_raw(1);
         let mut w = Window::new(id, WindowMeta::default(), WindowState::Floating, index);
         w.rect = None;
         state.windows.insert(id, w);
@@ -768,7 +854,7 @@ mod tests {
             id: second,
             name: OutputName::new("second"),
             geometry: area().ok_or("area")?,
-            shown: WorkspaceIndex::new(1),
+            shown: WorkspaceId::from_raw(2),
             insets: Insets::default(),
         };
         state.outputs.insert(second, output);

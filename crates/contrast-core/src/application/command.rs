@@ -56,6 +56,8 @@ pub enum Command {
     ///
     /// 窓が表示中のワークスペースにあるときだけフォーカスを移す。それ以外は状態不変で `Ok`。
     WindowFocusRequested(ExternalKey),
+    /// 出力をアクティブにする要求（窓の無い所のクリックなど。`Dynamic` のみ、D80）。
+    OutputFocusRequested(ExternalKey),
     /// キーバインド解決後の意味操作。
     Action(Action),
 }
@@ -114,6 +116,10 @@ pub enum Action {
     MoveWorkspaceDown,
     /// 表示中のワークスペースを 1 つ上と入れ替える（`Dynamic` のみ、D68）。
     MoveWorkspaceUp,
+    /// その方向の出力をアクティブにする（`Dynamic` のみ、D78）。
+    FocusMonitor(Direction),
+    /// フォーカス窓の列ごと、その方向の出力の表示中のワークスペースへ移す（`Scrolling` かつ `Dynamic` のみ、D79）。
+    MoveColumnToMonitor(Direction),
 }
 
 /// 方向。

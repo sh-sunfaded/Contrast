@@ -18,17 +18,17 @@ use crate::error::CoreError;
 /// # Errors
 /// i が範囲外なら `WorkspaceIndexOutOfRange`、フォーカスが None なら `NoFocusedWindow`。
 pub fn handle(state: &mut State, index: WorkspaceIndex) -> Result<Vec<Effect>, CoreError> {
-    let index = resolve_index(state, index)?;
+    let target = resolve_index(state, index)?;
     let id = focused(state)?;
     let Some((from, window_state)) = state.windows.get(&id).map(|w| (w.workspace, w.state)) else {
         return Ok(Vec::new());
     };
-    if from == index {
+    if from == target {
         return Ok(Vec::new());
     }
-    state.move_window_to(id, index);
+    state.move_window_to(id, target);
     if window_state == WindowState::Fullscreen {
-        demote_other_fullscreen(state, index, id);
+        demote_other_fullscreen(state, target, id);
     }
     let next = if state.output_showing(from).is_some() {
         state
@@ -38,7 +38,7 @@ pub fn handle(state: &mut State, index: WorkspaceIndex) -> Result<Vec<Effect>, C
         None
     };
     state.set_focus(next);
-    // D65（`Dynamic`）。
-    state.clean_up_workspaces();
+    // D65・D74（`Dynamic`）: アクティブな出力の列。
+    state.clean_up_active();
     Ok(Vec::new())
 }
