@@ -82,6 +82,12 @@ pub struct Contrast {
     pub border_buffers: Vec<SolidColorBuffer>,
     /// キーバインドとして握りつぶした押下中のキー（離したときも素通ししない）。
     pub suppressed_keys: Vec<Keycode>,
+    /// ホイールの横方向の目盛りの足し込み（ホイールのバインド用）。
+    pub(crate) wheel_horizontal: crate::input::wheel::ScrollTracker,
+    /// ホイールの縦方向の目盛りの足し込み。
+    pub(crate) wheel_vertical: crate::input::wheel::ScrollTracker,
+    /// バインドの `cooldown`（最後に実行した時刻）。
+    pub(crate) bind_cooldowns: crate::input::wheel::CooldownGate,
 
     pub xdg_shell_state: XdgShellState,
     pub compositor_state: CompositorState,
@@ -197,6 +203,13 @@ impl Contrast {
             shell: Shell::default(),
             border_buffers: Default::default(),
             suppressed_keys: Vec::new(),
+            wheel_horizontal: crate::input::wheel::ScrollTracker::new(
+                crate::input::wheel::WHEEL_TICK_V120,
+            ),
+            wheel_vertical: crate::input::wheel::ScrollTracker::new(
+                crate::input::wheel::WHEEL_TICK_V120,
+            ),
+            bind_cooldowns: Default::default(),
             data_control_state,
             data_control_clients,
             xdg_shell_state,

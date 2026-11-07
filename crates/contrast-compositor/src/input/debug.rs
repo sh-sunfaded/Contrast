@@ -4,6 +4,8 @@
 //! - `key alt+shift+q` … 修飾キーとキーシンボル名をポリシーで解決して実行する
 //!   （xkb のキーコード→キーシンボル変換は通らない）
 //! - `click X Y` … 論理座標 (X, Y) をクリックしたときのフォーカス移動
+//! - `wheel MODS H V` … ホイールの軸イベント（`MODS` は `alt+ctrl` のように修飾キー、無ければ `-`。`H`・`V` は横・縦の `v120`。
+//!   1 目盛りが 120、正は右／下）。ホイールのバインドに当たれば、実行してログに出す
 //! - `state` … 管理中の窓の一覧をログに出す
 
 use std::io::BufRead;
@@ -44,9 +46,43 @@ pub fn init(event_loop: &mut EventLoop<Contrast>) {
     tracing::info!("debug stdin commands enabled");
 }
 
+/// `alt+ctrl` のような修飾キーの並びを `Mods` にする（`-` は無し）。未知の名前は警告して無視する。
+fn parse_mods(text: &str) -> Mods {
+    let mut mods = Mods::default();
+    for m in text.split('+').filter(|m| !m.is_empty() && *m != "-") {
+        match m {
+            "alt" => mods.alt = true,
+            "shift" => mods.shift = true,
+            "ctrl" => mods.ctrl = true,
+            "logo" | "super" => mods.logo = true,
+            other => tracing::warn!(modifier = other, "debug: unknown modifier"),
+        }
+    }
+    mods
+}
+
 impl Contrast {
+    /// `wheel MODS H V`: ホイールの軸イベントを、修飾キー `MODS` を押しているものとして処理する。
+    fn debug_wheel(&mut self, line: &str) {
+        let words: Vec<&str> = line.split_whitespace().collect();
+        let [_, mods, h, v] = words.as_slice() else {
+            tracing::warn!(line, "debug: usage: wheel MODS H V");
+            return;
+        };
+        let (Ok(h), Ok(v)) = (h.parse::<f64>(), v.parse::<f64>()) else {
+            tracing::warn!(line, "debug: bad wheel amounts");
+            return;
+        };
+        let consumed = self.wheel_with_mods(parse_mods(mods), Some(h), Some(v));
+        tracing::info!(consumed, "debug wheel");
+    }
+
     /// stdin から来た 1 行を実行する。
     fn debug_command(&mut self, line: &str) {
+        if line.split_whitespace().next() == Some("wheel") {
+            self.debug_wheel(line);
+            return;
+        }
         let mut words = line.split_whitespace();
         match (words.next(), words.next(), words.next()) {
             (Some("key"), Some(combo), None) => {

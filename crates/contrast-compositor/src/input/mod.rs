@@ -3,6 +3,7 @@
 pub mod bindings;
 pub mod debug;
 pub mod devices;
+pub mod wheel;
 
 use smithay::{
     backend::input::{
@@ -155,6 +156,15 @@ impl Contrast {
             }
             InputEvent::PointerAxis { event, .. } => {
                 let source = event.source();
+                // ホイールのバインド（`Mod+WheelScrollDown` など）に当たれば、クライアントには渡さない。
+                if source == AxisSource::Wheel
+                    && self.on_wheel(
+                        event.amount_v120(Axis::Horizontal),
+                        event.amount_v120(Axis::Vertical),
+                    )
+                {
+                    return;
+                }
                 let mut frame = AxisFrame::new(event.time_msec()).source(source);
                 for axis in [Axis::Horizontal, Axis::Vertical] {
                     let discrete = event.amount_v120(axis);
@@ -204,6 +214,74 @@ impl Contrast {
                 },
             );
         }
+    }
+
+    /// ホイールの軸イベント。押している修飾キーに完全に一致するホイールのバインドがあれば、目盛りごとに実行して `true`
+    /// （クライアントには渡さない）。無ければ足し込みを捨てて `false`（niri と同じ）。
+    fn on_wheel(&mut self, horizontal: Option<f64>, vertical: Option<f64>) -> bool {
+        let Some(keyboard) = self.seat.get_keyboard() else {
+            return false;
+        };
+        let mods = to_mods(&keyboard.modifier_state());
+        self.wheel_with_mods(mods, horizontal, vertical)
+    }
+
+    /// `on_wheel` の本体。修飾キー `mods` を押しているものとして扱う（デバッグ入力からも呼ぶ）。
+    pub(crate) fn wheel_with_mods(
+        &mut self,
+        mods: Mods,
+        horizontal: Option<f64>,
+        vertical: Option<f64>,
+    ) -> bool {
+        const KEYS: [&str; 4] = [
+            "WheelScrollUp",
+            "WheelScrollDown",
+            "WheelScrollLeft",
+            "WheelScrollRight",
+        ];
+        if !KEYS
+            .iter()
+            .any(|key| self.policy.resolve_key(mods, key).is_some())
+        {
+            self.wheel_horizontal.reset();
+            self.wheel_vertical.reset();
+            return false;
+        }
+        // 横を先に、縦をあとに（niri と同じ順）。正は右／下、負は左／上。
+        let h = self.wheel_horizontal.accumulate(horizontal.unwrap_or(0.0));
+        let v = self.wheel_vertical.accumulate(vertical.unwrap_or(0.0));
+        for (ticks, positive, negative) in [
+            (h, "WheelScrollRight", "WheelScrollLeft"),
+            (v, "WheelScrollDown", "WheelScrollUp"),
+        ] {
+            let (forward, backward) = wheel::directions(ticks);
+            for _ in 0..forward {
+                self.fire_wheel_bind(mods, positive);
+            }
+            for _ in 0..backward {
+                self.fire_wheel_bind(mods, negative);
+            }
+        }
+        true
+    }
+
+    /// ホイールのバインド 1 回分。`cooldown` の間は実行しない。
+    fn fire_wheel_bind(&mut self, mods: Mods, key: &str) {
+        let Some(action) = self.policy.resolve_key(mods, key) else {
+            return;
+        };
+        let cooldown = self
+            .policy
+            .key_cooldown_ms(mods, key)
+            .map(|ms| std::time::Duration::from_millis(u64::from(ms)));
+        if !self
+            .bind_cooldowns
+            .allow(mods, key, cooldown, std::time::Instant::now())
+        {
+            return;
+        }
+        tracing::info!(key, ?action, "wheel binding");
+        self.run_action(action);
     }
 
     /// キー 1 回分。キーバインドに当たれば握りつぶして実行し、離したときも素通ししない。
