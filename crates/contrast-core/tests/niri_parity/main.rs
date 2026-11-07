@@ -33,3 +33,5 @@ mod common;
 mod consume_or_expel;
 #[cfg(feature = "invariants")]
 mod dynamic_workspaces;
+#[cfg(feature = "invariants")]
+mod multi_monitor;
