@@ -9,8 +9,8 @@ use std::collections::BTreeMap;
 use cdl_host::{Node, Px, Rgba};
 use contrast_core::{LayoutMode, Ratio, WindowHeight};
 use contrast_policy::settings::{
-    MAX_ANIMATION_MS, MAX_BORDER_WIDTH, MAX_DECORATION_PX, MAX_HIDE_AFTER_INACTIVE_MS,
-    MAX_WINDOW_HEIGHT_PX, MAX_WORKSPACES, rgba8,
+    MAX_ANIMATION_MS, MAX_BORDER_WIDTH, MAX_COOLDOWN_MS, MAX_DECORATION_PX,
+    MAX_HIDE_AFTER_INACTIVE_MS, MAX_WINDOW_HEIGHT_PX, MAX_WORKSPACES, rgba8,
 };
 use contrast_policy::{
     Action, ConfigDiagnostic, KeyBinding, KeySpec, ModKey, Settings, StartupCommand, codes,
@@ -545,6 +545,7 @@ fn read_keybind(cx: &mut Ctx<'_>, node: Node<'_>, settings: &Settings) -> Option
     let delta = cx.optional::<f64>(node, "delta");
     let height = cx.optional::<f64>(node, "height");
     let height_px = cx.optional::<f64>(node, "heightPx");
+    let cooldown = cx.optional::<f64>(node, "cooldown");
     let (keys, action) = (keys?, action?);
 
     let spec: Option<KeySpec> = match parse_key_spec(&keys, settings.mod_key) {
@@ -564,10 +565,31 @@ fn read_keybind(cx: &mut Ctx<'_>, node: Node<'_>, settings: &Settings) -> Option
         count: settings.workspaces,
     };
     let action = read_action(cx, node, &action, args);
+    let cooldown_ms = read_cooldown(cx, node, cooldown)?;
     Some(KeyBinding {
         key: spec?,
         action: action?,
+        cooldown_ms,
     })
+}
+
+/// `Keybind` の `cooldown`（ミリ秒。niri の `cooldown-ms`）。省略は `Some(None)`、1〜`MAX_COOLDOWN_MS` の整数は `Some(Some(ms))`、
+/// それ以外は CT003 で `None`。
+fn read_cooldown(cx: &mut Ctx<'_>, node: Node<'_>, value: Option<f64>) -> Option<Option<u32>> {
+    let Some(ms) = value else {
+        return Some(None);
+    };
+    match integer_in(ms, 1, MAX_COOLDOWN_MS) {
+        Some(ms) => Some(Some(ms)),
+        None => {
+            cx.error(
+                node,
+                codes::BAD_PROP,
+                format!("`Keybind` の `cooldown` は 1〜{MAX_COOLDOWN_MS} の整数（ミリ秒）: {ms}"),
+            );
+            None
+        }
+    }
 }
 
 /// `Keybind` の action に付く引数。

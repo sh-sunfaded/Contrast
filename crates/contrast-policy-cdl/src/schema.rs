@@ -118,7 +118,8 @@ pub(crate) fn contrast_schema() -> Result<Schema, Vec<String>> {
                 .optional_prop("width", Ty::Number)
                 .optional_prop("delta", Ty::Number)
                 .optional_prop("height", Ty::Number)
-                .optional_prop("heightPx", Ty::Number),
+                .optional_prop("heightPx", Ty::Number)
+                .optional_prop("cooldown", Ty::Number),
         )
         .type_def(MODULE, "WindowInfo", window_info.clone())
         .type_def(MODULE, "Placement", placement.clone())

@@ -297,6 +297,10 @@ impl Policy for ConfigStore {
     fn resolve_key(&self, mods: Mods, keysym: &str) -> Option<Action> {
         self.config().settings.resolve_key(mods, keysym)
     }
+
+    fn key_cooldown_ms(&self, mods: Mods, keysym: &str) -> Option<u32> {
+        self.config().settings.resolve_cooldown_ms(mods, keysym)
+    }
 }
 
 #[cfg(test)]

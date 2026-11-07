@@ -14,6 +14,8 @@ interface Spec {
   command?: string;
   workspace?: number;
   delta?: number;
+  /** 続けて実行できる間隔（ミリ秒）。niri の cooldown-ms。 */
+  cooldown?: number;
 }
 
 const none: Spec[] = [];
@@ -110,6 +112,24 @@ function numbered(n: number): Spec[] {
   ];
 }
 
+// ---- ホイール（niri の WheelScroll…。キー名 WheelScrollDown/Up/Left/Right） ----
+
+// 縦（Down/Up）はワークスペース、横（Right/Left）と Shift+縦は列。縦のワークスペースの切り替えには 150ms の間引きが付く。
+const wheels: Spec[] = [
+  { keys: "mod+WheelScrollDown", action: "workspace-next", cooldown: 150 },
+  { keys: "mod+WheelScrollUp", action: "workspace-prev", cooldown: 150 },
+  { keys: "mod+ctrl+WheelScrollDown", action: "move-to-workspace-next", cooldown: 150 },
+  { keys: "mod+ctrl+WheelScrollUp", action: "move-to-workspace-prev", cooldown: 150 },
+  { keys: "mod+WheelScrollRight", action: "focus-right" },
+  { keys: "mod+WheelScrollLeft", action: "focus-left" },
+  { keys: "mod+ctrl+WheelScrollRight", action: "move-right" },
+  { keys: "mod+ctrl+WheelScrollLeft", action: "move-left" },
+  { keys: "mod+shift+WheelScrollDown", action: "focus-right" },
+  { keys: "mod+shift+WheelScrollUp", action: "focus-left" },
+  { keys: "mod+ctrl+shift+WheelScrollDown", action: "move-right" },
+  { keys: "mod+ctrl+shift+WheelScrollUp", action: "move-left" },
+];
+
 // ---- そのほか（1 つずつ） ----
 
 const others: Spec[] = [
@@ -142,6 +162,7 @@ const specs: Spec[] = none
   .concat(directions.reduce((acc, d) => acc.concat(direction(d)), none))
   .concat(steps.reduce((acc, s) => acc.concat(step(s)), none))
   .concat(numbers.reduce((acc, n) => acc.concat(numbered(n)), none))
+  .concat(wheels)
   .concat(others);
 
 export const keybinds = specs.map((s) => (
@@ -151,5 +172,6 @@ export const keybinds = specs.map((s) => (
     command={s.command}
     workspace={s.workspace}
     delta={s.delta}
+    cooldown={s.cooldown}
   />
 ));

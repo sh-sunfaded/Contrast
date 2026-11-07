@@ -176,4 +176,10 @@ pub trait Policy {
     /// 修飾キーとキーシンボル名（xkb の名前、例 `"Return"`, `"q"`, `"Left"`）から
     /// 意味操作を引く。該当しなければ `None`（クライアントへ素通しする）。
     fn resolve_key(&self, mods: Mods, keysym: &str) -> Option<Action>;
+
+    /// `resolve_key` で当たるバインドの間引き（ミリ秒）。最初の実行から、この時間のあいだは同じバインドを実行しない。
+    /// 既定は間引かない。
+    fn key_cooldown_ms(&self, _mods: Mods, _keysym: &str) -> Option<u32> {
+        None
+    }
 }

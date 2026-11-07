@@ -70,7 +70,13 @@ pub struct KeyBinding {
     pub key: KeySpec,
     /// 実行する操作。
     pub action: Action,
+    /// このバインドを続けて実行できる間隔（ミリ秒）。最初の実行から、この時間のあいだは実行しない（niri の `cooldown-ms`）。
+    /// ホイールのバインドで、連続する目盛りを間引くのに使う。`None` なら間引かない。
+    pub cooldown_ms: Option<u32>,
 }
+
+/// `cooldown_ms` の上限（ミリ秒。1 時間）。
+pub const MAX_COOLDOWN_MS: u32 = 3_600_000;
 
 /// 見た目の設定。色は RGBA（0.0〜1.0）。
 #[derive(Debug, Clone, PartialEq)]
@@ -267,6 +273,7 @@ impl Settings {
                 keysym: key.to_owned(),
             },
             action,
+            cooldown_ms: None,
         };
         let mut keybinds = vec![
             bind(alt, "return", Action::Spawn(terminal.into())),
@@ -303,12 +310,19 @@ impl Settings {
         }
     }
 
+    /// 押されたキーに当たるバインド。最初に当たったもの。
+    fn find_binding(&self, mods: Mods, keysym: &str) -> Option<&KeyBinding> {
+        self.keybinds.iter().find(|b| b.key.matches(mods, keysym))
+    }
+
     /// 押されたキーに当たる操作。最初に当たったもの。
     pub fn resolve_key(&self, mods: Mods, keysym: &str) -> Option<Action> {
-        self.keybinds
-            .iter()
-            .find(|b| b.key.matches(mods, keysym))
-            .map(|b| b.action.clone())
+        self.find_binding(mods, keysym).map(|b| b.action.clone())
+    }
+
+    /// 押されたキーに当たるバインドの `cooldown_ms`。当たるバインドが無い・間引かないなら `None`。
+    pub fn resolve_cooldown_ms(&self, mods: Mods, keysym: &str) -> Option<u32> {
+        self.find_binding(mods, keysym).and_then(|b| b.cooldown_ms)
     }
 }
 

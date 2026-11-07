@@ -121,6 +121,20 @@ export default (
     <Keybind keys="mod+shift+f" action="toggle-fullscreen" />
     <Keybind keys="mod+v" action="toggle-floating" />
 
+    {/* マウスのホイール（niri の WheelScroll…）。縦のワークスペースの切り替えは 150ms に 1 回まで（niri の cooldown-ms=150） */}
+    <Keybind keys="mod+WheelScrollDown" action="workspace-next" cooldown={150} />
+    <Keybind keys="mod+WheelScrollUp" action="workspace-prev" cooldown={150} />
+    <Keybind keys="mod+ctrl+WheelScrollDown" action="move-to-workspace-next" cooldown={150} />
+    <Keybind keys="mod+ctrl+WheelScrollUp" action="move-to-workspace-prev" cooldown={150} />
+    <Keybind keys="mod+WheelScrollRight" action="focus-right" />
+    <Keybind keys="mod+WheelScrollLeft" action="focus-left" />
+    <Keybind keys="mod+ctrl+WheelScrollRight" action="move-right" />
+    <Keybind keys="mod+ctrl+WheelScrollLeft" action="move-left" />
+    <Keybind keys="mod+shift+WheelScrollDown" action="focus-right" />
+    <Keybind keys="mod+shift+WheelScrollUp" action="focus-left" />
+    <Keybind keys="mod+ctrl+shift+WheelScrollDown" action="move-right" />
+    <Keybind keys="mod+ctrl+shift+WheelScrollUp" action="move-left" />
+
     {/* 列の操作（niri と同じキー） */}
     <Keybind keys="mod+Home" action="focus-column-first" />
     <Keybind keys="mod+End" action="focus-column-last" />

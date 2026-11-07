@@ -98,6 +98,10 @@ impl Policy for StaticPolicy {
     fn resolve_key(&self, mods: Mods, keysym: &str) -> Option<Action> {
         self.store.resolve_key(mods, keysym)
     }
+
+    fn key_cooldown_ms(&self, mods: Mods, keysym: &str) -> Option<u32> {
+        self.store.key_cooldown_ms(mods, keysym)
+    }
 }
 
 #[cfg(test)]
