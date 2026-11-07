@@ -15,6 +15,7 @@ mod ipc;
 mod power;
 mod reload;
 mod render;
+mod screenshot;
 mod shell;
 mod spawn;
 mod spring;

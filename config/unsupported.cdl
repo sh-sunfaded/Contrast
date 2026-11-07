@@ -22,10 +22,9 @@
 //> Mod+Shift+Ctrl+K { move-column-to-monitor-up; }
 //> Mod+Shift+Ctrl+L { move-column-to-monitor-right; }
 
-// ---- スクリーンショット（3 個） ----
-// スクリーンショット（screencopy と保存の UI）が無い（N5a）。
+// ---- スクリーンショット（2 個） ----
+// `screenshot`（範囲を選ぶ UI）と `screenshot-window`（窓だけを描く）が無い。`Ctrl+Print` の `screenshot-screen` は `keybinds.cdl` に移した。
 //> Print { screenshot; }
-//> Ctrl+Print { screenshot-screen; }
 //> Alt+Print { screenshot-window; }
 
 // ---- ホットキーのオーバーレイ（1 個） ----
@@ -33,6 +32,6 @@
 //> Mod+Shift+Slash { show-hotkey-overlay; }
 
 // ---- bind ではない設定 ----
-// screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"  （スクリーンショット N5a の保存先）
+// screenshot-path は `appearance.cdl` の `Screenshot` に移した。
 // window-rule（wezterm の default-column-width {} は実質何もしない。keepassxc の block-out-from は無効化済み）、
 // output（無効）、border（無効）、animations（既定）は移さない。

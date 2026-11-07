@@ -106,6 +106,8 @@ pub enum Action {
     ReloadConfig,
     /// コンポジタを終了する。
     Quit,
+    /// 出力の絵をスクリーンショットにして保存する（niri の `screenshot-screen`）。
+    ScreenshotScreen,
     /// 画面を消す（DPMS。niri の `power-off-monitors`）。どんな入力でも戻る。
     PowerOffMonitors,
 }
@@ -160,6 +162,11 @@ pub trait Policy {
     /// カーソルの設定。
     fn cursor_settings(&self) -> crate::CursorSettings {
         crate::CursorSettings::default()
+    }
+
+    /// スクリーンショットの保存先（`~` と strftime の `%Y` などを展開する）。`None` なら保存しない。
+    fn screenshot_path(&self) -> Option<String> {
+        Some(crate::DEFAULT_SCREENSHOT_PATH.to_owned())
     }
 
     /// 入力デバイス（タッチパッドなど）の設定。

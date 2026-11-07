@@ -67,7 +67,8 @@ niri の設定の既定値は niri の既定（wiki / パッケージの既定�
 | `Mod+ホイール`系 | はい | × ポインタ軸のバインドが無い | 軸イベントのバインド | M |
 | `show-hotkey-overlay` | はい | × | オーバーレイ | M |
 | `power-off-monitors` | はい | ○（DRM のみ。実機で確認） | — | — |
-| `screenshot` / `screenshot-screen` / `screenshot-window`（`screenshot-path`） | はい | × screencopy も UI も無い | スクリーンショットの描画読み出しと保存、操作 UI | L |
+| `screenshot-screen`（`screenshot-path`） | はい | ○ 出力の絵を PNG で保存（`Screenshot.path`） | クリップボードへの画像、ポインタの有無（winit は入らない） | M |
+| `screenshot` / `screenshot-window` | はい | × | 範囲を選ぶ UI／窓だけを描く | L |
 | `Super+Alt+L`（swaylock） | はい | △ spawn は ○。swaylock には `ext-session-lock` が要る | session-lock プロトコル | M |
 
 ## 入力

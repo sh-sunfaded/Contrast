@@ -345,6 +345,7 @@ impl Drm {
                 return;
             }
         };
+        crate::render::take_screenshot_if_pending(state, renderer, &output_name, &elements);
         output.with_compositor(|c| c.reset_buffer_ages());
         let rendered = output
             .render_frame::<_, SceneElement>(renderer, &elements, background, FrameFlags::DEFAULT)

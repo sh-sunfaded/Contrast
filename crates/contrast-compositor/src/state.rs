@@ -121,6 +121,8 @@ pub struct Contrast {
     pub dmabuf_importer: Option<DmabufImporter>,
     /// VT を切り替える関数（DRM バックエンドだけが入れる）。キーボードをコンポジタが持つので、これが無いと VT を移れない。
     pub vt_switch: Option<Box<dyn FnMut(i32)>>,
+    /// `screenshot-screen` が押された。次に描くフレームを読み出して保存する。
+    pub screenshot_pending: bool,
     /// 画面の電源（`power-off-monitors`。DRM バックエンドだけが関数を入れる）。
     pub monitors: crate::power::Monitors,
     /// クライアントが指定した（または既定の）カーソル。DRM バックエンドが描く。
@@ -236,6 +238,7 @@ impl Contrast {
             vt_switch: None,
             pending_vt: None,
             monitors: crate::power::Monitors::default(),
+            screenshot_pending: false,
             anim: crate::anim::Animator::default(),
             last_input: std::time::Instant::now(),
             host_cursor_hidden: false,

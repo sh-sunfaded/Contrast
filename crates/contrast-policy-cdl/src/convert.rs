@@ -114,6 +114,7 @@ pub(crate) fn to_settings(
             "Workspaces" => read_workspaces(&mut cx, child, &mut settings),
             "Layout" => read_layout(&mut cx, child, &mut settings),
             "Cursor" => read_cursor(&mut cx, child, &mut settings),
+            "Screenshot" => read_screenshot(&mut cx, child, &mut settings),
             "Input" => read_input(&mut cx, child, &mut settings),
             "Startup" => read_startup(&mut cx, child, &mut settings),
             "DataControlClient" => data_control_nodes.push(child),
@@ -373,6 +374,13 @@ fn parse_presets(text: &str) -> Option<Vec<Ratio>> {
         .map(|t| t.parse::<f64>().ok().and_then(proportion))
         .collect();
     list.filter(|l| !l.is_empty() && l.len() <= MAX_PRESET_COLUMNS)
+}
+
+/// `Screenshot` を読む。`path` は保存先（空文字列なら保存しない。niri の `screenshot-path null`）。
+fn read_screenshot(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
+    if let Some(path) = cx.optional::<String>(node, "path") {
+        settings.screenshot_path = Some(path.trim().to_owned()).filter(|p| !p.is_empty());
+    }
 }
 
 /// `Cursor` を読む。`size` は 8〜256 の整数。
@@ -659,6 +667,7 @@ fn read_action(cx: &mut Ctx<'_>, node: Node<'_>, name: &str, args: ActionArgs) -
         "reload-config" => Some(Action::ReloadConfig),
         "quit" => Some(Action::Quit),
         "power-off-monitors" => Some(Action::PowerOffMonitors),
+        "screenshot-screen" => Some(Action::ScreenshotScreen),
         "focus-up" => Some(Action::FocusUp),
         "focus-down" => Some(Action::FocusDown),
         "move-up" => Some(Action::MoveUp),
@@ -775,7 +784,7 @@ fn read_action(cx: &mut Ctx<'_>, node: Node<'_>, name: &str, args: ActionArgs) -
                      focus-column-last / move-column-first / move-column-last / consume-window-into-column / \
                      expel-window-from-column / consume-or-expel-window-left / consume-or-expel-window-right / \
                      switch-preset-column-width / maximize-column / set-column-width / adjust-column-width / center-column / switch-preset-window-height / reset-window-height / \
-                     set-window-height / adjust-window-height / toggle-floating / toggle-fullscreen / reload-config / quit / power-off-monitors）"
+                     set-window-height / adjust-window-height / toggle-floating / toggle-fullscreen / reload-config / quit / power-off-monitors / screenshot-screen）"
                 ),
             );
             None

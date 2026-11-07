@@ -10,7 +10,7 @@
 // スクロール列レイアウト（Layout mode="scrolling"）: 列が横に並び、Up/Down/J/K は列の中の上下の窓を動く。
 "use cdl 1";
 import {
-  Contrast, Appearance, Layout, Cursor, Input, Workspaces, Startup, Environment, Env, Keybind,
+  Contrast, Appearance, Layout, Cursor, Screenshot, Input, Workspaces, Startup, Environment, Env, Keybind,
 } from "host:contrast";
 
 export default (
@@ -67,6 +67,8 @@ export default (
     <Keybind keys="mod+q" action="close" />
     <Keybind keys="mod+shift+e" action="quit" />
     <Keybind keys="mod+shift+p" action="power-off-monitors" />
+    <Keybind keys="ctrl+Print" action="screenshot-screen" />
+    <Screenshot path="~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png" />
 
     {/* フォーカス移動（niri と同じ。Left/Right/H/L は列、Up/Down/K/J は列の中の窓） */}
     <Keybind keys="mod+Left" action="focus-left" />

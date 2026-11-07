@@ -250,6 +250,10 @@ impl Policy for ConfigStore {
         self.config().settings.cursor.clone()
     }
 
+    fn screenshot_path(&self) -> Option<String> {
+        self.config().settings.screenshot_path.clone()
+    }
+
     fn input_settings(&self) -> crate::InputSettings {
         self.config().settings.input
     }

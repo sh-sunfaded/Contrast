@@ -1,5 +1,5 @@
 "use cdl 1";
-import { Appearance, Layout, Cursor, Workspaces } from "host:contrast";
+import { Appearance, Layout, Cursor, Screenshot, Workspaces } from "host:contrast";
 import {
   GAP, BORDER_WIDTH, FOCUS_COLOR, BACKGROUND, DEFAULT_COLUMN_WIDTH,
   PRESET_COLUMN_WIDTHS, ANIMATION_MS, WORKSPACE_COUNT, CURSOR_THEME, CURSOR_SIZE,
@@ -30,5 +30,10 @@ export const layout = (
 );
 
 export const cursor = <Cursor theme={CURSOR_THEME} size={CURSOR_SIZE} />;
+
+/** niri の screenshot-path。`~` と strftime の %Y などを展開する。空文字列なら保存しない。 */
+export const screenshot = (
+  <Screenshot path="~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png" />
+);
 
 export const workspaces = <Workspaces count={WORKSPACE_COUNT} mode="dynamic" />;

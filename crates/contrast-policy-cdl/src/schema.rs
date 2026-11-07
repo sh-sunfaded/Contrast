@@ -33,6 +33,7 @@ pub(crate) fn contrast_schema() -> Result<Schema, Vec<String>> {
                     "Workspaces",
                     "Layout",
                     "Cursor",
+                    "Screenshot",
                     "Input",
                     "Startup",
                     "DataControlClient",
@@ -44,6 +45,7 @@ pub(crate) fn contrast_schema() -> Result<Schema, Vec<String>> {
                 .unique_child("Workspaces")
                 .unique_child("Layout")
                 .unique_child("Cursor")
+                .unique_child("Screenshot")
                 .unique_child("Input"),
         )
         .component(
@@ -78,6 +80,10 @@ pub(crate) fn contrast_schema() -> Result<Schema, Vec<String>> {
                 .optional_prop("theme", Ty::String)
                 .optional_prop("size", Ty::Number)
                 .optional_prop("hideAfterInactiveMs", Ty::Number),
+        )
+        .component(
+            MODULE,
+            ComponentDef::new("Screenshot").optional_prop("path", Ty::String),
         )
         .component(
             MODULE,

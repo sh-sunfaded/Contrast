@@ -1,6 +1,6 @@
 "use cdl 1";
 import { Contrast } from "host:contrast";
-import { appearance, layout, cursor, workspaces } from "./appearance.cdl";
+import { appearance, layout, cursor, screenshot, workspaces } from "./appearance.cdl";
 import { input } from "./input.cdl";
 import { startup, environment } from "./startup.cdl";
 import { keybinds } from "./keybinds.cdl";
@@ -20,6 +20,7 @@ export default (
     {appearance}
     {layout}
     {cursor}
+    {screenshot}
     {workspaces}
     {input}
     {startup}

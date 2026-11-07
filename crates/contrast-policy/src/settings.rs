@@ -247,6 +247,8 @@ pub struct Settings {
     pub layout: LayoutSettings,
     /// カーソル。
     pub cursor: CursorSettings,
+    /// スクリーンショットの保存先（`~` と strftime の `%Y` などを展開する）。`None` なら保存しない。
+    pub screenshot_path: Option<String>,
     /// 起動時に一度だけ実行するコマンド（並びの順。空白で区切った先頭がプログラム、残りが引数）。リロードでは再実行しない。
     pub startup: Vec<StartupCommand>,
     /// spawn する子プロセスに足す環境変数（名前順）。コンポジタ自身の環境は変えない。
@@ -257,6 +259,10 @@ pub struct Settings {
     /// キーバインド（並びの順）。
     pub keybinds: Vec<KeyBinding>,
 }
+
+/// `screenshot_path` の既定（niri と同じ）。
+pub const DEFAULT_SCREENSHOT_PATH: &str =
+    "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png";
 
 /// `data_control_clients` の既定。
 pub const DEFAULT_DATA_CONTROL_CLIENTS: [&str; 5] = [
@@ -316,6 +322,7 @@ impl Settings {
             input: InputSettings::default(),
             layout: LayoutSettings::default(),
             cursor: CursorSettings::default(),
+            screenshot_path: Some(DEFAULT_SCREENSHOT_PATH.to_owned()),
             startup: Vec::new(),
             environment: BTreeMap::new(),
             data_control_clients: DEFAULT_DATA_CONTROL_CLIENTS

@@ -51,6 +51,10 @@ impl Policy for StaticPolicy {
         self.store.layout_settings()
     }
 
+    fn screenshot_path(&self) -> Option<String> {
+        self.store.screenshot_path()
+    }
+
     fn cursor_settings(&self) -> crate::CursorSettings {
         self.store.cursor_settings()
     }

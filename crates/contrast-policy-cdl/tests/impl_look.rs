@@ -14,7 +14,7 @@ fn write_temp(dir: &str, body: &str) -> Result<PathBuf, String> {
     fs::create_dir_all(&base).map_err(|e| e.to_string())?;
     let path = base.join("config.cdl");
     let text = format!(
-        "\"use cdl 1\";\nimport {{ Contrast, Appearance, Layout, Cursor, Keybind }} from \"host:contrast\";\nexport default (\n  <Contrast>\n{body}\n  </Contrast>\n);\n"
+        "\"use cdl 1\";\nimport {{ Contrast, Appearance, Layout, Cursor, Screenshot, Keybind }} from \"host:contrast\";\nexport default (\n  <Contrast>\n{body}\n  </Contrast>\n);\n"
     );
     fs::write(&path, text).map_err(|e| e.to_string())?;
     Ok(path)
@@ -292,6 +292,21 @@ fn animation_kind_defaults_to_easing_and_accepts_spring() -> Result<(), String> 
     }
     let bad = load("kind-bad", "<Layout animation=\"bounce\" />")?;
     assert_eq!(bad.err(), Some(vec!["CT003".to_owned()]));
+    Ok(())
+}
+
+#[test]
+fn screenshot_path_defaults_to_niri_and_can_be_changed_or_disabled() -> Result<(), String> {
+    let none = load("shot-none", "")?.map_err(|d| format!("{d:?}"))?;
+    assert_eq!(
+        none.screenshot_path.as_deref(),
+        Some(contrast_policy::DEFAULT_SCREENSHOT_PATH)
+    );
+    let custom =
+        load("shot-custom", "<Screenshot path=\"~/s/%Y.png\" />")?.map_err(|d| format!("{d:?}"))?;
+    assert_eq!(custom.screenshot_path.as_deref(), Some("~/s/%Y.png"));
+    let off = load("shot-off", "<Screenshot path=\"\" />")?.map_err(|d| format!("{d:?}"))?;
+    assert_eq!(off.screenshot_path, None);
     Ok(())
 }
 

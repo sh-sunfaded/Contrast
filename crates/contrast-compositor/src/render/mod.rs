@@ -4,9 +4,10 @@ use std::fmt;
 use std::time::Duration;
 
 use smithay::{
+    backend::allocator::Fourcc,
     backend::egl::EGLDevice,
     backend::renderer::{
-        ImportDma,
+        Bind, ExportMem, ImportDma, Offscreen, TextureMapping,
         damage::OutputDamageTracker,
         element::{
             AsRenderElements, Kind, memory::MemoryRenderBufferRenderElement, render_elements,
@@ -16,7 +17,7 @@ use smithay::{
     },
     desktop::{LayerSurface, layer_map_for_output},
     output::Output,
-    utils::{Logical, Rectangle, Scale},
+    utils::{Buffer, Logical, Rectangle, Scale, Size},
     wayland::dmabuf::{DmabufFeedback, DmabufFeedbackBuilder},
     wayland::shell::wlr_layer::Layer,
 };
@@ -178,6 +179,102 @@ pub fn render_scene(
         .render_output(renderer, framebuffer, 0, &elements, background)
         .map(|_| ())
         .map_err(|e| RenderError::Render(e.to_string()))
+}
+
+/// 読み出した出力の絵。RGBA 8 ビット、上の行から。
+pub struct Shot {
+    /// 幅（画素）。
+    pub width: u32,
+    /// 高さ（画素）。
+    pub height: u32,
+    /// 画素（`width × height × 4` バイト）。
+    pub rgba: Vec<u8>,
+}
+
+/// `elements` を出力と同じ大きさのオフスクリーンに描いて、画素を読み出す（スクリーンショット）。
+pub fn capture(
+    renderer: &mut GlesRenderer,
+    output: &Output,
+    elements: &[SceneElement],
+    background: [f32; 4],
+) -> Result<Shot, RenderError> {
+    let fail = |e: &dyn fmt::Display| RenderError::Render(format!("screenshot: {e}"));
+    let mode = output
+        .current_mode()
+        .ok_or_else(|| fail(&"output has no mode"))?;
+    let size = Size::<i32, Buffer>::from((mode.size.w, mode.size.h));
+    let (Ok(width), Ok(height)) = (u32::try_from(size.w), u32::try_from(size.h)) else {
+        return Err(fail(&"bad output size"));
+    };
+    let mut texture = Offscreen::<smithay::backend::renderer::gles::GlesTexture>::create_buffer(
+        renderer,
+        Fourcc::Abgr8888,
+        size,
+    )
+    .map_err(|e| fail(&e))?;
+    let mapping = {
+        let mut target = renderer.bind(&mut texture).map_err(|e| fail(&e))?;
+        OutputDamageTracker::from_output(output)
+            .render_output(renderer, &mut target, 0, elements, background)
+            .map_err(|e| fail(&e))?;
+        renderer
+            .copy_framebuffer(&target, Rectangle::from_size(size), Fourcc::Abgr8888)
+            .map_err(|e| fail(&e))?
+    };
+    let flipped = mapping.flipped();
+    let bytes = renderer.map_texture(&mapping).map_err(|e| fail(&e))?;
+    let row = (width as usize).saturating_mul(4);
+    let rgba = if flipped {
+        // GL は下の行から返す。
+        bytes
+            .chunks_exact(row.max(1))
+            .rev()
+            .flatten()
+            .copied()
+            .collect()
+    } else {
+        bytes.to_vec()
+    };
+    Ok(Shot {
+        width,
+        height,
+        rgba,
+    })
+}
+
+/// `screenshot-screen` が押されていれば、`elements` を読み出して保存する（押されていなければ何もしない）。
+/// 失敗しても描画は止めない（ログに出す）。
+pub fn take_screenshot_if_pending(
+    state: &mut Contrast,
+    renderer: &mut GlesRenderer,
+    output: &Output,
+    elements: &[SceneElement],
+) {
+    if !std::mem::take(&mut state.screenshot_pending) {
+        return;
+    }
+    let Some(template) = state.policy.screenshot_path() else {
+        tracing::info!("screenshot: screenshot-path is disabled, not saving");
+        return;
+    };
+    let shot = match capture(renderer, output, elements, state.policy.background()) {
+        Ok(shot) => shot,
+        Err(e) => {
+            tracing::warn!("{e}");
+            return;
+        }
+    };
+    let home = std::env::var("HOME").ok();
+    match crate::screenshot::save(
+        &template,
+        home.as_deref(),
+        shot.width,
+        shot.height,
+        &shot.rgba,
+    ) {
+        Ok(path) => tracing::info!(path = %path.display(), "screenshot: saved"),
+        Err(e) => tracing::warn!("screenshot: {e}"),
+    }
 }
 
 /// 提出したあとの後始末: クライアントへ frame コールバックを送り、Space・popup・レイヤーを整理する。

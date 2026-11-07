@@ -140,6 +140,13 @@ fn render_winit(
         .submit(Some(&[damage]))
         .map_err(|e| RenderError::Submit(e.to_string()))?;
     finish_frame(state, output);
+    // 提出のあとで読む（オフスクリーンを bind すると、窓の面が current でなくなって submit に失敗する）。
+    if state.screenshot_pending {
+        // ホストがカーソルを描くので、カーソルは入らない。
+        let elements =
+            crate::render::scene_elements(state, backend.renderer(), output, Vec::new())?;
+        crate::render::take_screenshot_if_pending(state, backend.renderer(), output, &elements);
+    }
     Ok(())
 }
 

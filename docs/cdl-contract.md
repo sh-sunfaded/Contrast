@@ -15,6 +15,7 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
 | `Workspaces` | `count: number`（整数、1〜32）、`mode?: "fixed" \| "dynamic"`（既定 `"fixed"`） | なし | — |
 | `Layout` | `gap?: Length`、`outerGap?: Length`、`mode?: "equal" \| "scrolling"`（既定 `"equal"`）、`defaultColumnWidth?: number`、`presetColumnWidths?: string`、`windowHeightPresets?: string`、`animation?: "easing" \| "spring"`（既定 `"easing"`）、`animationMs?: number`（既定 0） | なし | — |
 | `Cursor` | `theme?: string`、`size?: number`、`hideAfterInactiveMs?: number` | なし | — |
+| `Screenshot` | `path?: string`（`~` と strftime の `%Y` などを展開。既定は niri と同じ `~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png`。空文字列で保存しない） | なし | — |
 | `Input` | `tapToClick?: boolean`（既定 true）、`naturalScroll?: boolean`（既定 false）、`accelSpeed?: number`（-1〜1、既定 0）、`disableWhileTyping?: boolean`（既定 true）、`focusFollowsMouse?: boolean`（既定 false） | なし | — |
 | `Startup` | `command: string`、`ipc?: "niri"` | なし | —（複数可） |
 | `DataControlClient` | `name: string` | なし | —（複数可） |
@@ -75,7 +76,7 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
 
 `spawn` / `close` / `focus-left` / `focus-right` / `move-left` / `move-right` / `workspace` / `move-to-workspace` /
 `workspace-next` / `workspace-prev` / `move-to-workspace-next` / `move-to-workspace-prev` / `move-column-to-workspace` / `move-column-to-workspace-next` / `move-column-to-workspace-prev` / `move-workspace-down` / `move-workspace-up` /
-`toggle-floating` / `toggle-fullscreen` / `reload-config` / `quit` / `power-off-monitors`（画面の電源を切る。DRM のみ。どんな入力でも戻る）/
+`toggle-floating` / `toggle-fullscreen` / `reload-config` / `quit` / `power-off-monitors`（画面の電源を切る。DRM のみ。どんな入力でも戻る）/ `screenshot-screen`（出力の絵を PNG で保存。保存先は `Screenshot.path`）/
 `focus-up` / `focus-down` / `move-up` / `move-down` /
 `focus-column-first` / `focus-column-last` / `move-column-first` / `move-column-last` /
 `consume-window-into-column` / `expel-window-from-column` / `consume-or-expel-window-left` / `consume-or-expel-window-right` / `switch-preset-column-width` / `maximize-column` /
