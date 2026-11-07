@@ -7,10 +7,12 @@ use std::path::{Path, PathBuf};
 use contrast_policy::{Action, ConfigLoader, LoadOutcome, ModKey, Mods, Settings};
 use contrast_policy_cdl::CdlLoader;
 
-/// 変換したバインドの数（`docs/config-migration.md`）。
-const CONVERTED: usize = 69;
+/// `keybinds.cdl` のバインドの数（`docs/config-migration.md`）。niri の binds 72 個と、niri の既定の `Mod+V` の 1 個。
+const CONVERTED: usize = 73;
+/// そのうち、作者の config.kdl に無いもの（niri の既定の `Mod+V`）。
+const NOT_IN_NIRI_CONFIG: usize = 1;
 /// 変換しなかったバインドの数（`unsupported.cdl` の `//>` の行）。
-const UNSUPPORTED: usize = 42;
+const UNSUPPORTED: usize = 39;
 /// 元の niri の config.kdl の binds の数。
 const NIRI_BINDS: usize = 111;
 
@@ -125,7 +127,7 @@ fn converted_plus_unsupported_is_the_number_of_niri_binds() -> Result<(), String
         std::fs::read_to_string(config_dir().join("unsupported.cdl")).map_err(|e| e.to_string())?;
     let unsupported = text.lines().filter(|l| l.starts_with("//> ")).count();
     assert_eq!(unsupported, UNSUPPORTED);
-    assert_eq!(CONVERTED + unsupported, NIRI_BINDS);
+    assert_eq!(CONVERTED - NOT_IN_NIRI_CONFIG + unsupported, NIRI_BINDS);
     Ok(())
 }
 
@@ -258,7 +260,7 @@ fn the_main_binds_resolve_to_the_expected_actions() -> Result<(), String> {
         ),
         spawn("env DISPLAY=:0 /home/user/jetbrains-toolbox-3.8.1.88030/bin/jetbrains-toolbox")
     );
-    // 変換しなかったキーは何もしない（ホイール以外の例: swaylock、モニタ、スクリーンショット）。
+    // swaylock も niri と同じキー（Super+Alt+L）に spawn を割り当てる（未インストールなら spawn が失敗するだけ）。
     assert_eq!(
         s.resolve_key(
             Mods {
@@ -268,8 +270,9 @@ fn the_main_binds_resolve_to_the_expected_actions() -> Result<(), String> {
             },
             "l"
         ),
-        None
+        spawn("swaylock")
     );
+    // 変換しなかったキーは何もしない（ホイール以外の例: モニタ、スクリーンショット）。
     assert_eq!(s.resolve_key(shift, "Left"), None);
     assert_eq!(s.resolve_key(Mods::default(), "Print"), None);
     assert_eq!(s.resolve_key(mod_only, "BracketLeft"), None);

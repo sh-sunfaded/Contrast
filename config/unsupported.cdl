@@ -61,15 +61,6 @@
 //> Mod+Shift+Slash { show-hotkey-overlay; }
 //> Mod+Shift+P { power-off-monitors; }
 
-// ---- strat fedora …（2 個） ----
-// strat は Bedrock Linux のコマンドで、NixOS に無い。Bedrock 側のアプリを起動する手段が NixOS では別に要る。
-//> Mod+Shift+D { spawn-sh "strat fedora /home/user/DiscordPTB/launch.sh"; }
-//> Mod+Alt+E { spawn-sh "strat fedora /home/user/eclipse/eclipse";}
-
-// ---- swaylock（1 個） ----
-// swaylock は未インストール。ロック画面は ext-session-lock が要る（N5）。
-//> Super+Alt+L { spawn "swaylock"; }
-
 // ---- bind ではない設定 ----
 // screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"  （スクリーンショット N5a の保存先）
 // window-rule（wezterm の default-column-width {} は実質何もしない。keepassxc の block-out-from は無効化済み）、

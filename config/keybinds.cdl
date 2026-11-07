@@ -30,6 +30,12 @@ const launches: Launch[] = [
   { keys: "mod+t", command: "alacritty" },
   { keys: "mod+d", command: "fuzzel" },
   { keys: "ctrl+shift+space", command: "fcitx5-remote -t" },
+  // strat は Bedrock Linux のコマンドで、NixOS には無い（押すと spawn が失敗してログに出るだけ）。
+  // Mod+Alt+E は、Mod が Alt のとき Mod+E と同じキーになるので、super+alt+e と書く。
+  { keys: "mod+shift+d", command: "strat fedora /home/user/DiscordPTB/launch.sh" },
+  { keys: "super+alt+e", command: "strat fedora /home/user/eclipse/eclipse" },
+  // swaylock は未インストール（ロックには ext-session-lock も要る）。
+  { keys: "super+alt+l", command: "swaylock" },
   // XWayland が要る（DISPLAY=:0）。Mod+Alt+J は、Mod が Alt のとき Mod+J と同じキーになるので、super+alt+j と書く。
   {
     keys: "super+alt+j",
@@ -119,6 +125,8 @@ const others: Spec[] = [
   { keys: "mod+ctrl+r", action: "reset-window-height" },
   { keys: "mod+f", action: "maximize-column" },
   { keys: "mod+shift+f", action: "toggle-fullscreen" },
+  // niri の既定の Mod+V（作者の config.kdl の binds には無い）。examples/niri.cdl に合わせる。
+  { keys: "mod+v", action: "toggle-floating" },
   { keys: "mod+c", action: "center-column" },
   { keys: "mod+Minus", action: "adjust-column-width", delta: -RESIZE_STEP },
   { keys: "mod+Equal", action: "adjust-column-width", delta: RESIZE_STEP },
