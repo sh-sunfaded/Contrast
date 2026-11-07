@@ -146,9 +146,22 @@ pub enum LayoutMode {
 /// プリセットの列幅の最大数。これより多く渡されたら、先頭のこの数だけを使う。
 pub const MAX_PRESETS: usize = 8;
 
+/// ワークスペースの方式（D62）。
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WorkspaceMode {
+    /// 個数固定（D1）。既定。
+    #[default]
+    Fixed,
+    /// niri のように、窓のあるものと末尾の空 1 つ（D64〜D68）。
+    Dynamic,
+}
+
 /// `Scrolling` の設定。`Core::new` が `CoreConfig` から作り、`State` が持つ。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LayoutSettings {
+    /// ワークスペースの方式（D62）。
+    pub workspaces: WorkspaceMode,
     /// 窓の並べ方。
     pub mode: LayoutMode,
     /// 新しい列の幅（D35。既定 1/2）。
@@ -174,6 +187,7 @@ impl LayoutSettings {
 
     /// 既定の設定（`Equal`、列幅 1/2、プリセット 1/3・1/2・2/3）。
     pub(crate) const DEFAULT: Self = Self {
+        workspaces: WorkspaceMode::Fixed,
         mode: LayoutMode::Equal,
         default_width: Ratio::HALF,
         presets: Self::DEFAULT_PRESETS,

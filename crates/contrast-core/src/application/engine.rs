@@ -11,7 +11,7 @@ use crate::application::command::Command;
 use crate::application::effect::Applied;
 use crate::application::view::StateView;
 use crate::application::{arrange, diff, handlers, scrolling};
-use crate::domain::column::{LayoutMode, LayoutSettings, MAX_PRESETS, Ratio};
+use crate::domain::column::{LayoutMode, LayoutSettings, MAX_PRESETS, Ratio, WorkspaceMode};
 use crate::domain::state::State;
 use crate::error::CoreError;
 use crate::layout::Layout;
@@ -25,6 +25,8 @@ pub struct CoreConfig {
     pub workspace_count: u8,
     /// 窓の並べ方（D35。既定 `Equal`）。
     layout: LayoutMode,
+    /// ワークスペースの方式（D62。既定 `Fixed`）。
+    workspaces: WorkspaceMode,
     /// 新しい列の幅（D35。既定 1/2）。
     default_column_width: Ratio,
     /// プリセットの列幅（先頭から詰める。残りは `None`）。
@@ -40,10 +42,18 @@ impl CoreConfig {
         Self {
             workspace_count,
             layout: LayoutSettings::DEFAULT.mode,
+            workspaces: LayoutSettings::DEFAULT.workspaces,
             default_column_width: LayoutSettings::DEFAULT.default_width,
             preset_column_widths: LayoutSettings::DEFAULT.presets,
             preset_window_heights: LayoutSettings::DEFAULT.window_presets,
         }
+    }
+
+    /// ワークスペースの方式を指定する（D62）。`Dynamic` のとき `workspace_count` は無視される。
+    #[must_use]
+    pub const fn with_workspace_mode(mut self, workspaces: WorkspaceMode) -> Self {
+        self.workspaces = workspaces;
+        self
     }
 
     /// 窓の並べ方を指定する（D35）。
@@ -91,6 +101,7 @@ impl CoreConfig {
     /// `State` が持つ設定にする。
     fn layout_settings(&self) -> LayoutSettings {
         LayoutSettings {
+            workspaces: self.workspaces,
             mode: self.layout,
             default_width: self.default_column_width,
             presets: self.preset_column_widths,
@@ -121,7 +132,12 @@ impl<P: Policy, L: Layout> Core<P, L> {
     /// 空の状態（出力・窓なし、ワークスペース `workspace_count` 個）で作る。
     #[must_use]
     pub fn new(config: CoreConfig, policy: P, layout: L) -> Self {
-        let mut state = State::new(config.workspace_count);
+        // `Dynamic` は空のワークスペース 1 個から始まる（D62）。
+        let count = match config.workspaces {
+            WorkspaceMode::Dynamic => 1,
+            _ => config.workspace_count,
+        };
+        let mut state = State::new(count);
         state.layout = config.layout_settings();
         Self {
             state,
@@ -137,6 +153,8 @@ impl<P: Policy, L: Layout> Core<P, L> {
     pub fn apply(&mut self, command: Command) -> Result<Applied, CoreError> {
         let mut next = self.state.clone();
         let from_handler = handlers::dispatch(&mut next, &self.policy, command)?;
+        // D64: `Dynamic` では、末尾のワークスペースを常に空にする。
+        next.ensure_trailing_empty();
         if next.layout.mode == LayoutMode::Scrolling {
             scrolling::sync(&mut next);
         }

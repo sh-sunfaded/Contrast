@@ -27,8 +27,14 @@ pub fn effects(old: &State, new: &State, from_handler: Vec<Effect>) -> Vec<Effec
         .partition(|e| matches!(e, Effect::RequestClose(_)));
 
     for o in new.outputs.values() {
-        let before = old.outputs.get(&o.id).map(|p| p.shown);
-        if before == Some(o.shown) {
+        // D69: 位置ではなく、ワークスペースの id で比べる（`Dynamic` では増減で位置がずれる）。
+        let before = old
+            .outputs
+            .get(&o.id)
+            .and_then(|p| old.workspace(p.shown))
+            .map(|ws| ws.id);
+        let now = new.workspace(o.shown).map(|ws| ws.id);
+        if before.is_some() && before == now {
             continue;
         }
         if let Some(ws) = new.workspace(o.shown) {

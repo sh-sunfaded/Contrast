@@ -7,7 +7,7 @@
 use alloc::vec::Vec;
 
 use crate::application::effect::Effect;
-use crate::application::handlers::{check_index, demote_other_fullscreen, focused};
+use crate::application::handlers::{demote_other_fullscreen, focused, resolve_index};
 use crate::domain::id::WorkspaceIndex;
 use crate::domain::state::State;
 use crate::domain::window::WindowState;
@@ -18,7 +18,7 @@ use crate::error::CoreError;
 /// # Errors
 /// i が範囲外なら `WorkspaceIndexOutOfRange`、フォーカスが None なら `NoFocusedWindow`。
 pub fn handle(state: &mut State, index: WorkspaceIndex) -> Result<Vec<Effect>, CoreError> {
-    check_index(state, index)?;
+    let index = resolve_index(state, index)?;
     let id = focused(state)?;
     let Some((from, window_state)) = state.windows.get(&id).map(|w| (w.workspace, w.state)) else {
         return Ok(Vec::new());
@@ -38,5 +38,7 @@ pub fn handle(state: &mut State, index: WorkspaceIndex) -> Result<Vec<Effect>, C
         None
     };
     state.set_focus(next);
+    // D65（`Dynamic`）。
+    state.clean_up_workspaces();
     Ok(Vec::new())
 }

@@ -34,7 +34,7 @@ pub use application::command::{Action, Command, Direction};
 pub use application::effect::{Applied, Effect};
 pub use application::engine::{Core, CoreConfig};
 pub use application::view::{StateView, WindowView};
-pub use domain::column::{ColumnWidth, LayoutMode, Ratio, WindowHeight};
+pub use domain::column::{ColumnWidth, LayoutMode, Ratio, WindowHeight, WorkspaceMode};
 pub use domain::geometry::{Point, Rect, Size};
 pub use domain::id::{
     EntityId, ExternalKey, IdGen, IdKind, KeyMap, OutputId, WindowId, WorkspaceId, WorkspaceIndex,

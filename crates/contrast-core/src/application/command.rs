@@ -108,6 +108,12 @@ pub enum Action {
     ConsumeOrExpelWindowLeft,
     /// 列に窓が 1 枚なら右隣の列の最下段へ、2 枚以上なら右隣に新しい列として出す（`Scrolling` のみ、D57・D59）。
     ConsumeOrExpelWindowRight,
+    /// フォーカス窓の列ごと、別のワークスペースへ移し、そこへ切り替える（`Scrolling` のみ、D67）。
+    MoveColumnToWorkspace(WorkspaceIndex),
+    /// 表示中のワークスペースを 1 つ下と入れ替える（`Dynamic` のみ、D68）。
+    MoveWorkspaceDown,
+    /// 表示中のワークスペースを 1 つ上と入れ替える（`Dynamic` のみ、D68）。
+    MoveWorkspaceUp,
 }
 
 /// 方向。

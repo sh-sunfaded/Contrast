@@ -12,7 +12,7 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
-use crate::domain::column::LayoutSettings;
+use crate::domain::column::{LayoutSettings, WorkspaceMode};
 use crate::domain::id::{IdGen, IdKind, KeyMap, OutputId, WindowId, WorkspaceId, WorkspaceIndex};
 use crate::domain::output::Output;
 use crate::domain::window::Window;
@@ -44,7 +44,12 @@ pub struct State {
     pub window_ids: IdGen<WindowId>,
     /// 窓の並べ方と、スクロール列レイアウトの設定（`Core::new` が決め、以後変わらない）。
     pub layout: LayoutSettings,
+    /// 次に払い出すワークスペースの id（D63。`Dynamic` で増やす。使った id は再利用しない）。
+    pub next_workspace_id: u64,
 }
+
+/// `Dynamic` のワークスペースの個数の上限（`WorkspaceIndex` が `u8` なので）。
+pub const MAX_DYNAMIC_WORKSPACES: usize = 255;
 
 impl State {
     /// `workspace_count` 個（1〜32 に丸める）の空ワークスペースを持つ状態を作る。
@@ -67,13 +72,108 @@ impl State {
             output_ids: IdGen::new(),
             window_ids: IdGen::new(),
             layout: LayoutSettings::default(),
+            next_workspace_id: u64::from(count).saturating_add(1),
         }
+    }
+
+    /// ワークスペースの方式が `Dynamic` か（D62）。
+    #[must_use]
+    pub fn is_dynamic(&self) -> bool {
+        self.layout.workspaces == WorkspaceMode::Dynamic
+    }
+
+    /// `Workspace.index`・`Window.workspace`・`Output.shown` を、ワークスペースの並びの変更に合わせて直す。
+    /// `map` は、変更前の位置から変更後の位置への対応。
+    fn remap_workspaces(&mut self, map: impl Fn(u8) -> u8) {
+        for (position, ws) in self.workspaces.iter_mut().enumerate() {
+            ws.index = WorkspaceIndex::new(u8::try_from(position).unwrap_or(u8::MAX));
+        }
+        for w in self.windows.values_mut() {
+            w.workspace = WorkspaceIndex::new(map(w.workspace.get()));
+        }
+        for o in self.outputs.values_mut() {
+            o.shown = WorkspaceIndex::new(map(o.shown.get()));
+        }
+    }
+
+    /// D64（`Dynamic`）: 末尾のワークスペースが空でなければ、新しい空を末尾に足す。個数の上限なら足さない。
+    pub fn ensure_trailing_empty(&mut self) {
+        if !self.is_dynamic() {
+            return;
+        }
+        let last_is_empty = self
+            .workspaces
+            .last()
+            .is_none_or(|ws| ws.windows.is_empty());
+        if !last_is_empty {
+            self.append_empty_workspace();
+        }
+    }
+
+    /// 新しい空のワークスペースを末尾に足す（新しい id）。個数の上限なら足さない。
+    pub fn append_empty_workspace(&mut self) {
+        if self.workspaces.len() >= MAX_DYNAMIC_WORKSPACES {
+            return;
+        }
+        let position = u8::try_from(self.workspaces.len()).unwrap_or(u8::MAX);
+        let id = WorkspaceId::from_raw(self.next_workspace_id);
+        self.next_workspace_id = self.next_workspace_id.saturating_add(1);
+        self.workspaces
+            .push(Workspace::new(id, WorkspaceIndex::new(position)));
+    }
+
+    /// ワークスペース `at` を削除する（窓がなく、どの出力も表示していないものだけ）。位置を詰める。削除したら true。
+    fn remove_empty_workspace(&mut self, at: usize) -> bool {
+        let Ok(index) = u8::try_from(at) else {
+            return false;
+        };
+        let removable = self
+            .workspaces
+            .get(at)
+            .is_some_and(|ws| ws.windows.is_empty())
+            && self.output_showing(WorkspaceIndex::new(index)).is_none();
+        if !removable {
+            return false;
+        }
+        self.workspaces.remove(at);
+        self.remap_workspaces(|i| if i > index { i.saturating_sub(1) } else { i });
+        true
+    }
+
+    /// D65（`Dynamic`）: 末尾以外で、窓がなく、どの出力も表示していないワークスペースを削除する（下から順に）。
+    pub fn clean_up_workspaces(&mut self) {
+        if !self.is_dynamic() {
+            return;
+        }
+        let last = self.workspaces.len().saturating_sub(1);
+        for at in (0..last).rev() {
+            self.remove_empty_workspace(at);
+        }
+    }
+
+    /// ワークスペース `a` と `b` の位置を入れ替える（D68）。窓・出力の参照も、同じワークスペースを指すように直す。
+    pub fn swap_workspaces(&mut self, a: WorkspaceIndex, b: WorkspaceIndex) {
+        let (ia, ib) = (usize::from(a.get()), usize::from(b.get()));
+        if ia == ib || ia >= self.workspaces.len() || ib >= self.workspaces.len() {
+            return;
+        }
+        self.workspaces.swap(ia, ib);
+        let (a, b) = (a.get(), b.get());
+        self.remap_workspaces(|i| {
+            if i == a {
+                b
+            } else if i == b {
+                a
+            } else {
+                i
+            }
+        });
     }
 
     /// ワークスペースの数。
     #[must_use]
     pub fn workspace_count(&self) -> u8 {
-        u8::try_from(self.workspaces.len()).unwrap_or(MAX_WORKSPACES)
+        u8::try_from(self.workspaces.len()).unwrap_or(u8::MAX)
     }
 
     /// インデックスのワークスペース。

@@ -72,6 +72,12 @@ impl<'a> StateView<'a> {
         self.state.outputs.get(&output).map(|o| o.shown)
     }
 
+    /// ワークスペースの id（D63。位置が変わっても変わらない通し番号）。
+    #[must_use]
+    pub fn workspace_id(&self, index: WorkspaceIndex) -> Option<crate::domain::id::WorkspaceId> {
+        self.state.workspace(index).map(|ws| ws.id)
+    }
+
     /// ワークスペースの窓の順序列。
     #[must_use]
     pub fn workspace_windows(&self, index: WorkspaceIndex) -> Option<&'a [WindowId]> {

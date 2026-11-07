@@ -31,6 +31,9 @@ pub enum InvariantViolation {
     I10(WorkspaceIndex),
     /// I11: `Scrolling` で、フォーカスが Tiled の窓にあるのに、その列が D39 の条件を満たしていない。
     I11(WindowId),
+    /// I12: ワークスペースの位置と id の整合が崩れている（位置が `Workspace.index` と違う、id の重複）。
+    /// `Dynamic` では、末尾が空でない・個数が 0 のときも（D70）。
+    I12(WorkspaceIndex),
 }
 
 /// I7 の比較用の状態の複製。
@@ -56,7 +59,29 @@ pub fn check(state: &State) -> Result<(), InvariantViolation> {
     check_i6(state)?;
     check_i9(state)?;
     check_i10(state)?;
-    check_i11(state)
+    check_i11(state)?;
+    check_i12(state)
+}
+
+/// I12（D63・D70）: `Workspace.index` は位置と一致し、id は互いに異なる。`Dynamic` では、個数は 1 以上で、末尾は空。
+fn check_i12(state: &State) -> Result<(), InvariantViolation> {
+    let mut seen = alloc::collections::BTreeSet::new();
+    for (position, ws) in state.workspaces.iter().enumerate() {
+        if usize::from(ws.index.get()) != position || !seen.insert(ws.id) {
+            return Err(InvariantViolation::I12(ws.index));
+        }
+    }
+    if state.is_dynamic() {
+        let at_limit = state.workspaces.len() >= crate::domain::state::MAX_DYNAMIC_WORKSPACES;
+        match state.workspaces.last() {
+            None => return Err(InvariantViolation::I12(WorkspaceIndex::new(0))),
+            Some(last) if !last.windows.is_empty() && !at_limit => {
+                return Err(InvariantViolation::I12(last.index));
+            }
+            Some(_) => {}
+        }
+    }
+    Ok(())
 }
 
 /// I1・I2: 所属と順序列の整合。

@@ -7,7 +7,7 @@
 use alloc::vec::Vec;
 
 use crate::application::effect::Effect;
-use crate::application::handlers::check_index;
+use crate::application::handlers::{resolve_index, show_workspace};
 use crate::domain::id::WorkspaceIndex;
 use crate::domain::state::State;
 use crate::error::CoreError;
@@ -17,7 +17,7 @@ use crate::error::CoreError;
 /// # Errors
 /// i が範囲外なら `WorkspaceIndexOutOfRange`。
 pub fn handle(state: &mut State, index: WorkspaceIndex) -> Result<Vec<Effect>, CoreError> {
-    check_index(state, index)?;
+    let index = resolve_index(state, index)?;
     let Some(output) = state.focused_output() else {
         return Ok(Vec::new());
     };
@@ -27,14 +27,10 @@ pub fn handle(state: &mut State, index: WorkspaceIndex) -> Result<Vec<Effect>, C
     if current == index {
         return Ok(Vec::new());
     }
-    let other = state.output_showing(index);
-    if let Some(o) = other.and_then(|id| state.outputs.get_mut(&id)) {
-        o.shown = current;
-    }
-    if let Some(o) = state.outputs.get_mut(&output) {
-        o.shown = index;
-    }
+    show_workspace(state, output, index);
     let next = state.workspace(index).and_then(|ws| ws.preferred_focus());
     state.set_focus(next);
+    // D65: 表示中のワークスペースが変わったので、離れた空のワークスペースを整理する（`Dynamic`）。
+    state.clean_up_workspaces();
     Ok(Vec::new())
 }

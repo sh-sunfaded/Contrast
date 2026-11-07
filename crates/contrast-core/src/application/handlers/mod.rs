@@ -12,8 +12,10 @@ mod focus_column;
 mod focus_direction;
 mod maximize_column;
 mod move_column;
+mod move_column_to_workspace;
 mod move_to_workspace;
 mod move_window;
+mod move_workspace;
 mod output_added;
 mod output_changed;
 mod output_insets_changed;
@@ -100,6 +102,10 @@ fn dispatch_action(state: &mut State, action: Action) -> Result<Vec<Effect>, Cor
         // D57〜D61: 隣の列への取り込みと、隣への押し出し。`Equal` では状態不変で `Ok`。
         Action::ConsumeOrExpelWindowLeft => consume_or_expel::handle(state, true),
         Action::ConsumeOrExpelWindowRight => consume_or_expel::handle(state, false),
+        // D67・D68: 列ごとの移動と、ワークスペースの入れ替え。
+        Action::MoveColumnToWorkspace(index) => move_column_to_workspace::handle(state, index),
+        Action::MoveWorkspaceDown => move_workspace::handle(state, true),
+        Action::MoveWorkspaceUp => move_workspace::handle(state, false),
     }
 }
 
@@ -121,6 +127,34 @@ fn check_index(state: &State, index: WorkspaceIndex) -> Result<(), CoreError> {
     } else {
         Err(CoreError::WorkspaceIndexOutOfRange)
     }
+}
+
+/// 出力 `output` が表示するワークスペースを `index` にする。`index` を別の出力が表示していれば、その出力には元のワークスペースを表示させる（入れ替え）。
+fn show_workspace(state: &mut State, output: crate::domain::id::OutputId, index: WorkspaceIndex) {
+    let Some(current) = state.outputs.get(&output).map(|o| o.shown) else {
+        return;
+    };
+    let other = state.output_showing(index);
+    if let Some(o) = other.and_then(|id| state.outputs.get_mut(&id)) {
+        o.shown = current;
+    }
+    if let Some(o) = state.outputs.get_mut(&output) {
+        o.shown = index;
+    }
+}
+
+/// 命令の `index` を、有効なワークスペースの位置にする（D66）。
+/// `Dynamic` は末尾に丸める。`Fixed` は範囲外ならエラー。
+///
+/// # Errors
+/// `Fixed` で `workspace_count` 以上なら `WorkspaceIndexOutOfRange`。
+fn resolve_index(state: &State, index: WorkspaceIndex) -> Result<WorkspaceIndex, CoreError> {
+    if state.is_dynamic() {
+        let last = state.workspace_count().saturating_sub(1);
+        return Ok(WorkspaceIndex::new(index.get().min(last)));
+    }
+    check_index(state, index)?;
+    Ok(index)
 }
 
 /// D9: ワークスペース `index` の全画面窓のうち `except` 以外を元の状態に戻す。

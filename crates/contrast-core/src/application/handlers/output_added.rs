@@ -25,10 +25,17 @@ pub fn handle(
     if state.output_keys.id_of(key).is_some() {
         return Err(CoreError::DuplicateKey);
     }
-    let shown = (0..state.workspace_count())
+    let mut free = (0..state.workspace_count())
         .map(WorkspaceIndex::new)
-        .find(|i| state.output_showing(*i).is_none())
-        .ok_or(CoreError::NoFreeWorkspace)?;
+        .find(|i| state.output_showing(*i).is_none());
+    // `Dynamic` で、空いているワークスペースが無ければ（出力が増えたとき）、新しい空を足して表示する。
+    if free.is_none() && state.is_dynamic() {
+        state.append_empty_workspace();
+        free = (0..state.workspace_count())
+            .map(WorkspaceIndex::new)
+            .find(|i| state.output_showing(*i).is_none());
+    }
+    let shown = free.ok_or(CoreError::NoFreeWorkspace)?;
     let id = state.output_ids.next()?;
     state.output_keys.insert(key, id)?;
     state.outputs.insert(

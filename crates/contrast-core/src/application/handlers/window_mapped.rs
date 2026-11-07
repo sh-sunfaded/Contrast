@@ -37,10 +37,14 @@ pub fn handle<P: Policy>(
         state.outputs.len(),
     );
     let placement = policy.place(&meta, &ctx);
-    let index = placement
+    let mut index = placement
         .workspace
         .or(focused_workspace)
         .unwrap_or(WorkspaceIndex::new(0));
+    // `Dynamic` で、存在しないワークスペースを指定されたときは、指定がなかったことにする（niri の窓ルールと同じ）。
+    if state.is_dynamic() && state.workspace(index).is_none() {
+        index = focused_workspace.unwrap_or(WorkspaceIndex::new(0));
+    }
     check_index(state, index)?;
 
     let id = state.window_ids.next()?;
