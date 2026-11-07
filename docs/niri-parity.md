@@ -115,3 +115,10 @@ niri の設定の既定値は niri の既定（wiki / パッケージの既定�
 - **N3（元の提案）**: core のレイアウト（列モデル）。列の幅（preset・default・set・maximize・center）、列への積み（consume/expel、focus/move-window-up/down、高さ）、ビューの横スクロール。これで `examples/niri.cdl` の「N3 待ち」が解ける。
 - **N4**: ワークスペースとモニタ。動的な縦のワークスペース、`move-workspace-*`、名前つき、複数出力・ホットプラグ・スケール・モード指定、フォーカスとウィンドウのモニタ間移動。
 - **N5**: オーバービュー、スクリーンショット（と screencopy）、ホットキーのオーバーレイ、ホイールのバインド、session-lock。
+
+## 2026-11-07 niri-parity（`proto/niri-parity`）での変更
+
+作者の config.kdl の項目ごとの差は `.cc-logs/report-niri-parity-status.md`（調査）と `.cc-logs/report-niri-parity.md`（結果）。niri の挙動は、インストール済みの niri（26.04、nixpkgs の `niri-spicy`）のソースと同梱ドキュメントで確かめた。
+
+- ○ に変えたもの: ホイールの bind 12 個（`cooldown`）、`consume-or-expel-window-left/right`（core の P9、`core-spec.md` の 15 節）、キーリピート 600ms、xdg-decoration を公開しない・Tiled を送らない（`prefer-no-csd` が無効）、子の `XCURSOR_THEME`・`XCURSOR_SIZE`・`XDG_CURRENT_DESKTOP`・`XDG_SESSION_TYPE`、タッチパッドの dwt off、フォーカスリングを窓の外側に描く・フォーカス外の窓に枠を描かない。
+- 差が残るもの（理由は報告）: 動的なワークスペース（常に 9 個）、`move-workspace-down/up`、複数モニタ、スクリーンショット、ホットキーのオーバーレイ、`power-off-monitors`、アニメーション（バネと窓の開閉）、ジェスチャーとホットコーナー、`dwtp`、xkb を localed から取ること、`move-column-to-workspace` が列ごとでないこと、`expel-window-from-column` の細部（`core-spec.md` の D61）。
