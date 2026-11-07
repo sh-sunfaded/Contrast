@@ -495,6 +495,15 @@ fn read_environment(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
 
 /// `Workspaces` を読む。
 fn read_workspaces(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
+    match cx.optional::<String>(node, "mode").as_deref() {
+        None | Some("fixed") => {}
+        Some("dynamic") => settings.workspace_mode = contrast_core::WorkspaceMode::Dynamic,
+        Some(other) => cx.error(
+            node,
+            codes::BAD_PROP,
+            format!("`Workspaces` の `mode` は \"fixed\" か \"dynamic\"（`{other}` は使えない）"),
+        ),
+    }
     let Some(count) = cx.prop::<f64>(node, "count") else {
         return;
     };
@@ -633,6 +642,10 @@ fn read_action(cx: &mut Ctx<'_>, node: Node<'_>, name: &str, args: ActionArgs) -
         "workspace-prev" => Some(Action::WorkspacePrev),
         "move-to-workspace-next" => Some(Action::MoveToWorkspaceNext),
         "move-to-workspace-prev" => Some(Action::MoveToWorkspacePrev),
+        "move-column-to-workspace-next" => Some(Action::MoveColumnToWorkspaceNext),
+        "move-column-to-workspace-prev" => Some(Action::MoveColumnToWorkspacePrev),
+        "move-workspace-down" => Some(Action::MoveWorkspaceDown),
+        "move-workspace-up" => Some(Action::MoveWorkspaceUp),
         "reload-config" => Some(Action::ReloadConfig),
         "quit" => Some(Action::Quit),
         "focus-up" => Some(Action::FocusUp),
@@ -716,7 +729,7 @@ fn read_action(cx: &mut Ctx<'_>, node: Node<'_>, name: &str, args: ActionArgs) -
                 }
             }
         }
-        "workspace" | "move-to-workspace" => {
+        "workspace" | "move-to-workspace" | "move-column-to-workspace" => {
             let Some(n) = workspace else {
                 cx.error(
                     node,
@@ -733,10 +746,10 @@ fn read_action(cx: &mut Ctx<'_>, node: Node<'_>, name: &str, args: ActionArgs) -
                 );
                 return None;
             };
-            if name == "workspace" {
-                Some(Action::SwitchWorkspace(index))
-            } else {
-                Some(Action::MoveToWorkspace(index))
+            match name {
+                "workspace" => Some(Action::SwitchWorkspace(index)),
+                "move-column-to-workspace" => Some(Action::MoveColumnToWorkspace(index)),
+                _ => Some(Action::MoveToWorkspace(index)),
             }
         }
         other => {
@@ -745,8 +758,9 @@ fn read_action(cx: &mut Ctx<'_>, node: Node<'_>, name: &str, args: ActionArgs) -
                 codes::UNKNOWN_ACTION,
                 format!(
                     "未知の action \"{other}\"（spawn / close / focus-left / focus-right / move-left / move-right / \
-                     workspace / move-to-workspace / workspace-next / workspace-prev / move-to-workspace-next / \
-                     move-to-workspace-prev / focus-up / focus-down / move-up / move-down / focus-column-first / \
+                     workspace / move-to-workspace / move-column-to-workspace / workspace-next / workspace-prev / \
+                     move-to-workspace-next / move-to-workspace-prev / move-column-to-workspace-next / \
+                     move-column-to-workspace-prev / move-workspace-down / move-workspace-up / focus-up / focus-down / move-up / move-down / focus-column-first / \
                      focus-column-last / move-column-first / move-column-last / consume-window-into-column / \
                      expel-window-from-column / consume-or-expel-window-left / consume-or-expel-window-right / \
                      switch-preset-column-width / maximize-column / set-column-width / adjust-column-width / center-column / switch-preset-window-height / reset-window-height / \

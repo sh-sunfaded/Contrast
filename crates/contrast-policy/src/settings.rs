@@ -226,6 +226,9 @@ pub struct Settings {
     pub appearance: Appearance,
     /// ワークスペースの数（1〜`MAX_WORKSPACES`）。
     pub workspaces: u8,
+    /// ワークスペースの方式。固定（既定）か、niri のような動的なワークスペース。起動時に決まり、リロードでは変わらない。
+    /// 動的のとき `workspaces` は、`workspace` の番号の上限（キーバインドの検査）にだけ使う。
+    pub workspace_mode: contrast_core::WorkspaceMode,
     /// 入力デバイスの設定。
     pub input: InputSettings,
     /// 窓の隙間。
@@ -297,6 +300,7 @@ impl Settings {
                 inactive_border_width: None,
             },
             workspaces: 4,
+            workspace_mode: contrast_core::WorkspaceMode::Fixed,
             input: InputSettings::default(),
             layout: LayoutSettings::default(),
             cursor: CursorSettings::default(),

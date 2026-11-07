@@ -46,6 +46,16 @@ pub enum Action {
     MoveToWorkspaceNext,
     /// フォーカス窓を前のワークスペースへ移す。最初の前は無い（循環しない）。
     MoveToWorkspacePrev,
+    /// フォーカス窓の列ごと、別のワークスペースへ移して切り替える（0 始まり。スクロール列レイアウトのみ）。
+    MoveColumnToWorkspace(u8),
+    /// 列ごと、次のワークスペースへ移して切り替える。最後の次は無い（循環しない）。
+    MoveColumnToWorkspaceNext,
+    /// 列ごと、前のワークスペースへ移して切り替える。最初の前は無い（循環しない）。
+    MoveColumnToWorkspacePrev,
+    /// 表示中のワークスペースを 1 つ下と入れ替える（動的なワークスペースのみ）。
+    MoveWorkspaceDown,
+    /// 表示中のワークスペースを 1 つ上と入れ替える（動的なワークスペースのみ）。
+    MoveWorkspaceUp,
     /// フォーカスを上の窓へ移す（スクロール列レイアウトでは列の中の上の窓）。
     FocusUp,
     /// フォーカスを下の窓へ移す（スクロール列レイアウトでは列の中の下の窓）。
@@ -129,6 +139,11 @@ pub trait Policy {
     }
     /// ワークスペースの数（1 以上）。
     fn workspace_count(&self) -> u8;
+
+    /// ワークスペースの方式（固定か動的か）。起動時に決まり、リロードでは変わらない。既定は固定。
+    fn workspace_mode(&self) -> contrast_core::WorkspaceMode {
+        contrast_core::WorkspaceMode::Fixed
+    }
 
     /// 見た目の設定（角丸・影・枠など）。
     fn appearance(&self) -> crate::Appearance {

@@ -97,7 +97,9 @@ pub(crate) fn contrast_schema() -> Result<Schema, Vec<String>> {
         )
         .component(
             MODULE,
-            ComponentDef::new("Workspaces").prop("count", Ty::Number),
+            ComponentDef::new("Workspaces")
+                .prop("count", Ty::Number)
+                .optional_prop("mode", Ty::String),
         )
         .component(
             MODULE,

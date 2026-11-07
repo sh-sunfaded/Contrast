@@ -166,6 +166,21 @@ impl ConfigStore {
             });
             config.settings.workspaces = current;
         }
+        let mode = self.workspace_mode();
+        if config.settings.workspace_mode != mode {
+            diagnostics.push(ConfigDiagnostic {
+                severity: DiagnosticSeverity::Warning,
+                code: codes::NOT_APPLIED.to_owned(),
+                file: String::new(),
+                line: None,
+                column: None,
+                message: format!(
+                    "ワークスペースの方式 {:?} は再起動するまで反映されない（現在 {:?}）",
+                    config.settings.workspace_mode, mode
+                ),
+            });
+            config.settings.workspace_mode = mode;
+        }
         *self.current.borrow_mut() = Rc::new(config);
         self.logged.borrow_mut().clear();
         let generation = self.generation.get().saturating_add(1);
@@ -276,6 +291,10 @@ impl Policy for ConfigStore {
         self.config().settings.workspaces
     }
 
+    fn workspace_mode(&self) -> contrast_core::WorkspaceMode {
+        self.config().settings.workspace_mode
+    }
+
     fn layout(&self, area: Rect, count: usize) -> Vec<Rect> {
         if count == 0 {
             return Vec::new();
@@ -356,6 +375,22 @@ mod tests {
         assert!(!default_placement(&WindowMeta::default()).fullscreen);
         let (p, _) = Config::builtin().place(&WindowMeta::default(), None);
         assert!(!p.fullscreen);
+    }
+
+    #[test]
+    fn a_changed_workspace_mode_is_kept_at_the_running_value_with_a_warning() {
+        use contrast_core::WorkspaceMode;
+        let store = ConfigStore::new(Config::builtin());
+        assert_eq!(store.workspace_mode(), WorkspaceMode::Fixed);
+        let mut s = Settings::builtin();
+        s.workspace_mode = WorkspaceMode::Dynamic;
+        let outcome = store.replace(Config::new(s, None));
+        let ReloadOutcome::Applied { diagnostics, .. } = outcome else {
+            panic!("applied");
+        };
+        assert!(diagnostics.iter().any(|d| d.code == codes::NOT_APPLIED));
+        // 起動時の方式のまま。
+        assert_eq!(store.workspace_mode(), WorkspaceMode::Fixed);
     }
 
     #[test]

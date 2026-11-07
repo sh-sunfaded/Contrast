@@ -87,6 +87,10 @@ impl Policy for StaticPolicy {
         self.store.workspace_count()
     }
 
+    fn workspace_mode(&self) -> contrast_core::WorkspaceMode {
+        self.store.workspace_mode()
+    }
+
     fn layout(&self, area: Rect, count: usize) -> Vec<Rect> {
         self.store.layout(area, count)
     }
