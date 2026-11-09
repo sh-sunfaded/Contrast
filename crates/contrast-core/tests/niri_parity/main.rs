@@ -37,3 +37,5 @@ mod dynamic_workspaces;
 mod multi_monitor;
 #[cfg(feature = "invariants")]
 mod view_gesture;
+#[cfg(feature = "invariants")]
+mod move_column_no_focus;
