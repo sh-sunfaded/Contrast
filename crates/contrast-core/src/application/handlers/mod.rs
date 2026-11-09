@@ -31,6 +31,9 @@ mod switch_preset_width;
 mod switch_workspace;
 mod toggle_floating;
 mod toggle_fullscreen;
+mod view_gesture_begin;
+mod view_gesture_end;
+mod view_gesture_update;
 mod window_focus_requested;
 mod window_mapped;
 mod window_meta_changed;
@@ -71,6 +74,11 @@ pub fn dispatch<P: Policy>(
         Command::WindowMetaChanged { key, meta } => window_meta_changed::handle(state, key, meta),
         Command::WindowFocusRequested(key) => window_focus_requested::handle(state, key),
         Command::OutputFocusRequested(key) => output_focus_requested::handle(state, key),
+        Command::ViewGestureBegin { output, dnd } => view_gesture_begin::handle(state, output, dnd),
+        Command::ViewGestureUpdate { offset } => view_gesture_update::handle(state, offset),
+        Command::ViewGestureEnd { projected_offset } => {
+            view_gesture_end::handle(state, projected_offset)
+        }
         Command::Action(action) => dispatch_action(state, action),
     }
 }

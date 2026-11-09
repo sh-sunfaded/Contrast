@@ -28,8 +28,21 @@ pub struct Workspace {
     pub focus_history: Vec<WindowId>,
     /// 列の並び（左から右）。`Scrolling` のときだけ使い、`Equal` では空のまま（D36）。
     pub columns: Vec<Column>,
-    /// ビューの左端（作業領域の左端から数えた x、0 以上。`Scrolling` のみ、D39）。
+    /// ビューの左端（作業領域の左端から数えた x。`Scrolling` のみ、D39）。ジェスチャー中は範囲外もとる（D87）。
     pub view_x: i32,
+    /// ビューの連続スクロールの途中（D85〜D90）。
+    pub gesture: Option<ViewGesture>,
+}
+
+/// ビューの連続スクロールの途中の状態（D86・D87）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ViewGesture {
+    /// 開始時の `view_x`。
+    pub start_view: i32,
+    /// 開始からの移動量の合計（最後の Update の値）。
+    pub offset: i32,
+    /// DnD の端スクロールか（範囲を制限し、動かなければビューを保つ）。
+    pub dnd: bool,
 }
 
 impl Workspace {
@@ -44,6 +57,7 @@ impl Workspace {
             focus_history: Vec::new(),
             columns: Vec::new(),
             view_x: 0,
+            gesture: None,
         }
     }
 

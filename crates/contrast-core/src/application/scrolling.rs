@@ -123,6 +123,70 @@ pub fn adjust_view(view_x: i32, left: i32, width: i32, area_width: i32, total: i
     clamp_view(moved, total, area_width)
 }
 
+/// D88: ジェスチャーの終わりの吸着。列の幅 `widths`・左端 `lefts`、作業領域の幅 `area_width`、今のビュー `current`、
+/// 止まるはずのビュー `target` から、`(吸着したビュー, フォーカスする列)`。列が無ければ `None`。D39 は呼び出し側（`arrange`）が当てる。
+#[must_use]
+pub fn snap_view(
+    widths: &[i32],
+    lefts: &[i32],
+    area_width: i32,
+    current: i32,
+    target: i32,
+) -> Option<(i32, usize)> {
+    let last = widths.len().checked_sub(1)?;
+    let left_point = |i: usize| lefts.get(i).copied();
+    let right_point = |i: usize| -> Option<i32> {
+        let x = lefts.get(i)?;
+        let w = widths.get(i)?;
+        x.checked_add(*w)?.checked_sub(area_width)
+    };
+    let leftmost = left_point(0)?;
+    let rightmost = right_point(last)?;
+    let mut points: Vec<(i32, usize)> = alloc::vec![(leftmost, 0), (rightmost, last)];
+    for i in 0..widths.len() {
+        for p in [left_point(i), right_point(i)].into_iter().flatten() {
+            if leftmost < p && p < rightmost {
+                points.push((p, i));
+            }
+        }
+    }
+    // 位置の昇順（同じ位置は足した順。安定な並べ替え）に並べ、目標に最も近い最初の点。
+    points.sort_by_key(|p| p.0);
+    let distance = |p: &(i32, usize)| {
+        i64::from(p.0)
+            .saturating_sub(i64::from(target))
+            .unsigned_abs()
+    };
+    let best = points
+        .iter()
+        .copied()
+        .reduce(|a, b| if distance(&b) < distance(&a) { b } else { a })?;
+    let (snap, mut column) = best;
+    let fits_right = |j: usize| -> bool {
+        let (Some(x), Some(w)) = (lefts.get(j), widths.get(j)) else {
+            return false;
+        };
+        i64::from(snap).saturating_add(i64::from(area_width))
+            >= i64::from(*x).saturating_add(i64::from(*w))
+    };
+    if target >= current {
+        for j in column.saturating_add(1)..widths.len() {
+            if !fits_right(j) {
+                break;
+            }
+            column = j;
+        }
+    } else {
+        for j in (0..column).rev() {
+            if lefts.get(j).is_none_or(|x| *x < snap) {
+                break;
+            }
+            column = j;
+        }
+    }
+    Some((snap, column))
+}
+
 /// 作業領域の幅 `area_width` のときの、列ごとの px 幅。
 #[must_use]
 pub fn column_widths(columns: &[Column], area_width: i32) -> Vec<i32> {
@@ -193,8 +257,13 @@ pub fn sync(state: &mut State) {
         .collect();
     for (index, ids) in tiled {
         let focus_here = focus.filter(|f| ids.contains(f));
+        let shown = state.output_showing(index).is_some();
         if let Some(ws) = state.workspace_mut(index) {
             sync_workspace(ws, &ids, focus_here, default_width);
+            // D90: 列が空になった・表示されなくなったワークスペースのジェスチャーは終える。
+            if ws.columns.is_empty() || !shown {
+                ws.gesture = None;
+            }
         }
     }
 }
@@ -257,7 +326,9 @@ pub fn arrange_workspace(
         column_layout(ws, area.width()).ok_or(CoreError::GeometryOverflow)?;
     // 列にある窓だけが列を持つので、このワークスペースの列から探せば足りる。
     let focus_col = state.focus.and_then(|f| ws.column_of(f)).map(|(c, _)| c);
+    // ジェスチャー中は D39 を当てない（D87・D91）。
     let view = match focus_col.and_then(|c| Some((lefts.get(c)?, widths.get(c)?))) {
+        _ if ws.gesture.is_some() => ws.view_x,
         Some((left, width)) => adjust_view(ws.view_x, *left, *width, area.width(), total),
         None => clamp_view(ws.view_x, total, area.width()),
     };

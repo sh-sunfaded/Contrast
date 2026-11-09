@@ -95,7 +95,8 @@ fn the_view_follows_the_offset_without_limits() {
     assert_eq!(view_x(&c, 11, 0), -450);
     update(&mut c, 800);
     assert_eq!(view_x(&c, 11, 0), 1250);
-    c.check_invariants().expect("ジェスチャー中も不変条件（I11 を除く）");
+    c.check_invariants()
+        .expect("ジェスチャー中も不変条件（I11 を除く）");
 }
 
 #[test]
@@ -170,9 +171,7 @@ fn closing_every_window_ends_the_gesture() {
 /// D39: 列（左端 `left`、幅 `width`）が見える最小のスクロールと、クランプ。
 fn d39(view: i32, left: i32, width: i32, w: i32, total: i32) -> i32 {
     let mut v = view;
-    if width >= w {
-        v = left;
-    } else if left < v {
+    if width >= w || left < v {
         v = left;
     } else if left + width > v + w {
         v = left + width - w;

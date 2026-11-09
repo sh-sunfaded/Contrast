@@ -58,6 +58,23 @@ pub enum Command {
     WindowFocusRequested(ExternalKey),
     /// 出力をアクティブにする要求（窓の無い所のクリックなど。`Dynamic` のみ、D80）。
     OutputFocusRequested(ExternalKey),
+    /// ビューの連続スクロールを始める（`Scrolling` のみ、D85・D86）。`output` の表示中のワークスペースが対象。
+    ViewGestureBegin {
+        /// 対象の出力。
+        output: ExternalKey,
+        /// DnD の端スクロールか（D87・D88）。
+        dnd: bool,
+    },
+    /// ジェスチャー中のビューを、開始時から `offset` だけ動かす（D87）。
+    ViewGestureUpdate {
+        /// 開始からの移動量の合計（px。正はビューが右へ）。
+        offset: i32,
+    },
+    /// ジェスチャーを終え、列に吸着させる（D88）。
+    ViewGestureEnd {
+        /// 減速して止まるはずの、開始からの移動量（px。シェルが速度から求める）。
+        projected_offset: i32,
+    },
     /// キーバインド解決後の意味操作。
     Action(Action),
 }

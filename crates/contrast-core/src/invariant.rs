@@ -36,6 +36,8 @@ pub enum InvariantViolation {
     I12(WorkspaceIndex),
     /// I13（D83）: `Dynamic` で、持ち主の出力・表示・アクティブな出力・フォーカスの整合が崩れている。
     I13,
+    /// I14（D91）: ジェスチャーが 2 つ以上ある、または表示されていない・列の無いワークスペースにある。
+    I14,
 }
 
 /// I7 の比較用の状態の複製。
@@ -63,7 +65,26 @@ pub fn check(state: &State) -> Result<(), InvariantViolation> {
     check_i10(state)?;
     check_i11(state)?;
     check_i12(state)?;
-    check_i13(state)
+    check_i13(state)?;
+    check_i14(state)
+}
+
+/// I14（D91）: ジェスチャーは高々 1 つで、表示中の、列のあるワークスペースにある。
+fn check_i14(state: &State) -> Result<(), InvariantViolation> {
+    let with: Vec<&crate::domain::workspace::Workspace> = state
+        .workspaces
+        .iter()
+        .filter(|ws| ws.gesture.is_some())
+        .collect();
+    let ok = with.len() <= 1
+        && with
+            .iter()
+            .all(|ws| !ws.columns.is_empty() && state.output_showing(ws.id).is_some());
+    if ok {
+        Ok(())
+    } else {
+        Err(InvariantViolation::I14)
+    }
 }
 
 /// ワークスペースの全体の並びでの位置（違反の報告用）。
@@ -358,6 +379,10 @@ fn check_i11(state: &State) -> Result<(), InvariantViolation> {
     let Some(ws) = state.workspace(w.workspace) else {
         return Ok(());
     };
+    // ジェスチャー中のワークスペースには当てない（D91）。
+    if ws.gesture.is_some() {
+        return Ok(());
+    }
     let Some(area_width) = scrolling::shown_area_width(state, w.workspace) else {
         return Ok(());
     };
