@@ -129,6 +129,8 @@ pub enum Action {
     ConsumeOrExpelWindowRight,
     /// フォーカス窓の列ごと、別のワークスペースへ移し、そこへ切り替える（`Scrolling` のみ、D67）。
     MoveColumnToWorkspace(WorkspaceIndex),
+    /// フォーカス窓の列ごと、別のワークスペースへ移す。表示は切り替えない（`Scrolling` のみ、D93・D94。niri の `focus=false`）。
+    MoveColumnToWorkspaceNoFocus(WorkspaceIndex),
     /// 表示中のワークスペースを 1 つ下と入れ替える（`Dynamic` のみ、D68）。
     MoveWorkspaceDown,
     /// 表示中のワークスペースを 1 つ上と入れ替える（`Dynamic` のみ、D68）。

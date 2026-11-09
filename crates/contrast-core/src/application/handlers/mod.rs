@@ -115,7 +115,12 @@ fn dispatch_action(state: &mut State, action: Action) -> Result<Vec<Effect>, Cor
         Action::ConsumeOrExpelWindowLeft => consume_or_expel::handle(state, true),
         Action::ConsumeOrExpelWindowRight => consume_or_expel::handle(state, false),
         // D67・D68: 列ごとの移動と、ワークスペースの入れ替え。
-        Action::MoveColumnToWorkspace(index) => move_column_to_workspace::handle(state, index),
+        Action::MoveColumnToWorkspace(index) => {
+            move_column_to_workspace::handle(state, index, true)
+        }
+        Action::MoveColumnToWorkspaceNoFocus(index) => {
+            move_column_to_workspace::handle(state, index, false)
+        }
         Action::MoveWorkspaceDown => move_workspace::handle(state, true),
         Action::MoveWorkspaceUp => move_workspace::handle(state, false),
         // D78・D79: 複数モニタ（`Dynamic` のみ）。
