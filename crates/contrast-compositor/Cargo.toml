@@ -18,6 +18,9 @@ input = { version = "=0.9.1", default-features = false, features = ["libinput_1_
 xcursor = "=0.3.11"
 # SIGUSR1 でリロードするための signal source。smithay が使う calloop と同じ版の `signals` 機能だけを足す。
 calloop = { version = "=0.14.5", default-features = false, features = ["signals"] }
+# 文字の描画（ホットキーのオーバーレイ・スクリーンショットの UI の説明）。niri は pango を使うが、開発シェル（flake.nix）に pango が無いので、
+# 純 Rust のラスタライザを使う。フォントのファイルは fc-match で探す。
+fontdue = { version = "=0.9.3", default-features = false, features = ["std", "hashbrown"] }
 
 [dependencies.smithay]
 version = "=0.7.0"

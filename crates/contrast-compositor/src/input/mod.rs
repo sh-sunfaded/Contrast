@@ -125,6 +125,17 @@ impl Contrast {
     pub fn process_input_event<I: InputBackend>(&mut self, event: InputEvent<I>) {
         self.last_input = std::time::Instant::now();
         self.monitors.wake();
+        // ホットキーのオーバーレイは、キーを押す・ボタンを押す・ホイール・ジェスチャー・タッチで閉じる（niri の
+        // `should_hide_hotkey_overlay`）。イベントは処理し、最後に閉じる（オーバーレイを開くキーを押しても、開いていれば閉じる）。
+        let hide_overlay = self.hotkey_overlay.open && hides_hotkey_overlay(&event);
+        self.dispatch_input_event(event);
+        if hide_overlay {
+            self.hotkey_overlay.open = false;
+        }
+    }
+
+    /// 入力イベントを 1 つ処理する（`process_input_event` の本体）。
+    fn dispatch_input_event<I: InputBackend>(&mut self, event: InputEvent<I>) {
         match event {
             InputEvent::Keyboard { event, .. } => {
                 self.on_key(event.key_code(), event.state(), Event::time_msec(&event))
@@ -438,6 +449,22 @@ impl Contrast {
         if let Some(Some(action)) = action {
             self.run_action(action);
         }
+    }
+}
+
+/// ホットキーのオーバーレイを閉じる入力か（niri の `should_hide_hotkey_overlay`）。
+fn hides_hotkey_overlay<I: InputBackend>(event: &InputEvent<I>) -> bool {
+    match event {
+        InputEvent::Keyboard { event } => event.state() == KeyState::Pressed,
+        InputEvent::PointerButton { event } => event.state() == ButtonState::Pressed,
+        InputEvent::PointerAxis { .. }
+        | InputEvent::GestureSwipeBegin { .. }
+        | InputEvent::GesturePinchBegin { .. }
+        | InputEvent::TouchDown { .. }
+        | InputEvent::TouchMotion { .. }
+        | InputEvent::TabletToolTip { .. }
+        | InputEvent::TabletToolButton { .. } => true,
+        _ => false,
     }
 }
 

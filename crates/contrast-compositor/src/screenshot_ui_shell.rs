@@ -5,7 +5,9 @@
 //! キー: Escape で閉じる、Space・Enter で保存とクリップボード、Ctrl+C でクリップボードだけ、P でポインタの切り替え。
 //! 開いている間のキーバインドは、niri の `allowed_during_screenshot` と同じものだけ（列・窓の移動は選択の移動、幅・高さは選択の大きさ）。
 //!
-//! niri との差: 下の説明のパネル（文字の描画）、ポインタの絵（P は状態だけ切り替える）、タッチとタブレットは無い。
+//! 下の中央に説明のパネル（niri の `render_panel`。撮影のボタンと 2 行の説明）を出す。ボタンを押して離すと保存する。
+//!
+//! niri との差: ポインタの絵（P は状態と説明の文だけ切り替える）、タッチとタブレットは無い。
 
 use std::collections::BTreeMap;
 use std::time::Instant;
@@ -37,6 +39,96 @@ pub struct Open {
     opened: Instant,
     /// 確定の要求（`Some(ディスクに保存するか)`）。次のフレームの前に処理する。
     confirm: Option<bool>,
+    /// 説明のパネル（ポインタを出す・隠すの 2 通り）。出力ごと: `(出す, 隠す, 大きさ（物理 px）)`。
+    panels: BTreeMap<String, (GlesTexture, GlesTexture, (i32, i32))>,
+    /// 撮影のボタンを押した出力（離したときにボタンの上なら保存する）。
+    capture_down: Option<String>,
+}
+
+/// パネルの定数（論理 px。niri と同じ）。
+const PANEL_PADDING: f32 = 8.0;
+const PANEL_RADIUS: f32 = 16.0;
+const PANEL_BORDER: f32 = 4.0;
+
+/// 説明のパネルを描く（niri の `render_panel`）。`show_pointer` はポインタを出している状態（文は「隠す」になる）。
+fn draw_panel(scale: f64, show_pointer: bool) -> Option<crate::text::Canvas> {
+    use crate::text::{Canvas, fonts, line_height, text_width};
+    let f = fonts()?;
+    let p = |v: f32| (f64::from(v) * scale).round() as i32;
+    let px = (14.0 * scale).round() as f32;
+    let padding = p(PANEL_PADDING);
+    let radius = p(PANEL_RADIUS);
+    let border = ((f64::from(PANEL_BORDER) / 2.0 * scale).round() * 2.0) as i32;
+    let half_border = border / 2;
+    let spacing = p(2.0);
+    let pointer_word = if show_pointer { "hide" } else { "show" };
+    let lines: [[(&str, bool); 3]; 2] = [
+        [
+            ("Press ", false),
+            (" Space ", true),
+            (" to save the screenshot.", false),
+        ],
+        [("Press ", false), (" P ", true), ("", false)],
+    ];
+    let second_tail = format!(" to {pointer_word} the pointer.");
+    let line_h = line_height(&f.regular, px).max(line_height(&f.mono, px));
+    let width_of = |segs: &[(&str, bool)], tail: &str| -> i32 {
+        segs.iter()
+            .map(|(t, mono)| text_width(if *mono { &f.mono } else { &f.regular }, px, t))
+            .sum::<i32>()
+            + text_width(&f.regular, px, tail)
+    };
+    let text_w = width_of(&lines[0], "").max(width_of(&lines[1], &second_tail));
+    let text_h = line_h * 2 + spacing;
+    let width = text_w + padding + radius * 2 + padding - half_border + padding;
+    let height = text_h.max(radius * 2) + padding * 2;
+    let dark = [0.1, 0.1, 0.1, 1.0];
+    let white = [1.0, 1.0, 1.0, 1.0];
+    let mut c = Canvas::new(width, height, dark);
+    // 撮影のボタン: 白い円、暗い輪、白い円（niri と同じ太さ 2 px の輪）。
+    let (r, yc) = (radius as f32, (height / 2) as f32);
+    let cx = padding as f32 + r;
+    let stroke = p(2.0) as f32;
+    c.circle(cx, yc, r, white);
+    c.circle(cx, yc, r - stroke, dark);
+    c.circle(cx, yc, r - stroke * 2.0, white);
+    let x0 = padding + radius * 2 + padding - half_border;
+    for (i, segs) in lines.iter().enumerate() {
+        let y = padding + i32::try_from(i).unwrap_or(0) * (line_h + spacing);
+        let mut x = x0;
+        for (t, mono) in segs {
+            let font = if *mono { &f.mono } else { &f.regular };
+            if *mono {
+                // niri の `bgcolor='#2C2C2C'`。
+                let bg = 0x2C as f32 / 255.0;
+                c.fill(x, y, text_width(font, px, t), line_h, [bg, bg, bg, 1.0]);
+            }
+            x += c.text(font, px, x, y, t, white);
+        }
+        if i == 1 {
+            c.text(&f.regular, px, x, y, &second_tail, white);
+        }
+    }
+    c.border(half_border.max(1), [0.3, 0.3, 0.3, 1.0]);
+    Some(c)
+}
+
+/// パネルの位置（出力の中の物理 px。下の中央、下から余白 2 つ分）。
+fn panel_location(output: (i32, i32), panel: (i32, i32), scale: f64) -> (i32, i32) {
+    let padding = (f64::from(PANEL_PADDING) * scale).round() as i32;
+    (
+        ((output.0 - panel.0) / 2).max(0),
+        (output.1 - panel.1 - padding * 2).max(0),
+    )
+}
+
+/// パネルの中の点 `pos` が撮影のボタンの上か（niri の `is_within_capture_button`）。
+fn within_capture_button(scale: f64, panel: (i32, i32), pos: (i32, i32)) -> bool {
+    let padding = (f64::from(PANEL_PADDING) * scale).round() as i32;
+    let radius = (f64::from(PANEL_RADIUS) * scale).round() as i32 - 2;
+    let (xc, yc) = (padding + radius, panel.1 / 2);
+    let (dx, dy) = (pos.0 - xc, pos.1 - yc);
+    dx * dx + dy * dy <= radius * radius
 }
 
 /// UI の状態（閉じているときは、前回の選択だけを覚える）。
@@ -134,11 +226,34 @@ impl Contrast {
             return;
         };
         tracing::info!(output = ui.output, rect = ?ui.rect(), "screenshot ui: opened");
+        let mut panels = BTreeMap::new();
+        for (name, info) in &ui.outputs {
+            let upload =
+                |renderer: &mut GlesRenderer, show: bool| -> Option<(GlesTexture, (i32, i32))> {
+                    let c = draw_panel(info.scale, show)?;
+                    let t = smithay::backend::renderer::ImportMem::import_memory(
+                        renderer,
+                        &c.rgba,
+                        smithay::backend::allocator::Fourcc::Abgr8888,
+                        Size::from((c.width, c.height)),
+                        false,
+                    )
+                    .ok()?;
+                    Some((t, (c.width, c.height)))
+                };
+            if let (Some((show, size)), Some((hide, _))) =
+                (upload(renderer, false), upload(renderer, true))
+            {
+                panels.insert(name.clone(), (show, hide, size));
+            }
+        }
         self.screenshot_ui.open = Some(Open {
             ui,
             frozen,
             opened: Instant::now(),
             confirm: None,
+            panels,
+            capture_down: None,
         });
         self.cursor_status = smithay::input::pointer::CursorImageStatus::Named(
             smithay::input::pointer::CursorIcon::Crosshair,
@@ -225,6 +340,37 @@ impl Contrast {
         };
         let (shades, border) = open.ui.shades_and_border(&name);
         let mut out: Vec<SceneElement> = Vec::new();
+        // 説明のパネルが一番上（選択を描いている間は薄く。niri: 0.3、ふだん 0.9）。
+        if let (Some((show, hide, size)), Some(info)) =
+            (open.panels.get(&name), open.ui.outputs.get(&name))
+        {
+            let texture = if open.ui.show_pointer { hide } else { show };
+            let (x, y) = panel_location(info.size, *size, scale);
+            let alpha = if open.ui.is_button_down() && open.capture_down.is_none() {
+                0.3
+            } else {
+                0.9
+            };
+            out.push(SceneElement::Frozen(
+                TextureRenderElement::from_static_texture(
+                    Id::new(),
+                    renderer.context_id(),
+                    (offset + Point::from((x, y))).to_f64(),
+                    texture.clone(),
+                    1,
+                    Transform::Normal,
+                    Some(alpha * p),
+                    None,
+                    Some(
+                        Size::<f64, Physical>::from((f64::from(size.0), f64::from(size.1)))
+                            .to_logical(scale)
+                            .to_i32_round(),
+                    ),
+                    None,
+                    Kind::Unspecified,
+                ),
+            ));
+        }
         // 色は乗算済み。白い枠と、半透明の黒い帯（niri と同じ色）に、開く進みを掛ける。
         out.extend(border.into_iter().filter_map(|r| solid(r, [p, p, p, p])));
         out.extend(
@@ -368,21 +514,55 @@ impl Contrast {
             let Some(output) = output else { return };
             let point = self.local_physical(&output, pos);
             let name = output.name();
+            if !mod_down && self.on_capture_button(&name, point) {
+                if let Some(open) = self.screenshot_ui.open.as_mut() {
+                    open.capture_down = Some(name);
+                }
+                return;
+            }
             self.with_ui(|ui| {
                 ui.pointer_down(&name, point, mod_down);
             });
         } else {
-            let capture = self
+            // 撮影のボタンを押していたなら、離したのがボタンの上のときだけ保存する。
+            if let Some(name) = self
                 .screenshot_ui
                 .open
                 .as_mut()
-                .and_then(|o| o.ui.pointer_up());
-            if capture == Some(true)
-                && let Some(open) = self.screenshot_ui.open.as_mut()
+                .and_then(|o| o.capture_down.take())
             {
-                open.confirm = Some(true);
+                let on_button = self
+                    .shell
+                    .outputs
+                    .values()
+                    .find(|o| o.name() == name)
+                    .cloned()
+                    .is_some_and(|o| {
+                        let point = self.local_physical(&o, pos);
+                        self.on_capture_button(&name, point)
+                    });
+                if on_button && let Some(open) = self.screenshot_ui.open.as_mut() {
+                    open.confirm = Some(true);
+                }
+                return;
             }
+            self.with_ui(|ui| {
+                ui.pointer_up();
+            });
         }
+    }
+
+    /// 出力 `name` の点 `point`（物理 px）が、説明のパネルの撮影のボタンの上か。
+    fn on_capture_button(&self, name: &str, point: (i32, i32)) -> bool {
+        let Some(open) = self.screenshot_ui.open.as_ref() else {
+            return false;
+        };
+        let (Some((_, _, size)), Some(info)) = (open.panels.get(name), open.ui.outputs.get(name))
+        else {
+            return false;
+        };
+        let (x, y) = panel_location(info.size, *size, info.scale);
+        within_capture_button(info.scale, *size, (point.0 - x, point.1 - y))
     }
 
     /// UI が開いているときのポインタの移動（全体の論理座標）。
@@ -449,5 +629,31 @@ impl Contrast {
             }
         }
         best.map(|(_, o)| o)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_panel_sits_at_the_bottom_center_and_the_button_is_a_circle() {
+        assert_eq!(panel_location((1000, 800), (400, 60), 1.0), (300, 724));
+        // ボタンの中心は (8 + 14, 30)。半径 14。
+        assert!(within_capture_button(1.0, (400, 60), (22, 30)));
+        assert!(within_capture_button(1.0, (400, 60), (22, 44)));
+        assert!(!within_capture_button(1.0, (400, 60), (22, 45)));
+        assert!(!within_capture_button(1.0, (400, 60), (100, 30)));
+    }
+
+    #[test]
+    fn the_panel_is_drawn_when_fonts_are_available() {
+        if crate::text::fonts().is_none() {
+            return;
+        }
+        let shown = draw_panel(1.0, true).map(|c| (c.width, c.height));
+        let hidden = draw_panel(1.0, false).map(|c| (c.width, c.height));
+        assert!(shown.is_some_and(|(w, h)| w > 200 && h >= 48), "{shown:?}");
+        assert!(hidden.is_some());
     }
 }

@@ -9,6 +9,7 @@ mod cursor;
 mod data_control;
 mod geometry;
 mod handler;
+mod hotkey_overlay;
 mod ime;
 mod input;
 mod ipc;
@@ -22,6 +23,7 @@ mod shell;
 mod spawn;
 mod spring;
 mod state;
+mod text;
 mod window_anim;
 
 use std::path::PathBuf;

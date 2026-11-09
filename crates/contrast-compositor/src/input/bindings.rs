@@ -22,6 +22,10 @@ impl Contrast {
                 return self.loop_signal.stop();
             }
             Action::ReloadConfig => return self.reload_config(),
+            Action::ShowHotkeyOverlay => {
+                self.hotkey_overlay.open = true;
+                return;
+            }
             Action::Screenshot => {
                 self.screenshot_ui.requested = true;
                 return;

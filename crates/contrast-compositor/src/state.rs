@@ -127,6 +127,8 @@ pub struct Contrast {
     pub screenshot_window_pending: bool,
     /// スクリーンショットの範囲を選ぶ UI（niri の `screenshot`）。
     pub screenshot_ui: crate::screenshot_ui_shell::ScreenshotUiState,
+    /// ホットキーのオーバーレイ（起動時に開く。niri の既定）。
+    pub hotkey_overlay: crate::hotkey_overlay::HotkeyOverlay,
     /// 画面の電源（`power-off-monitors`。DRM バックエンドだけが関数を入れる）。
     pub monitors: crate::power::Monitors,
     /// クライアントが指定した（または既定の）カーソル。DRM バックエンドが描く。
@@ -254,6 +256,7 @@ impl Contrast {
             window_anims: Default::default(),
             screenshot_window_pending: false,
             screenshot_ui: Default::default(),
+            hotkey_overlay: crate::hotkey_overlay::HotkeyOverlay::at_startup(),
             input_devices: Vec::new(),
             layout_mode,
             cursor_status: smithay::input::pointer::CursorImageStatus::default_named(),

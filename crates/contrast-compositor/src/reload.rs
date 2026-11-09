@@ -20,6 +20,8 @@ impl Contrast {
                 generation,
                 diagnostics,
             } => {
+                // キーバインドが変わったかもしれないので、ホットキーのオーバーレイを描き直す。
+                self.hotkey_overlay.invalidate();
                 for d in &diagnostics {
                     tracing::warn!("{d}");
                 }

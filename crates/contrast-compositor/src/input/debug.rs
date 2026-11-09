@@ -8,6 +8,7 @@
 //!   1 目盛りが 120、正は右／下）。ホイールのバインドに当たれば、実行してログに出す
 //! - `state` … 管理中の窓の一覧をログに出す
 //! - `pointer down|move|up X Y [mod]` … スクリーンショットの UI が開いているときの、左ボタンとポインタの移動（`mod` は Mod を押したまま）
+//! - `shot` … アクティブな出力の今の絵を保存する（キーバインドを通さない。スクリーンショットの UI を開いたままでも撮れる）
 //! - `unplug NAME` / `replug NAME` … 出力を外す／戻す（ホットプラグの経路を nested で試す。winit の分割した出力など）
 
 use std::io::BufRead;
@@ -178,6 +179,7 @@ impl Contrast {
                     None => tracing::info!(combo, "debug key: no binding"),
                 }
             }
+            (Some("shot"), None, None) => self.screenshot_pending = true,
             (Some("unplug"), Some(name), None) => self.debug_unplug(name),
             (Some("replug"), Some(name), None) => self.debug_replug(name),
             (Some("click"), Some(x), Some(y)) => match (x.parse::<f64>(), y.parse::<f64>()) {

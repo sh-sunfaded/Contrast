@@ -148,6 +148,17 @@ pub fn scene_elements(
         elements.extend(ui);
         return Ok(elements);
     }
+    // ホットキーのオーバーレイ（niri と同じく、窓・レイヤー面より前）。
+    {
+        let policy = state.policy.clone();
+        let rows = || crate::hotkey_overlay::rows(&policy.keybindings(), policy.mod_key());
+        if let Some(e) = state
+            .hotkey_overlay
+            .element(renderer, output, geo, origin, rows)
+        {
+            elements.push(SceneElement::Frozen(e));
+        }
+    }
     // 入力メソッドのポップアップ（候補ウィンドウ）は、カーソルの次に前面（枠・窓・レイヤー面より前）。
     elements.extend(state.ime_popup_elements(renderer, scale, origin));
     match shaders.as_ref().filter(|_| radius > 0) {
