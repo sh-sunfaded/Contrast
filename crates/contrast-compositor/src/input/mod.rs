@@ -7,8 +7,9 @@ pub mod wheel;
 
 use smithay::{
     backend::input::{
-        AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputBackend, InputEvent,
-        KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent,
+        AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, GestureBeginEvent,
+        GestureSwipeUpdateEvent, InputBackend, InputEvent, KeyState, KeyboardKeyEvent,
+        PointerAxisEvent, PointerButtonEvent, PointerMotionEvent,
     },
     desktop::WindowSurfaceType,
     input::{
@@ -122,7 +123,10 @@ impl Contrast {
     }
 
     /// winit からの入力イベントを 1 つ処理する。
-    pub fn process_input_event<I: InputBackend>(&mut self, event: InputEvent<I>) {
+    pub fn process_input_event<I: InputBackend>(&mut self, event: InputEvent<I>)
+    where
+        I::GestureSwipeUpdateEvent: 'static,
+    {
         self.last_input = std::time::Instant::now();
         self.monitors.wake();
         // ホットキーのオーバーレイは、キーを押す・ボタンを押す・ホイール・ジェスチャー・タッチで閉じる（niri の
@@ -135,7 +139,10 @@ impl Contrast {
     }
 
     /// 入力イベントを 1 つ処理する（`process_input_event` の本体）。
-    fn dispatch_input_event<I: InputBackend>(&mut self, event: InputEvent<I>) {
+    fn dispatch_input_event<I: InputBackend>(&mut self, event: InputEvent<I>)
+    where
+        I::GestureSwipeUpdateEvent: 'static,
+    {
         match event {
             InputEvent::Keyboard { event, .. } => {
                 self.on_key(event.key_code(), event.state(), Event::time_msec(&event))
@@ -166,6 +173,8 @@ impl Contrast {
                 );
                 pointer.frame(self);
                 self.follow_focus(pos);
+                self.hot_corner_motion(pos);
+                self.dnd_motion(pos);
             }
             InputEvent::PointerMotion { event, .. } => {
                 let Some(pointer) = self.seat.get_pointer() else {
@@ -206,11 +215,21 @@ impl Contrast {
                 );
                 pointer.frame(self);
                 self.follow_focus(pos);
+                self.hot_corner_motion(pos);
+                self.dnd_motion(pos);
             }
             InputEvent::PointerButton { event, .. } => {
                 let pointer = self.seat.get_pointer().expect("seat has pointer");
                 let serial = SERIAL_COUNTER.next_serial();
                 let state = event.state();
+                // オーバービュー: 左クリックで窓・ワークスペースを選んで閉じる。クライアントには渡さない。
+                if self.overview.open && !self.screenshot_ui.is_open() {
+                    const BTN_LEFT: u32 = 0x110;
+                    if event.button_code() == BTN_LEFT && state == ButtonState::Pressed {
+                        self.overview_click(pointer.current_location());
+                    }
+                    return;
+                }
                 // スクリーンショットの UI: 左ボタンで選択を描く（Mod を押したままなら選択ごと動かす）。クライアントには渡さない。
                 if self.screenshot_ui.is_open() {
                     const BTN_LEFT: u32 = 0x110;
@@ -276,6 +295,18 @@ impl Contrast {
                 let pointer = self.seat.get_pointer().expect("seat has pointer");
                 pointer.axis(self, frame);
                 pointer.frame(self);
+            }
+            InputEvent::GestureSwipeBegin { event, .. } => {
+                self.swipe_begin(i32::try_from(GestureBeginEvent::fingers(&event)).unwrap_or(0));
+            }
+            InputEvent::GestureSwipeUpdate { event, .. } => {
+                let (dx, dy, natural) = swipe_delta(&event);
+                let (sx, sy) = if natural { (-dx, -dy) } else { (dx, dy) };
+                let t = std::time::Duration::from_micros(Event::time(&event));
+                self.swipe_update(sx, sy, dy, t);
+            }
+            InputEvent::GestureSwipeEnd { event, .. } => {
+                self.swipe_end(std::time::Duration::from_micros(Event::time(&event)));
             }
             _ => {}
         }
@@ -422,6 +453,13 @@ impl Contrast {
                     state.suppressed_keys.push(keycode);
                     return FilterResult::Intercept(None);
                 }
+                // オーバービューの決まったキー（Escape・Enter・矢印。修飾キーなし）。
+                if state.overview.open
+                    && state.overview_key(&name, mods.ctrl || mods.alt || mods.shift || mods.logo)
+                {
+                    state.suppressed_keys.push(keycode);
+                    return FilterResult::Intercept(None);
+                }
                 // スクリーンショットの UI が開いている間は、キーをクライアントに渡さない。
                 if state.screenshot_ui.is_open() {
                     state.suppressed_keys.push(keycode);
@@ -450,6 +488,22 @@ impl Contrast {
             self.run_action(action);
         }
     }
+}
+
+/// スワイプの移動 `(dx, dy, natural-scroll か)`。libinput なら加速前の値と、デバイスの natural-scroll の設定（niri と同じ）。
+fn swipe_delta<B: InputBackend, E: GestureSwipeUpdateEvent<B> + 'static>(
+    event: &E,
+) -> (f64, f64, bool) {
+    use std::any::Any;
+    let any = event as &dyn Any;
+    if let Some(e) =
+        any.downcast_ref::<smithay::reexports::input::event::gesture::GestureSwipeUpdateEvent>()
+    {
+        use smithay::reexports::input::event::{EventTrait, gesture::GestureEventCoordinates};
+        let natural = EventTrait::device(e).config_scroll_natural_scroll_enabled();
+        return (e.dx_unaccelerated(), e.dy_unaccelerated(), natural);
+    }
+    (event.delta_x(), event.delta_y(), false)
 }
 
 /// ホットキーのオーバーレイを閉じる入力か（niri の `should_hide_hotkey_overlay`）。

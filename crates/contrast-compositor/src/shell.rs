@@ -513,6 +513,11 @@ impl Contrast {
         self.submit(Command::Action(action));
     }
 
+    /// Command を core に渡す（ほかのモジュールから使う口）。成功なら true。
+    pub(crate) fn submit_command(&mut self, command: Command) -> bool {
+        self.submit(command)
+    }
+
     /// Command を core に渡し、返った Effect を実行する。成功なら true。
     fn submit(&mut self, command: Command) -> bool {
         match self.core.apply(command.clone()) {

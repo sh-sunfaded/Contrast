@@ -81,6 +81,8 @@ render_elements! {
     Pixel=PixelShaderElement,
     /// 開く・閉じる途中の窓（オフスクリーンのテクスチャを拡大・半透明にしたもの）。
     Anim=crate::window_anim::AnimElement,
+    /// オーバービューで、ワークスペースの範囲に切り抜いた窓・レイヤー面。
+    CroppedSurface=CropRenderElement<WaylandSurfaceRenderElement<GlesRenderer>>,
     /// スクリーンショットの UI で止めた出力の絵。
     Frozen=smithay::backend::renderer::element::texture::TextureRenderElement<smithay::backend::renderer::gles::GlesTexture>,
 }
@@ -158,6 +160,11 @@ pub fn scene_elements(
         {
             elements.push(SceneElement::Frozen(e));
         }
+    }
+    // オーバービューが見えていれば、それを描く（niri と同じく、オーバーレイとカーソルは前面）。
+    if let Some(overview) = state.overview_elements(renderer, output, origin) {
+        elements.extend(overview);
+        return Ok(elements);
     }
     // 入力メソッドのポップアップ（候補ウィンドウ）は、カーソルの次に前面（枠・窓・レイヤー面より前）。
     elements.extend(state.ime_popup_elements(renderer, scale, origin));

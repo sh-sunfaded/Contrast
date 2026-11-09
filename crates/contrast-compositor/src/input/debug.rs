@@ -8,6 +8,8 @@
 //!   1 目盛りが 120、正は右／下）。ホイールのバインドに当たれば、実行してログに出す
 //! - `state` … 管理中の窓の一覧をログに出す
 //! - `pointer down|move|up X Y [mod]` … スクリーンショットの UI が開いているときの、左ボタンとポインタの移動（`mod` は Mod を押したまま）
+//! - `swipe begin N` / `swipe update DX DY [MS]` / `swipe end [MS]` … タッチパッドのスワイプ（N 本指。時刻は開始からのミリ秒）
+//! - `corner X Y` … ポインタが (X, Y) へ動いたときのホットコーナーの判定
 //! - `shot` … アクティブな出力の今の絵を保存する（キーバインドを通さない。スクリーンショットの UI を開いたままでも撮れる）
 //! - `unplug NAME` / `replug NAME` … 出力を外す／戻す（ホットプラグの経路を nested で試す。winit の分割した出力など）
 
@@ -139,8 +141,35 @@ impl Contrast {
         tracing::info!(line, "debug pointer");
     }
 
+    /// `swipe ...`: タッチパッドのスワイプ（加速前・反転後の移動として渡す）。
+    fn debug_swipe(&mut self, line: &str) {
+        let w: Vec<&str> = line.split_whitespace().collect();
+        let num = |i: usize| w.get(i).and_then(|v| v.parse::<f64>().ok());
+        let ms =
+            |v: Option<f64>| std::time::Duration::from_millis(v.unwrap_or(0.0).max(0.0) as u64);
+        match w.get(1).copied() {
+            Some("begin") => {
+                let used = self.swipe_begin(num(2).unwrap_or(3.0) as i32);
+                tracing::info!(used, "debug swipe begin");
+            }
+            Some("update") => {
+                let (dx, dy) = (num(2).unwrap_or(0.0), num(3).unwrap_or(0.0));
+                self.swipe_update(dx, dy, -dy, ms(num(4)));
+            }
+            Some("end") => self.swipe_end(ms(num(2))),
+            _ => tracing::warn!(
+                line,
+                "debug: usage: swipe begin N | update DX DY [MS] | end [MS]"
+            ),
+        }
+    }
+
     /// stdin から来た 1 行を実行する。
     fn debug_command(&mut self, line: &str) {
+        if line.split_whitespace().next() == Some("swipe") {
+            self.debug_swipe(line);
+            return;
+        }
         if line.split_whitespace().next() == Some("pointer") {
             self.debug_pointer(line);
             return;
@@ -182,7 +211,15 @@ impl Contrast {
             (Some("shot"), None, None) => self.screenshot_pending = true,
             (Some("unplug"), Some(name), None) => self.debug_unplug(name),
             (Some("replug"), Some(name), None) => self.debug_replug(name),
+            (Some("corner"), Some(x), Some(y)) => {
+                if let (Ok(x), Ok(y)) = (x.parse::<f64>(), y.parse::<f64>()) {
+                    self.hot_corner_motion(smithay::utils::Point::from((x, y)));
+                }
+            }
             (Some("click"), Some(x), Some(y)) => match (x.parse::<f64>(), y.parse::<f64>()) {
+                (Ok(x), Ok(y)) if self.overview.open => {
+                    self.overview_click(smithay::utils::Point::from((x, y)))
+                }
                 (Ok(x), Ok(y)) => self.focus_at(x, y),
                 _ => tracing::warn!(line, "debug: bad click"),
             },

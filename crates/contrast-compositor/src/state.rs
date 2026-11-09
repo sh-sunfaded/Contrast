@@ -129,6 +129,12 @@ pub struct Contrast {
     pub screenshot_ui: crate::screenshot_ui_shell::ScreenshotUiState,
     /// ホットキーのオーバーレイ（起動時に開く。niri の既定）。
     pub hotkey_overlay: crate::hotkey_overlay::HotkeyOverlay,
+    /// タッチパッドのジェスチャーと DnD の端スクロール。
+    pub gestures: crate::gestures::Gestures,
+    /// オーバービュー。
+    pub overview: crate::overview::Overview,
+    /// ポインタが左上のホットコーナーに居る（入ったときに 1 回だけ切り替える）。
+    pub pointer_in_hot_corner: bool,
     /// 画面の電源（`power-off-monitors`。DRM バックエンドだけが関数を入れる）。
     pub monitors: crate::power::Monitors,
     /// クライアントが指定した（または既定の）カーソル。DRM バックエンドが描く。
@@ -257,6 +263,9 @@ impl Contrast {
             screenshot_window_pending: false,
             screenshot_ui: Default::default(),
             hotkey_overlay: crate::hotkey_overlay::HotkeyOverlay::at_startup(),
+            gestures: Default::default(),
+            overview: Default::default(),
+            pointer_in_hot_corner: false,
             input_devices: Vec::new(),
             layout_mode,
             cursor_status: smithay::input::pointer::CursorImageStatus::default_named(),

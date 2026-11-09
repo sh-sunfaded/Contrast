@@ -258,6 +258,9 @@ impl Contrast {
     /// フレームの描画の前に呼ぶ: 表示中の窓の絵を覚え、開く・閉じる窓をテクスチャに描く。
     /// winit では `bind` より前に呼ぶ（オフスクリーンの bind を、窓の面の bind と submit の間に挟まない）。
     pub fn prepare_window_animations(&mut self, renderer: &mut GlesRenderer) {
+        // フレームごとの時間の処理（DnD の端スクロール、オーバービューのバネの終わり）もここで。
+        self.dnd_tick();
+        self.overview.settle();
         let enabled = self.policy.layout_settings().animation_ms != 0;
         let now = Instant::now();
         let view = self.core.view();

@@ -96,7 +96,7 @@ fn fixed_actions(binds: &[KeyBinding]) -> Vec<(Option<Action>, &'static str)> {
         ),
         // Contrast に無い操作は、niri で割り当てが無いときと同じく "(not bound)"。
         (None, "Switch Focus Between Floating and Tiling"),
-        (None, "Open the Overview"),
+        (Some(Action::ToggleOverview), "Open the Overview"),
     ]);
     if bound(&Action::Screenshot) {
         out.push((Some(Action::Screenshot), "Take a Screenshot"));

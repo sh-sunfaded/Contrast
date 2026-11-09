@@ -159,7 +159,27 @@ impl DataControlHandler for Contrast {
     }
 }
 
-impl ClientDndGrabHandler for Contrast {}
+impl ClientDndGrabHandler for Contrast {
+    /// クライアントのドラッグが始まった（DnD の端スクロールを始める準備）。
+    fn started(
+        &mut self,
+        _source: Option<smithay::reexports::wayland_server::protocol::wl_data_source::WlDataSource>,
+        _icon: Option<WlSurface>,
+        _seat: smithay::input::Seat<Self>,
+    ) {
+        self.dnd_started();
+    }
+
+    /// ドラッグが終わった（落とした・取りやめた）。
+    fn dropped(
+        &mut self,
+        _target: Option<WlSurface>,
+        _validated: bool,
+        _seat: smithay::input::Seat<Self>,
+    ) {
+        self.dnd_ended();
+    }
+}
 impl ServerDndGrabHandler for Contrast {}
 
 impl OutputHandler for Contrast {}
