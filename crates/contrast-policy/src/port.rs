@@ -138,6 +138,15 @@ pub struct WindowPlacement {
     /// 開いた直後に全画面にするか。core の配置は Tiled / Floating までなので、コンポジタが配置のあとに
     /// `ToggleFullscreen` を送る（窓がフォーカスを得たときだけ効く）。
     pub fullscreen: bool,
+    /// 最初の列の幅（niri の窓ルールの `default-column-width`）。`None` なら設定の既定。
+    pub column_width: Option<PlacementWidth>,
+}
+
+/// 窓ルールの列の幅。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlacementWidth {
+    /// 窓に決めさせる（niri の `default-column-width {}`。最初の configure の幅を 0 にし、窓が描いた幅を列の幅にする）。
+    Window,
 }
 
 /// コンポジタがポリシーに問い合わせる口。

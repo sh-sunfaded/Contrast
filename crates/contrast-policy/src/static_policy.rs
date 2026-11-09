@@ -23,6 +23,7 @@ pub fn default_placement(meta: &WindowMeta) -> WindowPlacement {
         state,
         focus: true,
         fullscreen: false,
+        column_width: None,
     }
 }
 

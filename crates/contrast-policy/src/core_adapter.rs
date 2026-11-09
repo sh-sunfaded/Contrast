@@ -31,7 +31,19 @@ impl<P: Policy + ?Sized> contrast_core::Policy for PortPlacement<P> {
             .workspace
             .filter(|n| *n < ctx.workspace_count())
             .map(WorkspaceIndex::new);
-        Placement::new(workspace, decided.state, decided.focus)
+        let placement = Placement::new(workspace, decided.state, decided.focus);
+        // 窓に決めさせる幅（niri の `default-column-width {}`）: シェルが窓の描いた大きさを `requested_size` に入れて渡す。
+        // core の列の幅は隙間を含むので、窓の幅に隙間を足す（niri の列の幅は隙間を含まない）。
+        match decided.column_width {
+            Some(crate::PlacementWidth::Window) => meta
+                .requested_size
+                .and_then(|size| {
+                    let gap = self.port.layout_settings().gap.max(0);
+                    contrast_core::ColumnWidth::fixed(size.width().saturating_add(gap))
+                })
+                .map_or(placement, |w| placement.with_column_width(w)),
+            None => placement,
+        }
     }
 }
 
@@ -92,6 +104,7 @@ mod tests {
                 state: WindowState::Tiled,
                 focus: false,
                 fullscreen: false,
+                column_width: None,
             }
         }
         fn resolve_key(&self, _mods: crate::Mods, _keysym: &str) -> Option<crate::Action> {

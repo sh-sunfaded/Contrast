@@ -90,6 +90,7 @@ impl Config {
             },
             focus: p.focus,
             fullscreen: p.fullscreen,
+            column_width: p.column_width,
         })
     }
 }
@@ -373,6 +374,7 @@ mod tests {
             floating: true,
             focus: false,
             fullscreen: true,
+            column_width: None,
         })));
         let (p, d) = c.place(&WindowMeta::default(), Some(0));
         assert_eq!(d, None);
@@ -448,6 +450,7 @@ mod tests {
             floating: true,
             focus: true,
             fullscreen: false,
+            column_width: None,
         };
         let (p, d) = with_hook(Ok(Some(out))).place(&WindowMeta::default(), None);
         assert_eq!(p, default);

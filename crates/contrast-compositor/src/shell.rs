@@ -44,6 +44,8 @@ pub struct Shell {
     pub pending: Vec<Window>,
     /// 出力の ExternalKey ⇔ Smithay の出力（core に登録済みのもの）。
     pub outputs: BTreeMap<ExternalKey, Output>,
+    /// 幅を窓に決めさせる窓（niri の `default-column-width {}`）で、最初のバッファを待っているもの。
+    pub awaiting_buffer: Vec<Window>,
 }
 
 impl Shell {
@@ -404,6 +406,28 @@ impl Contrast {
     /// xdg-shell ではクライアントが app_id・title を設定してから最初の commit をするので、
     /// この時点で無ければ「無い」と確定する。保留中の窓でなければ何もしない。
     pub fn map_pending(&mut self, surface: &WlSurface) {
+        // 幅を窓に決めさせる窓: 最初のバッファが来たら、その大きさで登録する（niri は列の幅を窓の幅にする）。
+        if let Some(index) = self
+            .shell
+            .awaiting_buffer
+            .iter()
+            .position(|w| &surface_of(w) == surface)
+        {
+            let Some(window) = self.shell.awaiting_buffer.get(index).cloned() else {
+                return;
+            };
+            window.on_commit();
+            let size = window.geometry().size;
+            if size.w <= 0 || size.h <= 0 {
+                return;
+            }
+            self.shell.awaiting_buffer.remove(index);
+            let mut meta = read_meta(&window);
+            meta.requested_size = contrast_core::Size::new(size.w, size.h);
+            tracing::info!(app_id = ?meta.app_id, w = size.w, h = size.h, "window chose its width (default-column-width {{}})");
+            self.window_mapped(window, meta);
+            return;
+        }
         let Some(index) = self
             .shell
             .pending
@@ -415,6 +439,32 @@ impl Contrast {
         let window = self.shell.pending.remove(index);
         let meta = read_meta(&window);
         tracing::info!(app_id = ?meta.app_id, title = ?meta.title, is_dialog = meta.is_dialog, "window first commit");
+        let decided = self
+            .policy
+            .place_window(&meta, self.shown_workspace_index());
+        if decided.column_width == Some(contrast_policy::PlacementWidth::Window)
+            && decided.state == WindowState::Tiled
+        {
+            // 最初の configure の幅を 0 にして、窓に決めさせる（高さは作業領域から上下の隙間を引いた高さ）。
+            let height = self
+                .active_output()
+                .and_then(|o| self.work_area(&o))
+                .map_or(0, |a| {
+                    a.height().saturating_sub(
+                        self.policy
+                            .layout_settings()
+                            .outer_gap
+                            .max(0)
+                            .saturating_mul(2),
+                    )
+                });
+            if let Some(toplevel) = window.toplevel() {
+                toplevel.with_pending_state(|s| s.size = Some((0, height.max(0)).into()));
+                toplevel.send_configure();
+            }
+            self.shell.awaiting_buffer.push(window);
+            return;
+        }
         self.window_mapped(window, meta);
     }
 
@@ -449,6 +499,10 @@ impl Contrast {
     ///
     /// 最初の commit の前に閉じられた窓は保留から外すだけで、core には何も送らない。
     pub fn window_unmapped(&mut self, surface: &WlSurface) {
+        // 最初のバッファを待っていた窓は、待つのをやめるだけ（core には登録していない）。
+        self.shell
+            .awaiting_buffer
+            .retain(|w| &surface_of(w) != surface);
         if let Some(index) = self
             .shell
             .pending
@@ -817,6 +871,7 @@ mod tests {
                 floating: false,
                 focus: self.focus,
                 fullscreen: self.fullscreen,
+                column_width: None,
             }))
         }
     }

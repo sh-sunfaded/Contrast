@@ -25,7 +25,7 @@ pub use config::{
 };
 pub use core_adapter::PortPlacement;
 pub use hook::{HookPlacement, PlacementHook, WindowInfo};
-pub use port::{Action, Mods, Policy, WindowPlacement};
+pub use port::{Action, Mods, PlacementWidth, Policy, WindowPlacement};
 pub use settings::{
     AnimationKind, Appearance, CursorSettings, DEFAULT_DATA_CONTROL_CLIENTS,
     DEFAULT_SCREENSHOT_PATH, InputSettings, KeyBinding, KeySpec, LayoutSettings, ModKey, Settings,
