@@ -188,6 +188,9 @@ fn render_winit(
         state.host_cursor_hidden = hidden;
     }
     let damage = Rectangle::from_size(backend.window_size());
+    // オフスクリーンへの描画（窓の開閉の絵）は、窓の面を bind する前に済ませる。
+    state.prepare_window_animations(backend.renderer());
+    state.take_window_screenshot_if_pending(backend.renderer());
     {
         let (renderer, mut framebuffer) = backend
             .bind()

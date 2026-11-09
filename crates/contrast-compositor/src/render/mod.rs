@@ -26,6 +26,7 @@ use smithay::{
 use crate::state::Contrast;
 
 mod look;
+pub mod offscreen;
 mod rounded;
 
 use look::Shaders;
@@ -78,6 +79,8 @@ render_elements! {
     Rounded=RoundedSurface,
     /// 枠の輪と影（ピクセルシェーダ）。
     Pixel=PixelShaderElement,
+    /// 開く・閉じる途中の窓（オフスクリーンのテクスチャを拡大・半透明にしたもの）。
+    Anim=crate::window_anim::AnimElement,
 }
 
 render_elements! {
@@ -184,6 +187,16 @@ pub fn scene_elements(
     let round = shaders
         .as_ref()
         .filter(|_| radius > 0 && !state.has_visible_fullscreen(output));
+    // 閉じる途中・開く途中の窓（niri の window-close／window-open）。開く途中の窓は、生の要素の代わりに描く。
+    let (opening, closing) = {
+        let shell_windows = &state.shell.windows;
+        state
+            .window_anims
+            .elements(renderer, output, origin, |k| shell_windows.contains_key(&k))
+    };
+    elements.extend(closing.into_iter().map(SceneElement::Anim));
+    let replaced: Vec<contrast_core::ExternalKey> = opening.iter().map(|(k, _)| *k).collect();
+    elements.extend(opening.into_iter().map(|(_, e)| SceneElement::Anim(e)));
     // この出力に表示中の窓だけを、上に描かれるものから（Space の重なりの順）。
     let on_output: Vec<smithay::desktop::Window> = {
         let ids: Vec<contrast_core::WindowId> =
@@ -191,6 +204,7 @@ pub fn scene_elements(
         let view = state.core.view();
         ids.iter()
             .filter_map(|id| view.window_key(*id))
+            .filter(|k| !replaced.contains(k))
             .filter_map(|k| state.shell.windows.get(&k).cloned())
             .collect()
     };
@@ -290,7 +304,10 @@ pub fn capture<E: smithay::backend::renderer::element::RenderElement<GlesRendere
     .map_err(|e| fail(&e))?;
     let mapping = {
         let mut target = renderer.bind(&mut texture).map_err(|e| fail(&e))?;
-        OutputDamageTracker::from_output(output)
+        // GL のテクスチャに描いて読むと、上下が逆になる。上下を反転して描く（出力の変換に依らない。
+        // 以前は出力の変換を使っていたので、winit（Flipped180）では正しく、DRM（Normal）では上下が逆になっていた）。
+        let scale = output.current_scale().fractional_scale();
+        OutputDamageTracker::new(mode.size, scale, smithay::utils::Transform::Flipped180)
             .render_output(renderer, &mut target, 0, elements, background)
             .map_err(|e| fail(&e))?;
         renderer
@@ -441,7 +458,7 @@ fn ring_elements(
     if b <= 0 {
         return Vec::new();
     }
-    let ring = |rect: contrast_core::Rect, thickness: i32, color: [f32; 4]| {
+    let ring = |rect: contrast_core::Rect, thickness: i32, color: [f32; 4], alpha: f32| {
         SceneElement::Pixel(PixelShaderElement::new(
             sh.ring.clone(),
             logical(
@@ -451,7 +468,7 @@ fn ring_elements(
                 rect.height(),
             ),
             None,
-            1.0,
+            alpha,
             vec![
                 Uniform::new("color", premultiplied(color)),
                 Uniform::new("radius", radius as f32),
@@ -463,17 +480,19 @@ fn ring_elements(
     let mut out = Vec::new();
     // 枠は窓（フレーム）の外側に描く（niri のフォーカスリングと同じ）。
     if let Some(frame) = state.focused_tile(output) {
+        let alpha = state.focused_open_look().map_or(1.0, |(a, _)| a);
         out.push(ring(
             crate::geometry::outset(frame, b),
             b,
             state.policy.focus_border_color(),
+            alpha,
         ));
     }
     if let Some(color) = state.policy.unfocused_border_color() {
         let thin = unfocused_width(b, state.policy.appearance().inactive_border_width);
         if thin > 0 {
             for frame in state.unfocused_tiles(output) {
-                out.push(ring(crate::geometry::outset(frame, thin), thin, color));
+                out.push(ring(crate::geometry::outset(frame, thin), thin, color, 1.0));
             }
         }
     }
@@ -495,13 +514,18 @@ fn shadow_elements(
     }
     let border = appearance.border_width.max(0);
     let frame_radius = (radius + border) as f32;
-    let mut frames: Vec<contrast_core::Rect> = state.focused_tile(output).into_iter().collect();
-    frames.extend(state.unfocused_tiles(output));
+    let focused_alpha = state.focused_open_look().map_or(1.0, |(a, _)| a);
+    let mut frames: Vec<(contrast_core::Rect, f32)> = state
+        .focused_tile(output)
+        .into_iter()
+        .map(|f| (f, focused_alpha))
+        .collect();
+    frames.extend(state.unfocused_tiles(output).into_iter().map(|f| (f, 1.0)));
     frames
         .into_iter()
         // 影は枠の外側の矩形に付ける。
-        .map(|f| crate::geometry::outset(f, border))
-        .map(|f| {
+        .map(|(f, alpha)| (crate::geometry::outset(f, border), alpha))
+        .map(|(f, alpha)| {
             let area = logical(
                 f.x() - s.blur + s.offset_x - origin.x,
                 f.y() - s.blur + s.offset_y - origin.y,
@@ -512,7 +536,7 @@ fn shadow_elements(
                 sh.shadow.clone(),
                 area,
                 None,
-                1.0,
+                alpha,
                 vec![
                     Uniform::new("color", premultiplied(s.color)),
                     Uniform::new("radius", frame_radius),
@@ -536,19 +560,20 @@ fn border_elements(
     origin: Point<i32, Logical>,
 ) -> Vec<SolidColorRenderElement> {
     let b = state.policy.border_width();
-    let mut bands: Vec<(Band, [f32; 4])> = Vec::new();
+    let mut bands: Vec<(Band, [f32; 4], f32)> = Vec::new();
+    let focused_alpha = state.focused_open_look().map_or(1.0, |(a, _)| a);
     // 枠は窓（フレーム）の外側に描く。
     if let Some(tile) = state.focused_tile(output)
         && let Some(es) = edges(crate::geometry::outset(tile, b), b)
     {
         let color = state.policy.focus_border_color();
-        bands.extend(es.into_iter().map(|e| (e, color)));
+        bands.extend(es.into_iter().map(|e| (e, color, focused_alpha)));
     }
     if let Some(color) = state.policy.unfocused_border_color() {
         for tile in state.unfocused_tiles(output) {
             let thin = unfocused_width(b, state.policy.appearance().inactive_border_width);
             if let Some(es) = edges(crate::geometry::outset(tile, thin), thin) {
-                bands.extend(es.into_iter().map(|e| (e, color)));
+                bands.extend(es.into_iter().map(|e| (e, color, 1.0)));
             }
         }
     }
@@ -560,13 +585,13 @@ fn border_elements(
         .border_buffers
         .iter_mut()
         .zip(bands)
-        .map(|(buffer, ((ex, ey, ew, eh), color))| {
+        .map(|(buffer, ((ex, ey, ew, eh), color, alpha))| {
             buffer.update((ew, eh), color);
             SolidColorRenderElement::from_buffer(
                 buffer,
                 (ex - origin.x, ey - origin.y),
                 1.0,
-                1.0,
+                alpha,
                 Kind::Unspecified,
             )
         })

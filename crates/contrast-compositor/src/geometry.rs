@@ -176,3 +176,33 @@ mod tests {
         );
     }
 }
+
+/// 矩形 `r` を、中心を基準に `scale` 倍にしたもの（幅・高さは 1 以上）。窓の開くアニメーションで枠に使う。
+pub fn scaled_about_center(r: Rect, scale: f64) -> Rect {
+    let cx = f64::from(r.x()) + f64::from(r.width()) / 2.0;
+    let cy = f64::from(r.y()) + f64::from(r.height()) / 2.0;
+    let w = (f64::from(r.width()) * scale).round().max(1.0);
+    let h = (f64::from(r.height()) * scale).round().max(1.0);
+    Rect::new(
+        (cx - w / 2.0).round() as i32,
+        (cy - h / 2.0).round() as i32,
+        w as i32,
+        h as i32,
+    )
+    .unwrap_or(r)
+}
+
+#[cfg(test)]
+mod scale_tests {
+    use super::*;
+
+    #[test]
+    fn scaling_keeps_the_center() {
+        let r = Rect::new(100, 100, 200, 100).unwrap_or_else(|| unreachable!());
+        assert_eq!(
+            scaled_about_center(r, 0.5),
+            Rect::new(150, 125, 100, 50).unwrap_or(r)
+        );
+        assert_eq!(scaled_about_center(r, 1.0), r);
+    }
+}

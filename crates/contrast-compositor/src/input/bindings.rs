@@ -18,6 +18,10 @@ impl Contrast {
                 return self.loop_signal.stop();
             }
             Action::ReloadConfig => return self.reload_config(),
+            Action::ScreenshotWindow => {
+                self.screenshot_window_pending = true;
+                return;
+            }
             Action::ScreenshotScreen => {
                 self.screenshot_pending = true;
                 return;

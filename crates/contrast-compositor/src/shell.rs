@@ -204,6 +204,7 @@ impl Contrast {
     }
 
     /// フォーカス枠を描くべきタイル（出力 `output` に表示中のフォーカス窓のもの。全画面なら枠なし）。
+    /// 窓が開く途中なら、窓と同じく中心を基準に縮めた矩形（niri はタイルの枠ごと拡大する）。
     pub fn focused_tile(&self, output: &Output) -> Option<Rect> {
         let view = self.core.view();
         let w = view.window(view.focus()?)?;
@@ -213,8 +214,20 @@ impl Contrast {
         if self.output_of_window(w.id).as_ref() != Some(output) {
             return None;
         }
-        w.rect
-            .map(|tile| self.displayed_frame(w.id, self.frame_of(tile, w.state, Some(output))))
+        let frame = w
+            .rect
+            .map(|tile| self.displayed_frame(w.id, self.frame_of(tile, w.state, Some(output))))?;
+        Some(match self.focused_open_look() {
+            Some((_, scale)) => crate::geometry::scaled_about_center(frame, scale),
+            None => frame,
+        })
+    }
+
+    /// フォーカス窓が開く途中なら、その `(透明度, 拡大率)`。
+    pub fn focused_open_look(&self) -> Option<(f32, f64)> {
+        let view = self.core.view();
+        let key = view.window_key(view.focus()?)?;
+        self.window_anims.open_look_of(key)
     }
 
     /// 窓 `id` を今描くフレーム。補間の途中なら途中の矩形、そうでなければ行き先の `target`。
@@ -454,6 +467,9 @@ impl Contrast {
         if let Some(id) = id {
             self.anim.forget(id);
         }
+        // niri の window-close: 最後のフレームの絵を、縮めながら消す。
+        let enabled = self.policy.layout_settings().animation_ms != 0;
+        self.window_anims.start_closing(key, enabled);
         if let Some(window) = self.shell.windows.remove(&key) {
             self.space.unmap_elem(&window);
         }

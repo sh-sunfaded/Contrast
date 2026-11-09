@@ -123,6 +123,8 @@ pub struct Contrast {
     pub vt_switch: Option<Box<dyn FnMut(i32)>>,
     /// `screenshot-screen` が押された。次に描くフレームを読み出して保存する。
     pub screenshot_pending: bool,
+    /// `screenshot-window` が押された。次のフレームの前に、フォーカス窓の絵を保存する。
+    pub screenshot_window_pending: bool,
     /// 画面の電源（`power-off-monitors`。DRM バックエンドだけが関数を入れる）。
     pub monitors: crate::power::Monitors,
     /// クライアントが指定した（または既定の）カーソル。DRM バックエンドが描く。
@@ -141,6 +143,8 @@ pub struct Contrast {
     pub host_cursor_hidden: bool,
     /// デバッグの `unplug` で外した出力と、その矩形（`replug` で戻す）。
     pub unplugged: Vec<(smithay::output::Output, contrast_core::Rect)>,
+    /// 窓の開く・閉じるアニメーション（niri の window-open／window-close）。
+    pub window_anims: crate::window_anim::WindowAnims,
 }
 
 impl Contrast {
@@ -245,6 +249,8 @@ impl Contrast {
             last_input: std::time::Instant::now(),
             host_cursor_hidden: false,
             unplugged: Vec::new(),
+            window_anims: Default::default(),
+            screenshot_window_pending: false,
             input_devices: Vec::new(),
             layout_mode,
             cursor_status: smithay::input::pointer::CursorImageStatus::default_named(),

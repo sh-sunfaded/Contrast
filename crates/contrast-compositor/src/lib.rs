@@ -20,6 +20,7 @@ mod shell;
 mod spawn;
 mod spring;
 mod state;
+mod window_anim;
 
 use std::path::PathBuf;
 use std::rc::Rc;
