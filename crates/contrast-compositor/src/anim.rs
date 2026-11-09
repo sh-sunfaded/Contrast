@@ -34,6 +34,38 @@ enum Curve {
     Easing(Duration),
     /// 0 から 1 へのバネと、収束までの時間。
     Spring(Spring, Duration),
+    /// 矩形の成分（x・y・幅・高さ）ごとのバネ（px）と、全部が収束するまでの時間。niri と同じく、
+    /// 行き先を変えたときは今の速度を新しいバネの初速にする。
+    Components([Spring; 4], Duration),
+}
+
+/// 成分ごとのバネの、時刻 `t`（秒）の速度（px/s。数値微分）。
+fn spring_velocity(s: &Spring, t: f64) -> f64 {
+    let h = 0.0005;
+    (s.value_at(t + h) - s.value_at((t - h).max(0.0))) / (t + h - (t - h).max(0.0))
+}
+
+/// 成分ごとのバネを作る。`from`・`to` は矩形、`v` は成分ごとの初速（px/s）。
+fn component_springs(
+    from: Rect,
+    to: Rect,
+    v: [f64; 4],
+    params: SpringParams,
+) -> ([Spring; 4], Duration) {
+    let f = [from.x(), from.y(), from.width(), from.height()];
+    let t = [to.x(), to.y(), to.width(), to.height()];
+    let springs = std::array::from_fn(|i| Spring {
+        from: f64::from(f[i]),
+        to: f64::from(t[i]),
+        initial_velocity: v[i],
+        params,
+    });
+    let settle = springs
+        .iter()
+        .map(Spring::settle_time)
+        .max()
+        .unwrap_or_default();
+    (springs, settle)
 }
 
 impl Curve {
@@ -48,6 +80,8 @@ impl Curve {
                 spring.value_at(elapsed.as_secs_f64()).clamp(0.0, 1.0),
                 elapsed >= settle,
             ),
+            // 成分ごとのバネは `Anim::rect_at` が使う。
+            Self::Components(_, settle) => (1.0, elapsed >= settle),
         }
     }
 
@@ -79,6 +113,38 @@ struct Anim {
     start: Instant,
     /// 曲線。
     curve: Curve,
+}
+
+impl Anim {
+    /// 経過 `elapsed` の矩形と、終わったか。
+    fn rect_at(&self, elapsed: Duration) -> (Rect, bool) {
+        if let Curve::Components(springs, settle) = self.curve {
+            if elapsed >= settle {
+                return (self.to, true);
+            }
+            let t = elapsed.as_secs_f64();
+            let v: [i32; 4] = std::array::from_fn(|i| springs[i].value_at(t).round() as i32);
+            let rect = Rect::new(v[0], v[1], v[2].max(1), v[3].max(1)).unwrap_or(self.to);
+            return (rect, false);
+        }
+        let (value, finished) = self.curve.at(elapsed);
+        if finished {
+            (self.to, true)
+        } else {
+            (lerp_rect(self.from, self.to, value), false)
+        }
+    }
+
+    /// 経過 `elapsed` の成分ごとの速度（px/s）。バネでなければ 0。
+    fn velocity_at(&self, elapsed: Duration) -> [f64; 4] {
+        match self.curve {
+            Curve::Components(springs, settle) if elapsed < settle => {
+                let t = elapsed.as_secs_f64();
+                std::array::from_fn(|i| spring_velocity(&springs[i], t))
+            }
+            _ => [0.0; 4],
+        }
+    }
 }
 
 /// 経過時間 `elapsed` が `total` のどこまで進んだか（0.0〜1.0）。`total` が 0 なら 1.0。
@@ -138,6 +204,8 @@ pub struct Animator {
     last_workspace: std::collections::BTreeMap<String, u8>,
     /// 補間を止めている間（出力の大きさの変更中など）。矩形はすぐ行き先になる。
     suppressed: bool,
+    /// 次の `retarget` の横の初速（px/s。ジェスチャーの終わりの速度を、吸着の動きに引き継ぐ。`end_slide` で消える）。
+    pending_vx: Option<f64>,
 }
 
 impl Animator {
@@ -162,13 +230,32 @@ impl Animator {
         let enabled = !matches!(motion, Motion::Easing(d) if d.is_zero());
         match from {
             Some(from) if animate && !self.suppressed && enabled && from != to => {
+                let curve = match motion {
+                    Motion::Spring => {
+                        // 今の速度（補間の途中なら）を引き継ぐ。ジェスチャーの終わりなら、その横の速度。
+                        let mut v = self.running.get(&id).map_or([0.0; 4], |a| {
+                            a.velocity_at(now.saturating_duration_since(a.start))
+                        });
+                        if let Some(vx) = self.pending_vx {
+                            v[0] = vx;
+                        }
+                        let params = if slid {
+                            SpringParams::workspace_switch()
+                        } else {
+                            SpringParams::movement()
+                        };
+                        let (springs, settle) = component_springs(from, to, v, params);
+                        Curve::Components(springs, settle)
+                    }
+                    other => Curve::new(other, slid),
+                };
                 self.running.insert(
                     id,
                     Anim {
                         from,
                         to,
                         start: now,
-                        curve: Curve::new(motion, slid),
+                        curve,
                     },
                 );
                 self.shown.insert(id, from);
@@ -187,13 +274,8 @@ impl Animator {
         let mut updates = Vec::new();
         let mut done = Vec::new();
         for (id, anim) in &self.running {
-            let (value, finished) = anim.curve.at(now.saturating_duration_since(anim.start));
             // 終わったら、丸めずに行き先そのもの。
-            let rect = if finished {
-                anim.to
-            } else {
-                lerp_rect(anim.from, anim.to, value)
-            };
+            let (rect, finished) = anim.rect_at(now.saturating_duration_since(anim.start));
             updates.push((*id, rect));
             if finished {
                 done.push(*id);
@@ -252,6 +334,12 @@ impl Animator {
     /// ワークスペースの切り替えによる縦のずれをやめる。
     pub fn end_slide(&mut self) {
         self.slide = None;
+        self.pending_vx = None;
+    }
+
+    /// 次の `retarget` の横の初速を決める（ジェスチャーの速度の引き継ぎ）。
+    pub fn set_pending_velocity_x(&mut self, vx: f64) {
+        self.pending_vx = Some(vx);
     }
 
     /// 補間を止める／再開する（止めている間の `retarget` は、すぐ行き先になる）。
@@ -294,6 +382,47 @@ mod tests {
     }
 
     const MS: Duration = Duration::from_millis(100);
+
+    #[test]
+    fn retargeting_a_spring_keeps_the_velocity() {
+        let v = ids(1);
+        let t0 = Instant::now();
+        let mut a = Animator::default();
+        a.retarget(v[0], r(0, 0, 100, 100), t0, Motion::Spring, false);
+        a.retarget(v[0], r(1000, 0, 100, 100), t0, Motion::Spring, true);
+        let t1 = t0 + Duration::from_millis(50);
+        a.tick(t1);
+        let before = a
+            .running
+            .get(&v[0])
+            .map(|x| x.velocity_at(t1 - t0))
+            .expect("動いている");
+        assert!(before[0] > 1000.0, "右へ速く動いている: {before:?}");
+        // 行き先を変えても、その瞬間の速度は同じ（niri と同じく、速度を引き継ぐ）。
+        a.retarget(v[0], r(500, 0, 100, 100), t1, Motion::Spring, true);
+        let after = a
+            .running
+            .get(&v[0])
+            .map(|x| x.velocity_at(Duration::ZERO))
+            .expect("動いている");
+        assert!(
+            (after[0] - before[0]).abs() < before[0] * 0.02,
+            "{before:?} {after:?}"
+        );
+        // ジェスチャーの速度を渡すと、それが初速になる。
+        let mut b = Animator::default();
+        b.retarget(v[0], r(0, 0, 100, 100), t0, Motion::Spring, false);
+        b.set_pending_velocity_x(-3000.0);
+        b.retarget(v[0], r(-400, 0, 100, 100), t0, Motion::Spring, true);
+        let start = b
+            .running
+            .get(&v[0])
+            .map(|x| x.velocity_at(Duration::ZERO))
+            .expect("動いている");
+        assert!((start[0] + 3000.0).abs() < 60.0, "{start:?}");
+        b.end_slide();
+        assert!(b.pending_vx.is_none());
+    }
 
     #[test]
     fn progress_is_clamped() {

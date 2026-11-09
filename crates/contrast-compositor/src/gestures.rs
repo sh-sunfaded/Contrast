@@ -239,6 +239,8 @@ impl Contrast {
             Some(Swipe::View { mut tracker, norm }) => {
                 tracker.push(0.0, now);
                 let projected_offset = (tracker.projected_end_pos() * norm).round() as i32;
+                // 吸着の動きに指の速度を引き継ぐ（niri は吸着のバネの初速に使う）。窓はビューと逆向きに動く。
+                self.anim.set_pending_velocity_x(-tracker.velocity() * norm);
                 self.gesture_command(Command::ViewGestureEnd { projected_offset });
             }
             Some(Swipe::Workspace {
