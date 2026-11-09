@@ -136,3 +136,15 @@ niri の設定の既定値は niri の既定（wiki / パッケージの既定�
 
 | タッチパッドの 3 本指（横: ビュー、縦: ワークスペース）・4 本指（オーバービュー） | 既定 | ○ niri の閾値・係数・減速・吸着（core の追補 18 節） | 縦のスワイプの最中に画面が指についてこない（終わりに切り替える） | — |
 | DnD の端スクロール | 既定 | ○ 端 30px・100ms・最大 1500px/s | — | — |
+
+## niri-complete（proto/niri-complete）で足したもの
+
+| niri の機能 | Contrast の今 | 差 |
+|---|---|---|
+| バネの速度の引き継ぎ | ○ 成分ごとのバネ、横のスワイプの速度を吸着に | — |
+| `move-column-to-workspace … focus=false` | ○ `Keybind focus={false}`（core の追補 19 節） | 浮動の窓のフォーカスの規則 |
+| xkb を systemd-localed から | ○ 起動時に busctl で読む | 変更の監視なし |
+| 窓ルールの `default-column-width {}` | ○ `windowOpen` の `columnWidth: "window"`（core の追補 20 節） | 列の幅が隙間を含む（端の列で 8px 狭い） |
+| XWayland（xwayland-satellite を必要になったときに起動） | ○ niri と同じ方式、`DISPLAY` を子に渡す | — |
+| マウスの既定値（`mouse {}`） | ○ | — |
+| 出力の自動スケール | △ 計算だけ（ログに出す）。描画は拡大率 1 | fractional scale の描画とプロトコル |
