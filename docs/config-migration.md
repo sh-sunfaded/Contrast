@@ -69,7 +69,7 @@
 | `cursor`（Cecilia、24） | `Cursor.theme`・`size` | |
 | `input.touchpad`（tap、natural-scroll） | `Input.tapToClick`・`naturalScroll` | |
 | `workspace`（Mod+1〜9） | `Workspaces.count` | 9 |
-| `border`（off）、`output`（無効）、`window-rule`（wezterm は何もしない、keepassxc は無効） | 移さない | `screenshot-path` は `Screenshot.path` に移した |
+| `border`（off）、`output`（無効）、`window-rule`（keepassxc は無効なので移さない。wezterm の `default-column-width {}` は `config.cdl` の `policy.windowOpen` で `columnWidth: "window"`） | 移さない | `screenshot-path` は `Screenshot.path` に移した |
 | `input.keyboard`（xkb は空）、`input.mouse`（空）、`struts`（空）、`hotkey-overlay` | 移さない | 設定が空 |
 
 ## ironbar の workspaces（`ipc="niri"`）

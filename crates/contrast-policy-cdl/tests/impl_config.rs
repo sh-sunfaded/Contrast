@@ -357,3 +357,24 @@ fn the_monitor_binds_resolve_to_the_monitor_actions() -> Result<(), String> {
     }
     Ok(())
 }
+
+#[test]
+fn wezterm_lets_the_window_choose_its_column_width() -> Result<(), String> {
+    let loader = CdlLoader::new().with_default_mod_key(ModKey::Super);
+    let LoadOutcome::Loaded(c) = loader.load(&config_dir().join("config.cdl")) else {
+        return Err("config/ が読めない".to_owned());
+    };
+    let mut wez = contrast_core::WindowMeta::default();
+    wez.app_id = Some("org.wezfurlong.wezterm".to_owned());
+    let (p, d) = c.place(&wez, Some(0));
+    assert_eq!(d, None);
+    assert_eq!(
+        p.column_width,
+        Some(contrast_policy::PlacementWidth::Window)
+    );
+    assert_eq!(p.state, contrast_core::WindowState::Tiled);
+    let mut other = contrast_core::WindowMeta::default();
+    other.app_id = Some("alacritty".to_owned());
+    assert_eq!(c.place(&other, Some(0)).0.column_width, None);
+    Ok(())
+}

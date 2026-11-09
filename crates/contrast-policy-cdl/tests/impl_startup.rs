@@ -281,3 +281,27 @@ export const policy = {
         }
     }
 }
+
+#[test]
+fn the_hook_can_let_the_window_choose_its_column_width() -> Result<(), String> {
+    let head = r#"
+export const policy = {
+  windowOpen: (w: WindowInfo): Placement =>
+    w.appId === "wez" ? { floating: false, columnWidth: "window" } : { floating: false },
+} satisfies Policy;"#;
+    let c = load_with("column-width", head, "")?.map_err(|d| format!("{d:?}"))?;
+    let meta = |app: &str| {
+        let mut m = contrast_core::WindowMeta::default();
+        m.app_id = Some(app.to_owned());
+        m
+    };
+    let (p, d) = c.place(&meta("wez"), Some(0));
+    assert_eq!(d, None);
+    assert_eq!(
+        p.column_width,
+        Some(contrast_policy::PlacementWidth::Window)
+    );
+    let (q, _) = c.place(&meta("other"), Some(0));
+    assert_eq!(q.column_width, None);
+    Ok(())
+}

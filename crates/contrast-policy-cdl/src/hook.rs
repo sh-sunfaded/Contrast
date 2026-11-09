@@ -108,11 +108,22 @@ pub(crate) fn placement_from_value(v: &Value) -> Result<HookPlacement, ConfigDia
         Some(Value::Bool(b)) => *b,
         Some(_) => return Err(shape("`fullscreen` は boolean が要る")),
     };
+    // niri の窓ルールの `default-column-width {}`（窓に決めさせる）は "window"。
+    let column_width = match fields.get("columnWidth") {
+        None | Some(Value::Undefined) => None,
+        Some(Value::String(s)) if &**s == "window" => Some(contrast_policy::PlacementWidth::Window),
+        Some(_) => {
+            return Err(shape(
+                "`columnWidth` は \"window\" だけ（niri の default-column-width {}）",
+            ));
+        }
+    };
     Ok(HookPlacement {
         workspace,
         floating,
         focus,
         fullscreen,
+        column_width,
     })
 }
 
@@ -170,7 +181,8 @@ mod tests {
                 workspace: Some(2),
                 floating: true,
                 focus: true,
-                fullscreen: false
+                fullscreen: false,
+                column_width: None,
             })
         );
     }
@@ -183,7 +195,8 @@ mod tests {
                 workspace: None,
                 floating: false,
                 focus: true,
-                fullscreen: false
+                fullscreen: false,
+                column_width: None,
             })
         );
     }

@@ -1,5 +1,6 @@
 "use cdl 1";
 import { Contrast } from "host:contrast";
+import type { Policy, WindowInfo, Placement } from "host:contrast";
 import { appearance, layout, cursor, screenshot, workspaces } from "./appearance.cdl";
 import { input } from "./input.cdl";
 import { startup, environment } from "./startup.cdl";
@@ -14,6 +15,15 @@ import { keybinds } from "./keybinds.cdl";
 // startup.cdl     起動時のコマンドと環境変数
 // keybinds.cdl    キーバインド
 // unsupported.cdl まだ変換できない niri の設定（コメントだけ）
+
+// 窓ルール（niri の window-rule）。wezterm は default-column-width {}（列の幅を窓に決めさせる）。
+// 他の窓は既定の配置（ダイアログは浮動、それ以外はタイル）。
+export const policy = {
+  windowOpen: (w: WindowInfo): Placement =>
+    w.appId === "org.wezfurlong.wezterm"
+      ? { floating: w.isDialog, columnWidth: "window" }
+      : { floating: w.isDialog },
+} satisfies Policy;
 
 export default (
   <Contrast>

@@ -21,6 +21,7 @@ pub(crate) fn contrast_schema() -> Result<Schema, Vec<String>> {
         ("floating", Field::required(Ty::Boolean)),
         ("focus", Field::optional(Ty::Boolean)),
         ("fullscreen", Field::optional(Ty::Boolean)),
+        ("columnWidth", Field::optional(Ty::String)),
     ]);
     Schema::builder()
         .root(MODULE, "Contrast")

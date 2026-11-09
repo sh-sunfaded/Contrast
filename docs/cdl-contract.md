@@ -128,7 +128,7 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
 
 ```ts
 interface WindowInfo { appId: string; title?: string; isDialog: boolean; workspace: number }
-interface Placement  { workspace?: number; floating: boolean; focus?: boolean; fullscreen?: boolean }
+interface Placement  { workspace?: number; floating: boolean; focus?: boolean; fullscreen?: boolean; columnWidth?: string }
 interface Policy     { windowOpen?: (w: WindowInfo) => Placement }
 ```
 
@@ -137,6 +137,7 @@ interface Policy     { windowOpen?: (w: WindowInfo) => Placement }
 - 戻り値 `workspace` を省略したときはフォーカス中のワークスペース。`focus` を省略したときは `true`。
 - `fullscreen`（niri の `open-fullscreen`）を省略したときは `false`。`true` なら、配置のあとに全画面にする（コンポジタが core の `ToggleFullscreen` を送る）。
   `ToggleFullscreen` はフォーカス窓に効くので、窓がフォーカスを得たときだけ全画面になる（`focus: false` や、表示中でないワークスペースへの配置では、全画面にしない。ログに出す）。
+- `columnWidth: "window"`（niri の窓ルールの `default-column-width {}`）なら、列の幅を窓に決めさせる（最初の configure の幅を 0 にし、窓が描いた幅＋隙間を列の幅にする。core の追補 20 節）。ほかの値は診断。
 - フックを定義しないときは既定の配置（ダイアログは Floating、他は Tiled。フォーカスする）。
 
 ## 3. 失敗時の既定
