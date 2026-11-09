@@ -7,9 +7,7 @@
 
 // スクリーンショットの 3 個（Print・Ctrl+Print・Alt+Print）は keybinds.cdl に移した。
 
-// ---- ホットキーのオーバーレイ（1 個） ----
-// オーバーレイの描画（文字の描画）が無い。`Mod+Shift+P` の `power-off-monitors` は `keybinds.cdl` に移した。
-//> Mod+Shift+Slash { show-hotkey-overlay; }
+// ホットキーのオーバーレイ（Mod+Shift+Slash）は keybinds.cdl に移した。niri の binds は、これで全部変換した。
 
 // ---- bind ではない設定 ----
 // screenshot-path は `appearance.cdl` の `Screenshot` に移した。

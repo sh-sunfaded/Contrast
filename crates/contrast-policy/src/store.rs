@@ -303,6 +303,10 @@ impl Policy for ConfigStore {
         self.config().settings.mod_key
     }
 
+    fn keybindings(&self) -> Vec<crate::settings::KeyBinding> {
+        self.config().settings.keybinds.clone()
+    }
+
     fn layout(&self, area: Rect, count: usize) -> Vec<Rect> {
         if count == 0 {
             return Vec::new();

@@ -116,6 +116,8 @@ pub enum Action {
     ScreenshotWindow,
     /// スクリーンショットの範囲を選ぶ UI を開く（niri の `screenshot`）。
     Screenshot,
+    /// ホットキーのオーバーレイを出す（niri の `show-hotkey-overlay`）。
+    ShowHotkeyOverlay,
     /// 画面を消す（DPMS。niri の `power-off-monitors`）。どんな入力でも戻る。
     PowerOffMonitors,
 }
@@ -151,6 +153,11 @@ pub trait Policy {
     }
     /// ワークスペースの数（1 以上）。
     fn workspace_count(&self) -> u8;
+
+    /// キーバインドの一覧（設定の順）。ホットキーのオーバーレイに使う。既定は空。
+    fn keybindings(&self) -> Vec<crate::settings::KeyBinding> {
+        Vec::new()
+    }
 
     /// キーバインドの `mod` が指す修飾キー（スクリーンショットの UI の Mod+クリックなどに使う）。既定は Alt。
     fn mod_key(&self) -> crate::settings::ModKey {

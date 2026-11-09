@@ -65,7 +65,7 @@ niri の設定の既定値は niri の既定（wiki / パッケージの既定�
 | `close-window`・`quit` | はい | ○ | — | — |
 | 音量などの `XF86Audio*`（`allow-when-locked`） | はい | ○（`spawn`。ロック画面は無い） | — | — |
 | `Mod+ホイール`系 | はい | × ポインタ軸のバインドが無い | 軸イベントのバインド | M |
-| `show-hotkey-overlay` | はい | × | オーバーレイ | M |
+| `show-hotkey-overlay`・起動時のオーバーレイ | はい | ○ niri と同じ行・並び・見た目（文字は fontdue。フォントは fc-match） | カーニング・シェーピング（pango との描画の差）、`hotkey-overlay` の設定（skip-at-startup・hide-not-bound） | — |
 | `power-off-monitors` | はい | ○（DRM のみ。実機で確認） | — | — |
 | `screenshot-screen`（`screenshot-path`） | はい | ○ 出力の絵を PNG で保存（`Screenshot.path`）、クリップボード（`image/png`）、保存後の通知（busctl） | ポインタの有無（winit は入らない） | — |
 | `screenshot-window` | はい | ○ フォーカス窓の絵（枠なし、透明な背景、ポインタなし。niri の `show-pointer` の既定 false）を PNG で保存 | クリップボード（F） | — |

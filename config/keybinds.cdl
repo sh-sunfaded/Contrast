@@ -28,21 +28,22 @@ interface Launch {
 }
 
 const launches: Launch[] = [
+  // niri の config.kdl の順（ホットキーのオーバーレイの spawn の行は、この順に並ぶ）。
   { keys: "mod+b", command: "firefox-nightly" },
-  { keys: "mod+t", command: "alacritty" },
-  { keys: "mod+d", command: "fuzzel" },
-  { keys: "ctrl+shift+space", command: "fcitx5-remote -t" },
-  // strat は Bedrock Linux のコマンドで、NixOS には無い（押すと spawn が失敗してログに出るだけ）。
-  // Mod+Alt+E は、Mod が Alt のとき Mod+E と同じキーになるので、super+alt+e と書く。
-  { keys: "mod+shift+d", command: "strat fedora /home/user/DiscordPTB/launch.sh" },
-  { keys: "super+alt+e", command: "strat fedora /home/user/eclipse/eclipse" },
-  // swaylock は未インストール（ロックには ext-session-lock も要る）。
-  { keys: "super+alt+l", command: "swaylock" },
   // XWayland が要る（DISPLAY=:0）。Mod+Alt+J は、Mod が Alt のとき Mod+J と同じキーになるので、super+alt+j と書く。
   {
     keys: "super+alt+j",
     command: "env DISPLAY=:0 /home/user/jetbrains-toolbox-3.8.1.88030/bin/jetbrains-toolbox",
   },
+  // strat は Bedrock Linux のコマンドで、NixOS には無い（押すと spawn が失敗してログに出るだけ）。
+  // Mod+Alt+E は、Mod が Alt のとき Mod+E と同じキーになるので、super+alt+e と書く。
+  { keys: "mod+shift+d", command: "strat fedora /home/user/DiscordPTB/launch.sh" },
+  { keys: "super+alt+e", command: "strat fedora /home/user/eclipse/eclipse" },
+  { keys: "mod+t", command: "alacritty" },
+  { keys: "mod+d", command: "fuzzel" },
+  // swaylock は未インストール（ロックには ext-session-lock も要る）。
+  { keys: "super+alt+l", command: "swaylock" },
+  { keys: "ctrl+shift+space", command: "fcitx5-remote -t" },
   { keys: "XF86AudioRaiseVolume", command: "wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.1+" },
   { keys: "XF86AudioLowerVolume", command: "wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.1-" },
   { keys: "XF86AudioMute", command: "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle" },
@@ -188,6 +189,7 @@ const others: Spec[] = [
   { keys: "ctrl+Print", action: "screenshot-screen" },
   { keys: "alt+Print", action: "screenshot-window" },
   { keys: "Print", action: "screenshot" },
+  { keys: "mod+shift+Slash", action: "show-hotkey-overlay" },
 ];
 
 // ---- すべてを 1 つにまとめて、要素にする ----

@@ -70,6 +70,7 @@ export default (
     <Keybind keys="ctrl+Print" action="screenshot-screen" />
     <Keybind keys="alt+Print" action="screenshot-window" />
     <Keybind keys="Print" action="screenshot" />
+    <Keybind keys="mod+shift+Slash" action="show-hotkey-overlay" />
     <Screenshot path="~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png" />
 
     {/* フォーカス移動（niri と同じ。Left/Right/H/L は列、Up/Down/K/J は列の中の窓） */}
