@@ -48,6 +48,8 @@ pub enum Action {
     MoveToWorkspacePrev,
     /// フォーカス窓の列ごと、別のワークスペースへ移して切り替える（0 始まり。スクロール列レイアウトのみ）。
     MoveColumnToWorkspace(u8),
+    /// フォーカス窓の列ごと、別のワークスペースへ移す。表示は切り替えない（0 始まり。niri の `focus=false`）。
+    MoveColumnToWorkspaceNoFocus(u8),
     /// 列ごと、次のワークスペースへ移して切り替える。最後の次は無い（循環しない）。
     MoveColumnToWorkspaceNext,
     /// 列ごと、前のワークスペースへ移して切り替える。最初の前は無い（循環しない）。

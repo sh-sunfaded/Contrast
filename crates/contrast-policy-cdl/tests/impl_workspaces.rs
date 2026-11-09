@@ -112,3 +112,22 @@ fn move_column_to_workspace_needs_a_valid_workspace() -> Result<(), String> {
     }
     Ok(())
 }
+
+#[test]
+fn move_column_to_workspace_with_focus_false_does_not_switch() -> Result<(), String> {
+    let body = r#"
+    <Workspaces count={9} mode="dynamic" />
+    <Keybind keys="mod+1" action="move-column-to-workspace" workspace={3} focus={false} />
+    <Keybind keys="mod+2" action="move-column-to-workspace" workspace={3} focus={true} />"#;
+    let s = load("focus", body)?.map_err(|d| format!("{d:?}"))?;
+    let m = ModKey::Super.mods();
+    assert_eq!(
+        s.resolve_key(m, "1"),
+        Some(Action::MoveColumnToWorkspaceNoFocus(2))
+    );
+    assert_eq!(
+        s.resolve_key(m, "2"),
+        Some(Action::MoveColumnToWorkspace(2))
+    );
+    Ok(())
+}

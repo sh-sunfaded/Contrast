@@ -85,6 +85,7 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
 `focus-monitor-left` / `focus-monitor-right` / `focus-monitor-up` / `focus-monitor-down` /
 `move-column-to-monitor-left` / `move-column-to-monitor-right` / `move-column-to-monitor-up` / `move-column-to-monitor-down`。
 
+- `move-column-to-workspace` に `focus={false}` を付けると、列を移すだけで表示は切り替えない（niri の `focus=false`。core の追補 19 節）。既定は true。
 - 出力の操作（`focus-monitor-*`・`move-column-to-monitor-*`、niri と同じ名前）は、`Workspaces.mode` が `dynamic` のとき（出力ごとのワークスペースの列。core-spec の追補 17 節）。
   `fixed` のときは何もしない。`move-column-to-monitor-*` は、さらに `Layout.mode` が `scrolling` のときだけ。
   その方向に出力が無ければ何もしない。出力が変わったら、カーソルをその出力の中央へ動かす（niri と同じ）。

@@ -573,6 +573,7 @@ fn read_keybind(cx: &mut Ctx<'_>, node: Node<'_>, settings: &Settings) -> Option
     let height = cx.optional::<f64>(node, "height");
     let height_px = cx.optional::<f64>(node, "heightPx");
     let cooldown = cx.optional::<f64>(node, "cooldown");
+    let focus = cx.optional::<bool>(node, "focus");
     let (keys, action) = (keys?, action?);
 
     let spec: Option<KeySpec> = match parse_key_spec(&keys, settings.mod_key) {
@@ -589,6 +590,7 @@ fn read_keybind(cx: &mut Ctx<'_>, node: Node<'_>, settings: &Settings) -> Option
         delta,
         height,
         height_px,
+        focus,
         count: settings.workspaces,
     };
     let action = read_action(cx, node, &action, args);
@@ -633,6 +635,8 @@ struct ActionArgs {
     height: Option<f64>,
     /// `heightPx`（`set-window-height`。1〜`MAX_WINDOW_HEIGHT_PX` の整数 px。`height` とどちらか一方）。
     height_px: Option<f64>,
+    /// `focus`（`move-column-to-workspace` で false なら、表示を切り替えない。niri の `focus=false`。既定 true）。
+    focus: Option<bool>,
     /// ワークスペースの数。
     count: u8,
 }
@@ -646,6 +650,7 @@ fn read_action(cx: &mut Ctx<'_>, node: Node<'_>, name: &str, args: ActionArgs) -
         delta,
         height,
         height_px,
+        focus,
         count,
     } = args;
     let simple = match name {
@@ -780,6 +785,9 @@ fn read_action(cx: &mut Ctx<'_>, node: Node<'_>, name: &str, args: ActionArgs) -
             };
             match name {
                 "workspace" => Some(Action::SwitchWorkspace(index)),
+                "move-column-to-workspace" if focus == Some(false) => {
+                    Some(Action::MoveColumnToWorkspaceNoFocus(index))
+                }
                 "move-column-to-workspace" => Some(Action::MoveColumnToWorkspace(index)),
                 _ => Some(Action::MoveToWorkspace(index)),
             }

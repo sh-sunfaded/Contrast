@@ -84,6 +84,9 @@ impl Contrast {
             Action::MoveToWorkspacePrev => return self.step_workspace(-1, Step::MoveWindow),
             Action::MoveColumnToWorkspaceNext => return self.step_workspace(1, Step::MoveColumn),
             Action::MoveColumnToWorkspacePrev => return self.step_workspace(-1, Step::MoveColumn),
+            Action::MoveColumnToWorkspaceNoFocus(n) => {
+                contrast_core::Action::MoveColumnToWorkspaceNoFocus(WorkspaceIndex::new(n))
+            }
             Action::MoveColumnToWorkspace(n) => {
                 contrast_core::Action::MoveColumnToWorkspace(WorkspaceIndex::new(n))
             }
