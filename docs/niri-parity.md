@@ -67,9 +67,9 @@ niri の設定の既定値は niri の既定（wiki / パッケージの既定�
 | `Mod+ホイール`系 | はい | × ポインタ軸のバインドが無い | 軸イベントのバインド | M |
 | `show-hotkey-overlay` | はい | × | オーバーレイ | M |
 | `power-off-monitors` | はい | ○（DRM のみ。実機で確認） | — | — |
-| `screenshot-screen`（`screenshot-path`） | はい | ○ 出力の絵を PNG で保存（`Screenshot.path`） | クリップボードへの画像、ポインタの有無（winit は入らない） | M |
+| `screenshot-screen`（`screenshot-path`） | はい | ○ 出力の絵を PNG で保存（`Screenshot.path`）、クリップボード（`image/png`）、保存後の通知（busctl） | ポインタの有無（winit は入らない） | — |
 | `screenshot-window` | はい | ○ フォーカス窓の絵（枠なし、透明な背景、ポインタなし。niri の `show-pointer` の既定 false）を PNG で保存 | クリップボード（F） | — |
-| `screenshot`（範囲を選ぶ UI） | はい | × | 範囲を選ぶ UI | L |
+| `screenshot`（範囲を選ぶ UI） | はい | ○ 選択・移動・大きさ・出力の移動・キー（Escape・Space/Enter・Ctrl+C・P）・前回の選択・暗い帯と枠 | 説明のパネル（文字の描画、D）、ポインタの絵、タッチ | — |
 | 窓の開く・閉じるアニメーション（`window-open`・`window-close`） | 既定 | ○ niri の既定の曲線と式（オフスクリーンに描いて透明度と拡大率）。開く途中は枠・影も同じく | 閉じる窓の枠は描かない（niri はタイルごと撮る） | — |
 | `Super+Alt+L`（swaylock） | はい | △ spawn は ○。swaylock には `ext-session-lock` が要る | session-lock プロトコル | M |
 

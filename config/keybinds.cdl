@@ -187,6 +187,7 @@ const others: Spec[] = [
   { keys: "mod+shift+p", action: "power-off-monitors" },
   { keys: "ctrl+Print", action: "screenshot-screen" },
   { keys: "alt+Print", action: "screenshot-window" },
+  { keys: "Print", action: "screenshot" },
 ];
 
 // ---- すべてを 1 つにまとめて、要素にする ----

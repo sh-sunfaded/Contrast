@@ -114,6 +114,8 @@ pub enum Action {
     ScreenshotScreen,
     /// フォーカス窓だけの絵を PNG で保存する（niri の `screenshot-window`。ポインタは入れない）。
     ScreenshotWindow,
+    /// スクリーンショットの範囲を選ぶ UI を開く（niri の `screenshot`）。
+    Screenshot,
     /// 画面を消す（DPMS。niri の `power-off-monitors`）。どんな入力でも戻る。
     PowerOffMonitors,
 }
@@ -149,6 +151,11 @@ pub trait Policy {
     }
     /// ワークスペースの数（1 以上）。
     fn workspace_count(&self) -> u8;
+
+    /// キーバインドの `mod` が指す修飾キー（スクリーンショットの UI の Mod+クリックなどに使う）。既定は Alt。
+    fn mod_key(&self) -> crate::settings::ModKey {
+        crate::settings::ModKey::Alt
+    }
 
     /// ワークスペースの方式（固定か動的か）。起動時に決まり、リロードでは変わらない。既定は固定。
     fn workspace_mode(&self) -> contrast_core::WorkspaceMode {

@@ -299,6 +299,10 @@ impl Policy for ConfigStore {
         self.config().settings.workspace_mode
     }
 
+    fn mod_key(&self) -> crate::settings::ModKey {
+        self.config().settings.mod_key
+    }
+
     fn layout(&self, area: Rect, count: usize) -> Vec<Rect> {
         if count == 0 {
             return Vec::new();
