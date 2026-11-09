@@ -61,6 +61,11 @@ pub fn handle<P: Policy>(
     state
         .windows
         .insert(id, Window::new(id, meta, placement.state, target));
+    if let Some(w) = state.windows.get_mut(&id) {
+        w.initial_width = placement
+            .column_width
+            .map(crate::domain::column::ColumnWidth::sanitized);
+    }
     if let Some(ws) = state.workspace_mut(target) {
         ws.push_window(id);
     }

@@ -25,6 +25,8 @@ pub struct Placement {
     pub state: WindowState,
     /// 配置先が表示中ならフォーカスを与えるか（D7）。
     pub focus: bool,
+    /// 最初に入る列の幅（D96。`None` なら `default_column_width`）。
+    pub column_width: Option<crate::domain::column::ColumnWidth>,
 }
 
 impl Placement {
@@ -35,7 +37,15 @@ impl Placement {
             workspace,
             state,
             focus,
+            column_width: None,
         }
+    }
+
+    /// 最初に入る列の幅を指定する（D96。niri の窓ルールの `default-column-width`）。
+    #[must_use]
+    pub const fn with_column_width(mut self, width: crate::domain::column::ColumnWidth) -> Self {
+        self.column_width = Some(width);
+        self
     }
 }
 

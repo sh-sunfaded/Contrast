@@ -22,7 +22,11 @@ impl Policy for WidePolicy {
 }
 
 fn core(mode: LayoutMode) -> Core<WidePolicy, Columns> {
-    let mut c = Core::new(CoreConfig::new(4).with_layout(mode), WidePolicy, Columns::new());
+    let mut c = Core::new(
+        CoreConfig::new(4).with_layout(mode),
+        WidePolicy,
+        Columns::new(),
+    );
     c.apply(Command::OutputAdded {
         key: ExternalKey::new(1),
         name: OutputName::new("o"),
@@ -35,13 +39,21 @@ fn core(mode: LayoutMode) -> Core<WidePolicy, Columns> {
 fn open(c: &mut Core<WidePolicy, Columns>, k: u64, app: &str) {
     let mut meta = WindowMeta::default();
     meta.app_id = Some(app.to_string());
-    c.apply(Command::WindowMapped { key: ExternalKey::new(k), meta }).expect("窓");
+    c.apply(Command::WindowMapped {
+        key: ExternalKey::new(k),
+        meta,
+    })
+    .expect("窓");
     c.check_invariants().expect("不変条件");
 }
 
 fn width(c: &Core<WidePolicy, Columns>, k: u64) -> i32 {
     let id = c.view().window_id(ExternalKey::new(k)).expect("窓");
-    c.view().window(id).and_then(|w| w.rect).expect("矩形").width()
+    c.view()
+        .window(id)
+        .and_then(|w| w.rect)
+        .expect("矩形")
+        .width()
 }
 
 #[test]
@@ -59,8 +71,10 @@ fn only_the_first_column_and_not_in_equal() {
     open(&mut c, 11, "other");
     open(&mut c, 12, "wide");
     // 12 を 11 の列へ取り込み、また出すと、新しい列は既定の幅。
-    c.apply(Command::Action(Action::ConsumeOrExpelWindowLeft)).expect("ok");
-    c.apply(Command::Action(Action::ConsumeOrExpelWindowRight)).expect("ok");
+    c.apply(Command::Action(Action::ConsumeOrExpelWindowLeft))
+        .expect("ok");
+    c.apply(Command::Action(Action::ConsumeOrExpelWindowRight))
+        .expect("ok");
     c.check_invariants().expect("不変条件");
     assert_eq!(width(&c, 12), 450);
     let mut e = core(LayoutMode::Equal);
@@ -78,15 +92,27 @@ fn a_floating_start_uses_it_when_it_becomes_tiled() {
                 .with_column_width(ColumnWidth::fixed(300).expect("幅"))
         }
     }
-    let mut c = Core::new(CoreConfig::new(4).with_layout(LayoutMode::Scrolling), FloatWide, Columns::new());
+    let mut c = Core::new(
+        CoreConfig::new(4).with_layout(LayoutMode::Scrolling),
+        FloatWide,
+        Columns::new(),
+    );
     c.apply(Command::OutputAdded {
         key: ExternalKey::new(1),
         name: OutputName::new("o"),
         geometry: rect(0, 0, 900, 600),
     })
     .expect("出力");
-    c.apply(Command::WindowMapped { key: ExternalKey::new(11), meta: WindowMeta::default() }).expect("窓");
-    c.apply(Command::Action(Action::ToggleFloating)).expect("ok");
+    c.apply(Command::WindowMapped {
+        key: ExternalKey::new(11),
+        meta: WindowMeta::default(),
+    })
+    .expect("窓");
+    c.apply(Command::Action(Action::ToggleFloating))
+        .expect("ok");
     let id = c.view().window_id(ExternalKey::new(11)).expect("窓");
-    assert_eq!(c.view().window(id).and_then(|w| w.rect).map(|r| r.width()), Some(300));
+    assert_eq!(
+        c.view().window(id).and_then(|w| w.rect).map(|r| r.width()),
+        Some(300)
+    );
 }

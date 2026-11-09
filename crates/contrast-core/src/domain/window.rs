@@ -52,6 +52,8 @@ pub struct Window {
     pub rect: Option<Rect>,
     /// 浮動時の矩形（D8）。一度も浮動していなければ `None`。
     pub floating_rect: Option<Rect>,
+    /// 最初に入る列の幅（D96。列に入ったら `None` にする）。
+    pub initial_width: Option<crate::domain::column::ColumnWidth>,
 }
 
 impl Window {
@@ -71,6 +73,7 @@ impl Window {
             workspace,
             rect: None,
             floating_rect: None,
+            initial_width: None,
         }
     }
 }

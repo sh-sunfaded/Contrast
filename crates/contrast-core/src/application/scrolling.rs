@@ -255,25 +255,65 @@ pub fn sync(state: &mut State) {
             (ws.id, ids)
         })
         .collect();
+    // D96: 窓ごとの最初の列の幅（列に入ったら忘れる）。
+    let initial: alloc::collections::BTreeMap<WindowId, ColumnWidth> = state
+        .windows
+        .values()
+        .filter_map(|w| Some((w.id, w.initial_width?)))
+        .collect();
     for (index, ids) in tiled {
         let focus_here = focus.filter(|f| ids.contains(f));
         let shown = state.output_showing(index).is_some();
         if let Some(ws) = state.workspace_mut(index) {
-            sync_workspace(ws, &ids, focus_here, default_width);
+            sync_workspace_with(ws, &ids, focus_here, default_width, &initial);
             // D90: 列が空になった・表示されなくなったワークスペースのジェスチャーは終える。
             if ws.columns.is_empty() || !shown {
                 ws.gesture = None;
             }
         }
     }
+    // 列に入った窓の最初の幅は使い終わった。
+    let placed: Vec<WindowId> = initial
+        .keys()
+        .copied()
+        .filter(|id| {
+            state
+                .workspaces
+                .iter()
+                .any(|ws| ws.column_of(*id).is_some())
+        })
+        .collect();
+    for id in placed {
+        if let Some(w) = state.windows.get_mut(&id) {
+            w.initial_width = None;
+        }
+    }
 }
 
-/// 1 つのワークスペースの列を `tiled`（順序列にある Tiled の窓）に合わせる。`sync` の本体。
+/// 1 つのワークスペースの列を `tiled`（順序列にある Tiled の窓）に合わせる（窓ごとの最初の幅なし。単体テスト用）。
+#[cfg(test)]
 pub fn sync_workspace(
     ws: &mut Workspace,
     tiled: &[WindowId],
     focus: Option<WindowId>,
     default_width: ColumnWidth,
+) {
+    sync_workspace_with(
+        ws,
+        tiled,
+        focus,
+        default_width,
+        &alloc::collections::BTreeMap::new(),
+    );
+}
+
+/// 1 つのワークスペースの列を `tiled` に合わせる。`sync` の本体。新しい列の幅は、`initial` にあればその幅（D96）。
+pub fn sync_workspace_with(
+    ws: &mut Workspace,
+    tiled: &[WindowId],
+    focus: Option<WindowId>,
+    default_width: ColumnWidth,
+    initial: &alloc::collections::BTreeMap<WindowId, ColumnWidth>,
 ) {
     for col in &mut ws.columns {
         col.windows.retain(|w| tiled.contains(w));
@@ -300,7 +340,8 @@ pub fn sync_workspace(
             None => ws.columns.len(),
         };
         let at = at.min(ws.columns.len());
-        ws.columns.insert(at, Column::single(*id, default_width));
+        let width = initial.get(id).copied().unwrap_or(default_width);
+        ws.columns.insert(at, Column::single(*id, width));
     }
     if let Some(f) = focus
         && let Some((c, _)) = ws.column_of(f)
