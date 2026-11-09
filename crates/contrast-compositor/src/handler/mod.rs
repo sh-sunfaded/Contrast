@@ -224,3 +224,4 @@ impl DmabufHandler for Contrast {
 }
 
 delegate_dmabuf!(Contrast);
+smithay::delegate_viewporter!(Contrast);

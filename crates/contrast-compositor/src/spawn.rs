@@ -249,6 +249,11 @@ impl Contrast {
             // コンポジタの値が勝つ（`Environment` で上書きさせない）。
             cmd.env("NIRI_SOCKET", path);
         }
+        // X のディスプレイは、このコンポジタの XWayland（niri と同じく、無ければ取り除き、ホストのものを渡さない）。
+        match &self.xwayland {
+            Some(x) => cmd.env("DISPLAY", &x.display_name),
+            None => cmd.env_remove("DISPLAY"),
+        };
         let dir = log_dir(
             std::env::var_os("XDG_STATE_HOME").as_deref(),
             std::env::var_os("HOME").as_deref(),

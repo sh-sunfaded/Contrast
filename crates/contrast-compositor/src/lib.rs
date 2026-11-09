@@ -28,6 +28,7 @@ mod spring;
 mod state;
 mod text;
 mod window_anim;
+mod xwayland;
 
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -106,6 +107,9 @@ pub fn run(store: Rc<ConfigStore>, source: ConfigSource) -> Result<(), Box<dyn s
 
     // `Startup` の `ipc="niri"` の子に渡すので、コマンドの起動より前に IPC のソケットを作る。
     state.start_ipc(&event_loop.handle());
+
+    // XWayland（niri と同じく、X のクライアントが来たら xwayland-satellite を起動する）。Startup の前に DISPLAY を決める。
+    state.setup_xwayland(&event_loop.handle());
 
     // Wayland のソケットを公開したので、`Startup` のコマンドを起動する（起動時に一度だけ。リロードでは再実行しない）。
     state.run_startup();

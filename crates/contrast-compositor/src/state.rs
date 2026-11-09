@@ -98,6 +98,8 @@ pub struct Contrast {
     pub primary_selection_state: PrimarySelectionState,
     /// wlr-data-control（ironbar の clipboard、wl-clipboard、cliphist）。許可リストのクライアントにだけ見せる。
     pub data_control_state: DataControlState,
+    /// wp_viewporter（xwayland-satellite が要る。描画は smithay の面の状態が viewport を扱う）。
+    pub viewporter_state: smithay::wayland::viewporter::ViewporterState,
     /// wlr-data-control を使ってよいクライアントのプログラム名（設定の `DataControlClient`）。
     pub data_control_clients: crate::data_control::AllowList,
     pub layer_shell_state: WlrLayerShellState,
@@ -135,6 +137,8 @@ pub struct Contrast {
     pub overview: crate::overview::Overview,
     /// ポインタが左上のホットコーナーに居る（入ったときに 1 回だけ切り替える）。
     pub pointer_in_hot_corner: bool,
+    /// XWayland（xwayland-satellite を必要になったときに起動する）。使えなければ `None`。
+    pub xwayland: Option<crate::xwayland::Xwayland>,
     /// 画面の電源（`power-off-monitors`。DRM バックエンドだけが関数を入れる）。
     pub monitors: crate::power::Monitors,
     /// クライアントが指定した（または既定の）カーソル。DRM バックエンドが描く。
@@ -183,6 +187,7 @@ impl Contrast {
             crate::data_control::client_filter(data_control_clients.clone()),
         );
         let layer_shell_state = WlrLayerShellState::new::<Self>(&dh);
+        let viewporter_state = smithay::wayland::viewporter::ViewporterState::new::<Self>(&dh);
         let text_input_manager_state = TextInputManagerState::new::<Self>(&dh);
         let input_method_manager_state = InputMethodManagerState::new::<Self, _>(&dh, |_| true);
         let virtual_keyboard_manager_state =
@@ -232,6 +237,7 @@ impl Contrast {
             ),
             bind_cooldowns: Default::default(),
             data_control_state,
+            viewporter_state,
             data_control_clients,
             xdg_shell_state,
             compositor_state,
@@ -266,6 +272,7 @@ impl Contrast {
             gestures: Default::default(),
             overview: Default::default(),
             pointer_in_hot_corner: false,
+            xwayland: None,
             input_devices: Vec::new(),
             layout_mode,
             cursor_status: smithay::input::pointer::CursorImageStatus::default_named(),
