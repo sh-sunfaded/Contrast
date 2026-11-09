@@ -39,3 +39,5 @@ mod move_column_no_focus;
 mod multi_monitor;
 #[cfg(feature = "invariants")]
 mod view_gesture;
+#[cfg(feature = "invariants")]
+mod placement_width;
