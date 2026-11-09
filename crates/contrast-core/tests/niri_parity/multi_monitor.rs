@@ -716,6 +716,8 @@ impl Model {
             ws: moved,
             active,
         });
+        // D74: どの列も、命令の最後に末尾の空を補う（niri は出力の追加で元の出力の列を補わないことがある。D84 の差）。
+        self.ensure_trailing();
     }
 
     fn remove_output(&mut self, output: usize) {
