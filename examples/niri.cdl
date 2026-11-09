@@ -68,6 +68,7 @@ export default (
     <Keybind keys="mod+shift+e" action="quit" />
     <Keybind keys="mod+shift+p" action="power-off-monitors" />
     <Keybind keys="ctrl+Print" action="screenshot-screen" />
+    <Keybind keys="alt+Print" action="screenshot-window" />
     <Screenshot path="~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png" />
 
     {/* フォーカス移動（niri と同じ。Left/Right/H/L は列、Up/Down/K/J は列の中の窓） */}

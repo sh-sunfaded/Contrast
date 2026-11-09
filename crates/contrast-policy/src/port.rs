@@ -112,6 +112,8 @@ pub enum Action {
     Quit,
     /// 出力の絵をスクリーンショットにして保存する（niri の `screenshot-screen`）。
     ScreenshotScreen,
+    /// フォーカス窓だけの絵を PNG で保存する（niri の `screenshot-window`。ポインタは入れない）。
+    ScreenshotWindow,
     /// 画面を消す（DPMS。niri の `power-off-monitors`）。どんな入力でも戻る。
     PowerOffMonitors,
 }

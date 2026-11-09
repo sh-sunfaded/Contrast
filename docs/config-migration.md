@@ -20,12 +20,12 @@
 
 ## binds 111 個の内訳
 
-元の `binds { … }` は 111 行。**変換したもの 108、変換しなかったもの 3**（108 + 3 = 111）。
-`keybinds.cdl` には、これに niri の既定の `Mod+V`（`toggle-floating`。作者の config.kdl の binds には無い）を足して 109 個ある。
-`crates/contrast-policy-cdl/tests/impl_config.rs` が、この数（`keybinds.cdl` の 109 と、`unsupported.cdl` の `//>` の 3）と、キーの重複がないことを確かめる。
+元の `binds { … }` は 111 行。**変換したもの 109、変換しなかったもの 2**（109 + 2 = 111）。
+`keybinds.cdl` には、これに niri の既定の `Mod+V`（`toggle-floating`。作者の config.kdl の binds には無い）を足して 110 個ある。
+`crates/contrast-policy-cdl/tests/impl_config.rs` が、この数（`keybinds.cdl` の 110 と、`unsupported.cdl` の `//>` の 2）と、キーの重複がないことを確かめる。
 `impl_binds_parity.rs` が、`config/` と基準の `examples/niri.cdl` で、同じキーに同じ操作が割り当てられていること（`mod` が Super でも Alt でも）を確かめる。
 
-### (a) 変換したもの（108 個。niri の既定の `Mod+V` を足して 109 個）
+### (a) 変換したもの（109 個。niri の既定の `Mod+V` を足して 110 個）
 
 | 区分 | 個数 | niri の action → CDL の action |
 | --- | --- | --- |
@@ -43,16 +43,17 @@
 | 列・窓の状態 | 3 | `maximize-column`（同名）、`fullscreen-window` → `toggle-fullscreen`、`center-column`（同名） |
 | （niri の既定） | 1 | `Mod+V` → `toggle-floating`。作者の binds には無いが、`examples/niri.cdl` が niri の既定どおり持つので合わせた |
 | 複数モニタ | 16 | `focus-monitor-*`（8）と `move-column-to-monitor-*`（8）。同じ名前の action（`Mod+Shift+矢印/HJKL`、`+Ctrl` で列の移動） |
+| スクリーンショット・画面 | 3 | `screenshot-screen`（Ctrl+Print）・`screenshot-window`（Alt+Print）・`power-off-monitors`（Mod+Shift+P）（同名） |
 | 幅・高さの増減（±10%） | 4 | `set-column-width "±10%"` → `adjust-column-width`（`delta`）、`set-window-height "±10%"` → `adjust-window-height`（`delta`） |
 
 - 音量キー（`allow-when-locked=true`）の `allow-when-locked` は移さない（Contrast にロック画面が無い）。
 - キーは `Mod+Q` → `mod+q`、`Mod+Ctrl+Home` → `mod+ctrl+Home` のように、`+` で区切り、修飾キーを小文字にする（キー名の大文字小文字は問われない）。
 
-### (b) 変換しなかったもの（3 個）
+### (b) 変換しなかったもの（2 個）
 
 | 待っている機能 | 個数 | 内容 |
 | --- | --- | --- |
-| スクリーンショット | 2 | `screenshot`（範囲を選ぶ UI）・`screenshot-window`（`screenshot-screen` と `screenshot-path` は移した） |
+| スクリーンショット | 1 | `screenshot`（範囲を選ぶ UI。`screenshot-screen`・`screenshot-window`・`screenshot-path` は移した） |
 | オーバーレイ | 1 | `show-hotkey-overlay` |
 
 元の KDL の行は `config/unsupported.cdl` に、待っている機能ごとに残してある。
@@ -71,7 +72,7 @@
 | `cursor`（Cecilia、24） | `Cursor.theme`・`size` | |
 | `input.touchpad`（tap、natural-scroll） | `Input.tapToClick`・`naturalScroll` | |
 | `workspace`（Mod+1〜9） | `Workspaces.count` | 9 |
-| `border`（off）、`output`（無効）、`window-rule`（wezterm は何もしない、keepassxc は無効）、`screenshot-path` | 移さない | `screenshot-path` はスクリーンショット（N5a）待ち |
+| `border`（off）、`output`（無効）、`window-rule`（wezterm は何もしない、keepassxc は無効） | 移さない | `screenshot-path` は `Screenshot.path` に移した |
 | `input.keyboard`（xkb は空）、`input.mouse`（空）、`struts`（空）、`hotkey-overlay` | 移さない | 設定が空 |
 
 ## ironbar の workspaces（`ipc="niri"`）

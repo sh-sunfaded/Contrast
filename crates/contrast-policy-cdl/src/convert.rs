@@ -668,6 +668,7 @@ fn read_action(cx: &mut Ctx<'_>, node: Node<'_>, name: &str, args: ActionArgs) -
         "quit" => Some(Action::Quit),
         "power-off-monitors" => Some(Action::PowerOffMonitors),
         "screenshot-screen" => Some(Action::ScreenshotScreen),
+        "screenshot-window" => Some(Action::ScreenshotWindow),
         "focus-up" => Some(Action::FocusUp),
         "focus-down" => Some(Action::FocusDown),
         "move-up" => Some(Action::MoveUp),

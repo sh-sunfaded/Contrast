@@ -5,10 +5,9 @@
 
 // 複数モニタの 16 個（focus-monitor-*・move-column-to-monitor-*）は keybinds.cdl に移した。
 
-// ---- スクリーンショット（2 個） ----
-// `screenshot`（範囲を選ぶ UI）と `screenshot-window`（窓だけを描く）が無い。`Ctrl+Print` の `screenshot-screen` は `keybinds.cdl` に移した。
+// ---- スクリーンショット（1 個） ----
+// `screenshot`（範囲を選ぶ UI）が無い。`Ctrl+Print` の `screenshot-screen` と `Alt+Print` の `screenshot-window` は `keybinds.cdl` に移した。
 //> Print { screenshot; }
-//> Alt+Print { screenshot-window; }
 
 // ---- ホットキーのオーバーレイ（1 個） ----
 // オーバーレイの描画（文字の描画）が無い。`Mod+Shift+P` の `power-off-monitors` は `keybinds.cdl` に移した。
