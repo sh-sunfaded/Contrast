@@ -35,3 +35,5 @@ mod consume_or_expel;
 mod dynamic_workspaces;
 #[cfg(feature = "invariants")]
 mod multi_monitor;
+#[cfg(feature = "invariants")]
+mod view_gesture;
