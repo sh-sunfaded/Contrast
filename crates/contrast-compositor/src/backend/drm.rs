@@ -16,7 +16,10 @@
 //! - modeset の失敗は原因つきのエラー（終了コード 1）にする。
 //!
 //! dmabuf はクライアントのバッファを描画してから flip する（direct scanout はしない）。
-//! 未対応: ホットプラグ、複数出力、スケール、クライアントのカーソル画像。
+//! 複数出力: 選んだ GPU の接続済みの connector すべてを、それぞれの CRTC で駆動する（出力ごとに vblank で描く）。
+//! 出力の位置は niri の自動配置と同じく、名前の順に左から右へ並べる（`auto_positions`）。udev の変化で connector を
+//! 調べ直し、増えた出力を足し、外れた出力を外す（ホットプラグ）。
+//! 未対応: 2 枚目以降の GPU、スケール、クライアントのカーソル画像。
 
 use std::cell::RefCell;
 use std::fmt;
@@ -42,7 +45,7 @@ use smithay::backend::{
     libinput::{LibinputInputBackend, LibinputSessionInterface},
     renderer::{ImportDma, element::solid::SolidColorBuffer, gles::GlesRenderer},
     session::{Event as SessionEvent, Session, libseat::LibSeatSession},
-    udev::{UdevBackend, primary_gpu},
+    udev::{UdevBackend, UdevEvent, primary_gpu},
 };
 use smithay::desktop::utils::send_frames_surface_tree;
 use smithay::input::pointer::{CursorImageStatus, MotionEvent};
@@ -182,7 +185,6 @@ impl ControlDevice for Card {}
 
 /// modeset の対象: デバイス、connector、CRTC、モード。
 struct Target {
-    path: PathBuf,
     connector: control::connector::Handle,
     name: String,
     crtc: crtc::Handle,
@@ -195,9 +197,25 @@ type Exporter = GbmFramebufferExporter<DrmDeviceFd>;
 type Manager = DrmOutputManager<Allocator, Exporter, (), DrmDeviceFd>;
 type OutputHandle = DrmOutput<Allocator, Exporter, (), DrmDeviceFd>;
 
+/// 駆動している出力 1 つ（connector と CRTC）。
+struct Head {
+    /// Wayland の出力。
+    output: Output,
+    /// DRM の出力。`None` にすると（surface の Drop で）CRTC を止める。
+    handle: Option<OutputHandle>,
+    /// 駆動する CRTC。
+    crtc: crtc::Handle,
+    /// connector。
+    connector: control::connector::Handle,
+    /// フレームを queue して、vblank を待っている。
+    queued: bool,
+    /// wl_output のグローバル（外れたときに消す）。
+    global: smithay::reexports::wayland_server::backend::GlobalId,
+}
+
 /// GPU 側の資源。`Drop` で、出力を止める → DRM master を手放す → renderer と fd を閉じる、の順に片付ける。
 struct Gpu {
-    output: Option<OutputHandle>,
+    heads: Vec<Head>,
     manager: Option<Manager>,
     renderer: Option<GlesRenderer>,
 }
@@ -205,7 +223,10 @@ struct Gpu {
 impl Drop for Gpu {
     fn drop(&mut self) {
         // 出力（surface の Drop が CRTC を無効化する。master が要る）→ master を手放す → renderer・fd を閉じる。
-        self.output = None;
+        for head in &mut self.heads {
+            head.handle = None;
+        }
+        self.heads.clear();
         if let Some(manager) = self.manager.as_ref()
             && let Err(e) = drm::Device::release_master_lock(manager.device())
         {
@@ -222,7 +243,8 @@ struct Drm {
     // `gpu` を `_session` より先に落とす（フィールドは宣言順に Drop される）。
     gpu: Option<Gpu>,
     _session: LibSeatSession,
-    output: Output,
+    /// 開いている DRM デバイスのパス（udev の変化を絞る）。
+    path: PathBuf,
     /// テーマを作ったときの設定（リロードで変わったら作り直す）。
     cursor_cfg: CursorSettings,
     /// xcursor のテーマ。
@@ -296,9 +318,24 @@ impl Drm {
         }
     }
 
-    /// 次のフレームを描いて queue し、成功したら frame callback を送る。
-    /// クライアントの commit を拾うため、毎回バッファの age を捨てて全面を描き直す（プロトタイプ）。
+    /// すべての出力の次のフレームを描く（vblank を待っている出力は飛ばす）。
     fn render(&mut self, state: &mut Contrast, shared: &Shared) {
+        let crtcs: Vec<crtc::Handle> = self
+            .gpu
+            .as_ref()
+            .map(|g| g.heads.iter().map(|h| h.crtc).collect())
+            .unwrap_or_default();
+        for crtc in crtcs {
+            self.render_head(state, shared, crtc);
+            if self.error.is_some() {
+                return;
+            }
+        }
+    }
+
+    /// CRTC `crtc` の出力の次のフレームを描いて queue し、成功したら frame callback を送る。
+    /// クライアントの commit を拾うため、毎回バッファの age を捨てて全面を描き直す（プロトタイプ）。
+    fn render_head(&mut self, state: &mut Contrast, shared: &Shared, crtc: crtc::Handle) {
         if !self.active || self.monitors_off {
             return;
         }
@@ -320,14 +357,24 @@ impl Drm {
             self.theme = CursorTheme::resolve(&cursor_cfg);
             self.cursor_cfg = cursor_cfg;
         }
-        let output_name = self.output.clone();
         let Some(gpu) = self.gpu.as_mut() else {
             return;
         };
-        let (Some(output), Some(renderer)) = (gpu.output.as_mut(), gpu.renderer.as_mut()) else {
+        let Some(head) = gpu.heads.iter_mut().find(|h| h.crtc == crtc) else {
             return;
         };
-        let cursor = if state.cursor_hidden() {
+        if head.queued {
+            return;
+        }
+        let output_name = head.output.clone();
+        let (Some(output), Some(renderer)) = (head.handle.as_mut(), gpu.renderer.as_mut()) else {
+            return;
+        };
+        let geo = state.space.output_geometry(&output_name);
+        let origin = geo.map(|g| g.loc).unwrap_or_default();
+        // カーソルは、ポインタのある出力にだけ描く（位置は出力の中の座標）。
+        let pointer_here = geo.is_some_and(|g| g.to_f64().contains(pointer_pos));
+        let cursor = if state.cursor_hidden() || !pointer_here {
             Vec::new()
         } else {
             cursor_elements(
@@ -335,14 +382,9 @@ impl Drm {
                 &mut self.theme,
                 &mut self.fallback_cursor,
                 &cursor_status,
-                pointer_pos,
+                pointer_pos - origin.to_f64(),
             )
         };
-        let origin = state
-            .space
-            .output_geometry(&output_name)
-            .map(|g| g.loc)
-            .unwrap_or_default();
         let elements = match scene_elements(state, renderer, &output_name, origin, cursor) {
             Ok(e) => e,
             Err(e) => {
@@ -350,7 +392,10 @@ impl Drm {
                 return;
             }
         };
-        crate::render::take_screenshot_if_pending(state, renderer, &output_name, &elements);
+        // `screenshot-screen` はアクティブな出力を撮る（niri と同じく、フォーカス中の出力）。
+        if state.active_output().as_ref() == Some(&output_name) {
+            crate::render::take_screenshot_if_pending(state, renderer, &output_name, &elements);
+        }
         output.with_compositor(|c| c.reset_buffer_ages());
         let rendered = output
             .render_frame::<_, SceneElement>(renderer, &elements, background, FrameFlags::DEFAULT)
@@ -371,6 +416,7 @@ impl Drm {
         };
         match result {
             Ok(()) => {
+                head.queued = true;
                 finish_frame(state, std::slice::from_ref(&output_name));
                 if let CursorImageStatus::Surface(surface) = &cursor_status {
                     send_frames_surface_tree(
@@ -389,7 +435,7 @@ impl Drm {
                 let scheduled = self.handle.insert_source(
                     Timer::from_duration(RETRY_INTERVAL),
                     move |_, _, state| {
-                        with(&shared.clone(), |d| d.render(state, &shared));
+                        with(&shared.clone(), |d| d.render_head(state, &shared, crtc));
                         TimeoutAction::Drop
                     },
                 );
@@ -404,10 +450,16 @@ impl Drm {
     fn set_monitors(&mut self, on: bool, handle: &LoopHandle<'static, Contrast>, shared: &Shared) {
         self.monitors_off = !on;
         if !on {
-            if let Some(output) = self.gpu.as_mut().and_then(|g| g.output.as_mut())
-                && let Err(e) = output.with_compositor(|c| c.clear())
-            {
-                tracing::warn!("drm: power off monitors failed: {e}");
+            for head in self.gpu.iter_mut().flat_map(|g| g.heads.iter_mut()) {
+                if let Some(output) = head.handle.as_mut()
+                    && let Err(e) = output.with_compositor(|c| c.clear())
+                {
+                    tracing::warn!(
+                        output = head.output.name(),
+                        "drm: power off monitors failed: {e}"
+                    );
+                }
+                head.queued = false;
             }
             tracing::info!("drm: monitors off");
             return;
@@ -424,12 +476,20 @@ impl Drm {
         }
     }
 
-    /// vblank: 提出済みのフレームを確定して、次を出す。
-    fn on_vblank(&mut self, state: &mut Contrast, shared: &Shared) {
+    /// vblank: CRTC `crtc` の提出済みのフレームを確定して、その出力の次を出す。
+    fn on_vblank(&mut self, state: &mut Contrast, shared: &Shared, crtc: crtc::Handle) {
         if self.monitors_off {
             return;
         }
-        let Some(output) = self.gpu.as_mut().and_then(|g| g.output.as_mut()) else {
+        let Some(head) = self
+            .gpu
+            .as_mut()
+            .and_then(|g| g.heads.iter_mut().find(|h| h.crtc == crtc))
+        else {
+            return;
+        };
+        head.queued = false;
+        let Some(output) = head.handle.as_mut() else {
             return;
         };
         match output.frame_submitted() {
@@ -449,7 +509,7 @@ impl Drm {
             self.last_log = Instant::now();
             tracing::info!("drm: frame={}", self.frames);
         }
-        self.render(state, shared);
+        self.render_head(state, shared, crtc);
     }
 
     /// session が inactive になった（VT 切り替え）: 描画と入力を止めて master を手放す。
@@ -461,8 +521,13 @@ impl Drm {
         self.libinput.suspend();
         // デバイスが外れると、離したキーのイベントが来ない（押しっぱなしの修飾キーが残る）ので、ここで離す。
         state.release_all_keys();
-        if let Some(manager) = self.gpu.as_mut().and_then(|g| g.manager.as_mut()) {
-            manager.pause();
+        if let Some(gpu) = self.gpu.as_mut() {
+            if let Some(manager) = gpu.manager.as_mut() {
+                manager.pause();
+            }
+            for head in &mut gpu.heads {
+                head.queued = false;
+            }
         }
     }
 
@@ -499,8 +564,153 @@ impl Drm {
             self.fail(state, DrmError::EventLoop(e.to_string()));
             return;
         }
+        // 離れているあいだに抜き差しされた connector を反映する（`rescan` は最後に描く）。
+        self.rescan(state, shared);
+    }
+}
+
+impl Drm {
+    /// udev のデバイス番号 `device_id` が、開いている DRM デバイスか。
+    fn is_device(&self, device_id: u64) -> bool {
+        smithay::reexports::rustix::fs::stat(&self.path).is_ok_and(|st| st.st_rdev == device_id)
+    }
+
+    /// connector を調べ直す（udev の変化・session の再開）。外れた出力を外し、増えた出力を足し、位置を niri の自動配置に直す。
+    fn rescan(&mut self, state: &mut Contrast, shared: &Shared) {
+        if !self.active {
+            return;
+        }
+        let Some(gpu) = self.gpu.as_mut() else {
+            return;
+        };
+        let (Some(manager), Some(renderer)) = (gpu.manager.as_mut(), gpu.renderer.as_mut()) else {
+            return;
+        };
+        let connected = match connected_connectors(manager.device()) {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!("drm: rescan failed: {e}");
+                return;
+            }
+        };
+        // 外れた出力: core のワークスペースは別の出力へ移る（D77）。レイヤー面は閉じる。
+        let (gone, kept): (Vec<Head>, Vec<Head>) = std::mem::take(&mut gpu.heads)
+            .into_iter()
+            .partition(|h| !connected.contains(&h.connector));
+        gpu.heads = kept;
+        for mut head in gone {
+            tracing::info!(output = head.output.name(), "drm: output disconnected");
+            state.output_removed(&head.output);
+            for layer in smithay::desktop::layer_map_for_output(&head.output).layers() {
+                layer.layer_surface().send_close();
+            }
+            state.space.unmap_output(&head.output);
+            state
+                .display_handle
+                .remove_global::<Contrast>(head.global.clone());
+            head.handle = None;
+        }
+        // 増えた出力。
+        let skip: Vec<control::connector::Handle> = gpu.heads.iter().map(|h| h.connector).collect();
+        let mut used: Vec<crtc::Handle> = gpu.heads.iter().map(|h| h.crtc).collect();
+        let targets = match targets_on(manager.device(), &skip, &mut used, false) {
+            Ok(t) => t,
+            Err(e) => {
+                tracing::warn!("drm: rescan failed: {e}");
+                return;
+            }
+        };
+        let mut added = Vec::new();
+        for target in targets {
+            let (output, global) = new_output(state, &target);
+            match manager.initialize_output::<_, SceneElement>(
+                target.crtc,
+                target.mode,
+                &[target.connector],
+                &output,
+                None,
+                renderer,
+                &DrmOutputRenderElements::default(),
+            ) {
+                Ok(handle) => {
+                    tracing::info!(
+                        output = target.name,
+                        mode = format_mode(&target.mode),
+                        "drm: output connected"
+                    );
+                    gpu.heads.push(Head {
+                        output: output.clone(),
+                        handle: Some(handle),
+                        crtc: target.crtc,
+                        connector: target.connector,
+                        queued: false,
+                        global,
+                    });
+                    added.push(output);
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        output = target.name,
+                        "drm: cannot drive the new output: {e}"
+                    );
+                    state.display_handle.remove_global::<Contrast>(global);
+                }
+            }
+        }
+        let outputs: Vec<Output> = gpu.heads.iter().map(|h| h.output.clone()).collect();
+        place_outputs(state, &outputs, &added);
         self.render(state, shared);
     }
+}
+
+/// 出力の論理矩形の大きさ（スケール 1。モードの大きさ）。
+fn output_size(output: &Output) -> (i32, i32) {
+    output
+        .current_mode()
+        .map_or((0, 0), |m| (m.size.w, m.size.h))
+}
+
+/// 出力を niri の自動配置（名前の順に、左から右へ、y = 0）に置く。`added` は今回足した出力（core に登録する）。
+/// 位置の変わった既存の出力は、core に新しい矩形を渡す。
+fn place_outputs(state: &mut Contrast, outputs: &[Output], added: &[Output]) {
+    let mut named: Vec<(String, (i32, i32), &Output)> = outputs
+        .iter()
+        .map(|o| (o.name(), output_size(o), o))
+        .collect();
+    named.sort_by(|a, b| a.0.cmp(&b.0));
+    let widths: Vec<i32> = named.iter().map(|(_, (w, _), _)| *w).collect();
+    for ((_, (w, h), output), x) in named.iter().zip(auto_positions(&widths)) {
+        let before = state.space.output_geometry(output).map(|g| g.loc);
+        let is_new = added.contains(output);
+        if before == Some((x, 0).into()) && !is_new {
+            continue;
+        }
+        output.change_current_state(None, None, None, Some((x, 0).into()));
+        state.space.map_output(output, (x, 0));
+        let Some(rect) = Rect::new(x, 0, *w, *h) else {
+            tracing::warn!(output = output.name(), "drm: output size is not positive");
+            continue;
+        };
+        tracing::info!(output = output.name(), x, "drm: output placed");
+        if is_new {
+            state.output_added(output, rect);
+        } else {
+            state.output_changed(output, rect);
+        }
+    }
+}
+
+/// 幅 `widths`（名前の順）の出力を、左から右へ隙間なく並べたときの x（niri の `reposition_outputs` の自動配置）。
+fn auto_positions(widths: &[i32]) -> Vec<i32> {
+    let mut x = 0i32;
+    widths
+        .iter()
+        .map(|w| {
+            let at = x;
+            x = x.saturating_add((*w).max(0));
+            at
+        })
+        .collect()
 }
 
 /// `init` が返す、終了処理の持ち主。Drop（パニックを含む）か `finish` で GPU 資源を片付ける。
@@ -557,14 +767,17 @@ pub fn init(
     let seat = session.seat();
     tracing::info!(seat = %seat, active = session.is_active(), "drm: session opened");
 
-    let target = enumerate(&mut session, &seat)?;
-    tracing::info!(
-        "drm: modeset connector={} mode={}",
-        target.name,
-        format_mode(&target.mode)
-    );
-    let output = create_output(state, &target)?;
-    let (gpu, drm_notifier) = open_gpu(&mut session, &target, &output)?;
+    let (path, targets) = enumerate(&mut session, &seat)?;
+    for target in &targets {
+        tracing::info!(
+            "drm: modeset connector={} mode={}",
+            target.name,
+            format_mode(&target.mode)
+        );
+    }
+    let (gpu, drm_notifier) = open_gpu(&mut session, &path, &targets, state)?;
+    let outputs: Vec<Output> = gpu.heads.iter().map(|h| h.output.clone()).collect();
+    let first_output = outputs.first().cloned().ok_or(DrmError::NoOutput)?;
 
     // libinput: session 経由でデバイスを開き、この seat に割り当てる。
     let mut libinput =
@@ -578,7 +791,7 @@ pub fn init(
     let drm: Shared = Rc::new(RefCell::new(Drm {
         gpu: Some(gpu),
         _session: session.clone(),
-        output: output.clone(),
+        path: path.clone(),
         cursor_cfg: state.policy.cursor_settings(),
         theme: CursorTheme::resolve(&state.policy.cursor_settings()),
         fallback_cursor: SolidColorBuffer::default(),
@@ -672,7 +885,9 @@ pub fn init(
         let shared = drm.clone();
         handle
             .insert_source(drm_notifier, move |event, _, state| match event {
-                DrmEvent::VBlank(_) => with(&shared.clone(), |d| d.on_vblank(state, &shared)),
+                DrmEvent::VBlank(crtc) => {
+                    with(&shared.clone(), |d| d.on_vblank(state, &shared, crtc))
+                }
                 DrmEvent::Error(e) => with(&shared.clone(), |d| {
                     d.handle_failure(
                         state,
@@ -729,7 +944,26 @@ pub fn init(
             .map_err(|e| DrmError::EventLoop(e.to_string()))?;
     }
 
-    center_pointer(state, &output);
+    // 出力を位置に置き、core に登録してから描き始める。
+    place_outputs(state, &outputs, &outputs);
+    center_pointer(state, &first_output);
+    // connector の抜き差し（udev の変化）で、出力を調べ直す。
+    {
+        let udev = UdevBackend::new(&seat).map_err(|e| DrmError::Udev(e.to_string()))?;
+        let shared = drm.clone();
+        handle
+            .insert_source(udev, move |event, _, state| {
+                if let UdevEvent::Changed { device_id } = event {
+                    with(&shared.clone(), |d| {
+                        if d.is_device(device_id) {
+                            tracing::info!("drm: udev change, rescanning connectors");
+                            d.rescan(state, &shared);
+                        }
+                    });
+                }
+            })
+            .map_err(|e| DrmError::EventLoop(e.to_string()))?;
+    }
     {
         let shared = drm.clone();
         with(&drm, |d| d.render(state, &shared));
@@ -742,8 +976,14 @@ pub fn init(
     Ok(guard)
 }
 
-/// 出力を作り、Wayland のグローバル・Space・core に登録する（スケール 1、論理矩形 = モードサイズ）。
-fn create_output(state: &mut Contrast, target: &Target) -> Result<Output, DrmError> {
+/// connector の出力（Wayland のグローバル）を作る（スケール 1、論理矩形 = モードサイズ）。Space と core への登録は `place_outputs`。
+fn new_output(
+    state: &mut Contrast,
+    target: &Target,
+) -> (
+    Output,
+    smithay::reexports::wayland_server::backend::GlobalId,
+) {
     let mode = output_mode(&target.mode);
     let output = Output::new(
         target.name.clone(),
@@ -754,19 +994,10 @@ fn create_output(state: &mut Contrast, target: &Target) -> Result<Output, DrmErr
             model: "DRM".into(),
         },
     );
-    let _global = output.create_global::<Contrast>(&state.display_handle);
-    output.change_current_state(
-        Some(mode),
-        Some(Transform::Normal),
-        None,
-        Some((0, 0).into()),
-    );
+    let global = output.create_global::<Contrast>(&state.display_handle);
+    output.change_current_state(Some(mode), Some(Transform::Normal), None, None);
     output.set_preferred(mode);
-    state.space.map_output(&output, (0, 0));
-    let rect = Rect::new(0, 0, mode.size.w, mode.size.h)
-        .ok_or_else(|| DrmError::Config(format!("mode size {:?} is not positive", mode.size)))?;
-    state.output_added(&output, rect);
-    Ok(output)
+    (output, global)
 }
 
 /// ポインタを出力の中央に置く。
@@ -794,8 +1025,9 @@ fn center_pointer(state: &mut Contrast, output: &Output) {
     pointer.frame(state);
 }
 
-/// seat の DRM デバイスを列挙してログに出し、modeset の対象を決める。
-fn enumerate(session: &mut LibSeatSession, seat: &str) -> Result<Target, DrmError> {
+/// seat の DRM デバイスを列挙してログに出し、modeset の対象（デバイスと、接続済みの connector すべて）を決める。
+/// primary の GPU に接続済みの出力があればそれ、なければ出力のある最初のデバイス。
+fn enumerate(session: &mut LibSeatSession, seat: &str) -> Result<(PathBuf, Vec<Target>), DrmError> {
     let primary = primary_gpu(seat).map_err(|e| DrmError::Udev(e.to_string()))?;
     let udev = UdevBackend::new(seat).map_err(|e| DrmError::Udev(e.to_string()))?;
     let mut paths: Vec<PathBuf> = udev.device_list().map(|(_, p)| p.to_path_buf()).collect();
@@ -805,20 +1037,21 @@ fn enumerate(session: &mut LibSeatSession, seat: &str) -> Result<Target, DrmErro
     }
 
     let mut readable = 0usize;
-    let mut chosen: Option<Target> = None;
-    let mut fallback: Option<Target> = None;
+    let mut chosen: Option<(PathBuf, Vec<Target>)> = None;
+    let mut fallback: Option<(PathBuf, Vec<Target>)> = None;
     for path in &paths {
         let is_primary = primary.as_deref() == Some(path.as_path());
         tracing::info!("drm: device={} primary={is_primary}", path.display());
         match list_device(session, path) {
-            Ok(target) => {
+            Ok(targets) => {
                 readable = readable.saturating_add(1);
-                if let Some(target) = target {
-                    if is_primary && chosen.is_none() {
-                        chosen = Some(target);
-                    } else if fallback.is_none() {
-                        fallback = Some(target);
-                    }
+                if targets.is_empty() {
+                    continue;
+                }
+                if is_primary && chosen.is_none() {
+                    chosen = Some((path.clone(), targets));
+                } else if fallback.is_none() {
+                    fallback = Some((path.clone(), targets));
                 }
             }
             Err(e) => tracing::warn!("drm: device={} skipped: {e}", path.display()),
@@ -833,98 +1066,129 @@ fn enumerate(session: &mut LibSeatSession, seat: &str) -> Result<Target, DrmErro
 }
 
 /// 1 つの DRM デバイスを session 経由で開き、connector と CRTC をログに出して閉じる。
-/// 最初の接続済み connector があれば、modeset の対象として返す。
-fn list_device(session: &mut LibSeatSession, path: &Path) -> Result<Option<Target>, String> {
+/// 接続済みの connector（使える CRTC のあるもの）を、modeset の対象として返す。
+fn list_device(session: &mut LibSeatSession, path: &Path) -> Result<Vec<Target>, String> {
     let flags = OFlags::RDWR | OFlags::CLOEXEC | OFlags::NOCTTY | OFlags::NONBLOCK;
     let fd = session.open(path, flags).map_err(|e| e.to_string())?;
     let card = Card(fd);
-    let result = log_resources(&card, path).map_err(|e| e.to_string());
+    let mut used = Vec::new();
+    let result = targets_on(&card, &[], &mut used, true).map_err(|e| e.to_string());
     if let Err(e) = session.close(card.0) {
         tracing::warn!("drm: close {} failed: {e}", path.display());
     }
     result
 }
 
-/// connector（名前・状態・モード・物理サイズ）と CRTC をログに出す。最初の接続済み出力を返す。
-fn log_resources(card: &Card, path: &Path) -> io::Result<Option<Target>> {
-    let res = card.resource_handles()?;
-    let mut target: Option<Target> = None;
+/// 接続済みの connector。
+fn connected_connectors<D: ControlDevice>(dev: &D) -> io::Result<Vec<control::connector::Handle>> {
+    let res = dev.resource_handles()?;
+    let mut out = Vec::new();
     for &handle in res.connectors() {
-        let info = card.get_connector(handle, false)?;
+        if dev.get_connector(handle, false)?.state() == State::Connected {
+            out.push(handle);
+        }
+    }
+    Ok(out)
+}
+
+/// 接続済みの connector のうち `skip` に無いものを、`used` に無い CRTC を割り当てて、modeset の対象にする
+/// （割り当てた CRTC は `used` に足す）。`log` なら、connector（名前・状態・モード・物理サイズ）と CRTC をログに出す。
+fn targets_on<D: ControlDevice>(
+    dev: &D,
+    skip: &[control::connector::Handle],
+    used: &mut Vec<crtc::Handle>,
+    log: bool,
+) -> io::Result<Vec<Target>> {
+    let res = dev.resource_handles()?;
+    let mut targets = Vec::new();
+    for &handle in res.connectors() {
+        let info = dev.get_connector(handle, false)?;
         let name = format!("{}-{}", info.interface().as_str(), info.interface_id());
-        let status = match info.state() {
-            State::Connected => "connected",
-            State::Disconnected => "disconnected",
-            State::Unknown => "unknown",
-        };
         let preferred = info
             .modes()
             .iter()
             .find(|m| m.mode_type().contains(control::ModeTypeFlags::PREFERRED))
             .copied();
-        let size = info
-            .size()
-            .map_or_else(|| "unknown".to_string(), |(w, h)| format!("{w}x{h}"));
-        tracing::info!(
-            "drm: connector={name} status={status} modes={} preferred={} size_mm={size}",
-            info.modes().len(),
-            preferred
-                .as_ref()
-                .map_or_else(|| "none".to_string(), format_mode)
-        );
-        for mode in info.modes() {
-            tracing::info!("drm: mode connector={name} {}", format_mode(mode));
-        }
-        if target.is_none() && info.state() == State::Connected {
-            let mode = preferred.or_else(|| info.modes().first().copied());
-            let crtc = pick_crtc(card, &res, &info);
-            if let (Some(mode), Some(crtc)) = (mode, crtc) {
-                let (w, h) = info.size().unwrap_or((0, 0));
-                target = Some(Target {
-                    path: path.to_path_buf(),
-                    connector: handle,
-                    name,
-                    crtc,
-                    mode,
-                    size_mm: (i32::try_from(w).unwrap_or(0), i32::try_from(h).unwrap_or(0)),
-                });
+        if log {
+            let status = match info.state() {
+                State::Connected => "connected",
+                State::Disconnected => "disconnected",
+                State::Unknown => "unknown",
+            };
+            let size = info
+                .size()
+                .map_or_else(|| "unknown".to_string(), |(w, h)| format!("{w}x{h}"));
+            tracing::info!(
+                "drm: connector={name} status={status} modes={} preferred={} size_mm={size}",
+                info.modes().len(),
+                preferred
+                    .as_ref()
+                    .map_or_else(|| "none".to_string(), format_mode)
+            );
+            for mode in info.modes() {
+                tracing::info!("drm: mode connector={name} {}", format_mode(mode));
             }
         }
+        if info.state() != State::Connected || skip.contains(&handle) {
+            continue;
+        }
+        let mode = preferred.or_else(|| info.modes().first().copied());
+        let crtc = pick_crtc(dev, &res, &info, used);
+        if let (Some(mode), Some(crtc)) = (mode, crtc) {
+            used.push(crtc);
+            let (w, h) = info.size().unwrap_or((0, 0));
+            targets.push(Target {
+                connector: handle,
+                name,
+                crtc,
+                mode,
+                size_mm: (i32::try_from(w).unwrap_or(0), i32::try_from(h).unwrap_or(0)),
+            });
+        } else {
+            tracing::warn!("drm: connector={name} has no free CRTC or mode, not driven");
+        }
     }
-    for &crtc in res.crtcs() {
-        tracing::info!("drm: crtc={}", u32::from(crtc));
+    if log {
+        for &crtc in res.crtcs() {
+            tracing::info!("drm: crtc={}", u32::from(crtc));
+        }
     }
-    Ok(target)
+    Ok(targets)
 }
 
-/// connector を駆動する CRTC: いま繋がっている encoder の CRTC、無ければ encoder が使える最初の CRTC。
-fn pick_crtc(
-    card: &Card,
+/// connector を駆動する CRTC: いま繋がっている encoder の CRTC、無ければ encoder が使える最初の CRTC（`used` は除く）。
+fn pick_crtc<D: ControlDevice>(
+    dev: &D,
     res: &control::ResourceHandles,
     info: &control::connector::Info,
+    used: &[crtc::Handle],
 ) -> Option<crtc::Handle> {
     if let Some(encoder) = info.current_encoder()
-        && let Ok(encoder) = card.get_encoder(encoder)
+        && let Ok(encoder) = dev.get_encoder(encoder)
         && let Some(crtc) = encoder.crtc()
+        && !used.contains(&crtc)
     {
         return Some(crtc);
     }
     info.encoders().iter().find_map(|&e| {
-        let encoder = card.get_encoder(e).ok()?;
-        res.filter_crtcs(encoder.possible_crtcs()).first().copied()
+        let encoder = dev.get_encoder(e).ok()?;
+        res.filter_crtcs(encoder.possible_crtcs())
+            .into_iter()
+            .find(|c| !used.contains(c))
     })
 }
 
 /// 対象のデバイスを開き、GBM + EGL + GLES の renderer と、出力を用意する。最初の commit（modeset）はまだしない。
 fn open_gpu(
     session: &mut LibSeatSession,
-    target: &Target,
-    output: &Output,
+    path: &Path,
+    targets: &[Target],
+    state: &mut Contrast,
 ) -> Result<(Gpu, DrmDeviceNotifier), DrmError> {
     let flags = OFlags::RDWR | OFlags::CLOEXEC | OFlags::NOCTTY | OFlags::NONBLOCK;
     let fd = session
-        .open(&target.path, flags)
-        .map_err(|e| DrmError::Gpu(format!("open {}: {e}", target.path.display())))?;
+        .open(path, flags)
+        .map_err(|e| DrmError::Gpu(format!("open {}: {e}", path.display())))?;
     // DrmDeviceFd::new が master を取る。以降、Drop で手放す。
     let fd = DrmDeviceFd::new(DeviceFd::from(fd));
     // `disable_connectors = false`: ここでは画面に触らない。最初の commit が modeset になる。
@@ -968,21 +1232,41 @@ fn open_gpu(
         render_formats,
     );
 
-    let handle = manager
-        .initialize_output::<_, SceneElement>(
+    // 最初の出力が使えなければ起動に失敗する。2 つ目以降は警告して飛ばす。
+    let mut heads = Vec::new();
+    for (i, target) in targets.iter().enumerate() {
+        let (output, global) = new_output(state, target);
+        match manager.initialize_output::<_, SceneElement>(
             target.crtc,
             target.mode,
             &[target.connector],
-            output,
+            &output,
             None,
             &mut renderer,
             &DrmOutputRenderElements::default(),
-        )
-        .map_err(|e| DrmError::Modeset(e.to_string()))?;
+        ) {
+            Ok(handle) => heads.push(Head {
+                output,
+                handle: Some(handle),
+                crtc: target.crtc,
+                connector: target.connector,
+                queued: false,
+                global,
+            }),
+            Err(e) if i == 0 => {
+                state.display_handle.remove_global::<Contrast>(global);
+                return Err(DrmError::Modeset(e.to_string()));
+            }
+            Err(e) => {
+                tracing::warn!(output = target.name, "drm: cannot drive this output: {e}");
+                state.display_handle.remove_global::<Contrast>(global);
+            }
+        }
+    }
 
     Ok((
         Gpu {
-            output: Some(handle),
+            heads,
             manager: Some(manager),
             renderer: Some(renderer),
         },
@@ -1005,4 +1289,16 @@ fn output_mode(mode: &control::Mode) -> OutputMode {
 fn format_mode(mode: &control::Mode) -> String {
     let (w, h) = mode.size();
     format!("{w}x{h}@{}", mode.vrefresh())
+}
+
+#[cfg(test)]
+mod placement_tests {
+    use super::auto_positions;
+
+    #[test]
+    fn outputs_are_placed_left_to_right_without_gaps() {
+        assert_eq!(auto_positions(&[]), Vec::<i32>::new());
+        assert_eq!(auto_positions(&[1920]), [0]);
+        assert_eq!(auto_positions(&[1920, 2560, 1280]), [0, 1920, 4480]);
+    }
 }

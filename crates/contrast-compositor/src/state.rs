@@ -139,6 +139,8 @@ pub struct Contrast {
     pub last_input: std::time::Instant,
     /// winit のホストの窓でカーソルを隠している状態（変わったときだけホストに伝える）。
     pub host_cursor_hidden: bool,
+    /// デバッグの `unplug` で外した出力と、その矩形（`replug` で戻す）。
+    pub unplugged: Vec<(smithay::output::Output, contrast_core::Rect)>,
 }
 
 impl Contrast {
@@ -242,6 +244,7 @@ impl Contrast {
             anim: crate::anim::Animator::default(),
             last_input: std::time::Instant::now(),
             host_cursor_hidden: false,
+            unplugged: Vec::new(),
             input_devices: Vec::new(),
             layout_mode,
             cursor_status: smithay::input::pointer::CursorImageStatus::default_named(),

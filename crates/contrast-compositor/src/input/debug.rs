@@ -7,6 +7,7 @@
 //! - `wheel MODS H V` … ホイールの軸イベント（`MODS` は `alt+ctrl` のように修飾キー、無ければ `-`。`H`・`V` は横・縦の `v120`。
 //!   1 目盛りが 120、正は右／下）。ホイールのバインドに当たれば、実行してログに出す
 //! - `state` … 管理中の窓の一覧をログに出す
+//! - `unplug NAME` / `replug NAME` … 出力を外す／戻す（ホットプラグの経路を nested で試す。winit の分割した出力など）
 
 use std::io::BufRead;
 
@@ -77,6 +78,43 @@ impl Contrast {
         tracing::info!(consumed, "debug wheel");
     }
 
+    /// `unplug NAME`: 出力を外したことにする（core から外し、Space から外す）。
+    fn debug_unplug(&mut self, name: &str) {
+        let Some(output) = self
+            .shell
+            .outputs
+            .values()
+            .find(|o| o.name() == name)
+            .cloned()
+        else {
+            tracing::warn!(name, "debug: no such output");
+            return;
+        };
+        let Some(geo) = self.space.output_geometry(&output) else {
+            return;
+        };
+        let Some(rect) = contrast_core::Rect::new(geo.loc.x, geo.loc.y, geo.size.w, geo.size.h)
+        else {
+            return;
+        };
+        self.output_removed(&output);
+        self.space.unmap_output(&output);
+        self.unplugged.push((output, rect));
+        tracing::info!(name, "debug: output unplugged");
+    }
+
+    /// `replug NAME`: `unplug` で外した出力を、同じ位置に戻す。
+    fn debug_replug(&mut self, name: &str) {
+        let Some(at) = self.unplugged.iter().position(|(o, _)| o.name() == name) else {
+            tracing::warn!(name, "debug: not unplugged");
+            return;
+        };
+        let (output, rect) = self.unplugged.remove(at);
+        self.space.map_output(&output, (rect.x(), rect.y()));
+        self.output_added(&output, rect);
+        tracing::info!(name, "debug: output replugged");
+    }
+
     /// stdin から来た 1 行を実行する。
     fn debug_command(&mut self, line: &str) {
         if line.split_whitespace().next() == Some("wheel") {
@@ -106,6 +144,8 @@ impl Contrast {
                     None => tracing::info!(combo, "debug key: no binding"),
                 }
             }
+            (Some("unplug"), Some(name), None) => self.debug_unplug(name),
+            (Some("replug"), Some(name), None) => self.debug_replug(name),
             (Some("click"), Some(x), Some(y)) => match (x.parse::<f64>(), y.parse::<f64>()) {
                 (Ok(x), Ok(y)) => self.focus_at(x, y),
                 _ => tracing::warn!(line, "debug: bad click"),
