@@ -373,6 +373,7 @@ impl Drm {
         // 窓の開閉の絵（オフスクリーン）。DRM の描画は render_frame の中で bind するので、その前に済ませる。
         state.prepare_window_animations(renderer);
         state.take_window_screenshot_if_pending(renderer);
+        state.process_screenshot_ui(renderer);
         let geo = state.space.output_geometry(&output_name);
         let origin = geo.map(|g| g.loc).unwrap_or_default();
         // カーソルは、ポインタのある出力にだけ描く（位置は出力の中の座標）。

@@ -342,10 +342,6 @@ impl Contrast {
             tracing::info!("screenshot-window: the focused window has nothing to draw");
             return;
         };
-        let Some(template) = self.policy.screenshot_path() else {
-            tracing::info!("screenshot: screenshot-path is disabled, not saving");
-            return;
-        };
         let size = snapshot.bbox.size;
         let rgba = match crate::render::offscreen::render_to_rgba(
             renderer,
@@ -363,19 +359,19 @@ impl Contrast {
         let (Ok(width), Ok(height)) = (u32::try_from(size.w), u32::try_from(size.h)) else {
             return;
         };
-        let home = std::env::var("HOME").ok();
-        match crate::screenshot::save(&template, home.as_deref(), width, height, &rgba) {
-            Ok(path) => {
-                tracing::info!(path = %path.display(), width, height, "screenshot-window: saved")
-            }
-            Err(e) => tracing::warn!("screenshot-window: {e}"),
-        }
+        crate::screenshot::deliver(self, width, height, &rgba, true);
     }
 }
 
 /// 窓の絵をテクスチャに描く。失敗したら警告して `None`。
 fn draw(renderer: &mut GlesRenderer, s: &Snapshot) -> Option<Drawn> {
-    match crate::render::offscreen::render_to_texture(renderer, s.bbox.size, s.scale, &s.elements) {
+    match crate::render::offscreen::render_to_texture(
+        renderer,
+        s.bbox.size,
+        s.scale,
+        &s.elements,
+        [0.0, 0.0, 0.0, 0.0],
+    ) {
         Ok(texture) => Some(Drawn {
             texture,
             bbox: s.bbox,

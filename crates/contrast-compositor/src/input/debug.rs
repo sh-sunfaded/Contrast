@@ -7,6 +7,7 @@
 //! - `wheel MODS H V` … ホイールの軸イベント（`MODS` は `alt+ctrl` のように修飾キー、無ければ `-`。`H`・`V` は横・縦の `v120`。
 //!   1 目盛りが 120、正は右／下）。ホイールのバインドに当たれば、実行してログに出す
 //! - `state` … 管理中の窓の一覧をログに出す
+//! - `pointer down|move|up X Y [mod]` … スクリーンショットの UI が開いているときの、左ボタンとポインタの移動（`mod` は Mod を押したまま）
 //! - `unplug NAME` / `replug NAME` … 出力を外す／戻す（ホットプラグの経路を nested で試す。winit の分割した出力など）
 
 use std::io::BufRead;
@@ -115,8 +116,34 @@ impl Contrast {
         tracing::info!(name, "debug: output replugged");
     }
 
+    /// `pointer down|move|up X Y [mod]`: スクリーンショットの UI を、ポインタで操作する。
+    fn debug_pointer(&mut self, line: &str) {
+        let words: Vec<&str> = line.split_whitespace().collect();
+        let (Some(kind), Some(Ok(x)), Some(Ok(y))) = (
+            words.get(1),
+            words.get(2).map(|v| v.parse::<f64>()),
+            words.get(3).map(|v| v.parse::<f64>()),
+        ) else {
+            tracing::warn!(line, "debug: usage: pointer down|move|up X Y [mod]");
+            return;
+        };
+        let pos = smithay::utils::Point::from((x, y));
+        let mod_down = words.get(4) == Some(&"mod");
+        match *kind {
+            "down" => self.screenshot_ui_button(true, pos, mod_down),
+            "up" => self.screenshot_ui_button(false, pos, mod_down),
+            "move" => self.screenshot_ui_motion(pos),
+            _ => tracing::warn!(line, "debug: unknown pointer command"),
+        }
+        tracing::info!(line, "debug pointer");
+    }
+
     /// stdin から来た 1 行を実行する。
     fn debug_command(&mut self, line: &str) {
+        if line.split_whitespace().next() == Some("pointer") {
+            self.debug_pointer(line);
+            return;
+        }
         if line.split_whitespace().next() == Some("wheel") {
             self.debug_wheel(line);
             return;
@@ -135,6 +162,13 @@ impl Contrast {
                         "logo" | "super" => mods.logo = true,
                         other => tracing::warn!(modifier = other, "debug: unknown modifier"),
                     }
+                }
+                // スクリーンショットの UI が開いていれば、UI のキーを先に試す（実機のキーの経路と同じ順）。
+                if self.screenshot_ui.is_open()
+                    && self.screenshot_ui_key(key, mods.ctrl, mods.alt, mods.shift)
+                {
+                    tracing::info!(combo, "debug key: screenshot ui");
+                    return;
                 }
                 match self.policy.resolve_key(mods, key) {
                     Some(action) => {

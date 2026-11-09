@@ -11,6 +11,10 @@ use crate::state::Contrast;
 impl Contrast {
     /// ポリシーが返した意味操作を実行する。
     pub fn run_action(&mut self, action: Action) {
+        // スクリーンショットの UI が開いている間は、UI が扱うか、niri が許すものだけを実行する。
+        if self.screenshot_ui_action(&action) {
+            return;
+        }
         let core_action = match action {
             Action::Spawn(program) => return self.spawn(&program),
             Action::Quit => {
@@ -18,6 +22,10 @@ impl Contrast {
                 return self.loop_signal.stop();
             }
             Action::ReloadConfig => return self.reload_config(),
+            Action::Screenshot => {
+                self.screenshot_ui.requested = true;
+                return;
+            }
             Action::ScreenshotWindow => {
                 self.screenshot_window_pending = true;
                 return;

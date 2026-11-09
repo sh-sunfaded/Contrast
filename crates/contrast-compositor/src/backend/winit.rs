@@ -191,6 +191,7 @@ fn render_winit(
     // オフスクリーンへの描画（窓の開閉の絵）は、窓の面を bind する前に済ませる。
     state.prepare_window_animations(backend.renderer());
     state.take_window_screenshot_if_pending(backend.renderer());
+    state.process_screenshot_ui(backend.renderer());
     {
         let (renderer, mut framebuffer) = backend
             .bind()

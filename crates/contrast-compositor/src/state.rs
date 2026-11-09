@@ -125,6 +125,8 @@ pub struct Contrast {
     pub screenshot_pending: bool,
     /// `screenshot-window` が押された。次のフレームの前に、フォーカス窓の絵を保存する。
     pub screenshot_window_pending: bool,
+    /// スクリーンショットの範囲を選ぶ UI（niri の `screenshot`）。
+    pub screenshot_ui: crate::screenshot_ui_shell::ScreenshotUiState,
     /// 画面の電源（`power-off-monitors`。DRM バックエンドだけが関数を入れる）。
     pub monitors: crate::power::Monitors,
     /// クライアントが指定した（または既定の）カーソル。DRM バックエンドが描く。
@@ -251,6 +253,7 @@ impl Contrast {
             unplugged: Vec::new(),
             window_anims: Default::default(),
             screenshot_window_pending: false,
+            screenshot_ui: Default::default(),
             input_devices: Vec::new(),
             layout_mode,
             cursor_status: smithay::input::pointer::CursorImageStatus::default_named(),

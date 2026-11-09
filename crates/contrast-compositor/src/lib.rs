@@ -16,6 +16,8 @@ mod power;
 mod reload;
 mod render;
 mod screenshot;
+mod screenshot_ui;
+mod screenshot_ui_shell;
 mod shell;
 mod spawn;
 mod spring;

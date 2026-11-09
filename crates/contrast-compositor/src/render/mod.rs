@@ -81,6 +81,8 @@ render_elements! {
     Pixel=PixelShaderElement,
     /// 開く・閉じる途中の窓（オフスクリーンのテクスチャを拡大・半透明にしたもの）。
     Anim=crate::window_anim::AnimElement,
+    /// スクリーンショットの UI で止めた出力の絵。
+    Frozen=smithay::backend::renderer::element::texture::TextureRenderElement<smithay::backend::renderer::gles::GlesTexture>,
 }
 
 render_elements! {
@@ -141,6 +143,11 @@ pub fn scene_elements(
     };
 
     let mut elements: Vec<SceneElement> = cursor;
+    // スクリーンショットの UI が開いていれば、それだけを描く（niri と同じ。カーソルは前面）。
+    if let Some(ui) = state.screenshot_ui_elements(renderer, output, origin) {
+        elements.extend(ui);
+        return Ok(elements);
+    }
     // 入力メソッドのポップアップ（候補ウィンドウ）は、カーソルの次に前面（枠・窓・レイヤー面より前）。
     elements.extend(state.ime_popup_elements(renderer, scale, origin));
     match shaders.as_ref().filter(|_| radius > 0) {
@@ -348,10 +355,6 @@ pub fn take_screenshot_if_pending<
     if !std::mem::take(&mut state.screenshot_pending) {
         return;
     }
-    let Some(template) = state.policy.screenshot_path() else {
-        tracing::info!("screenshot: screenshot-path is disabled, not saving");
-        return;
-    };
     let shot = match capture(renderer, output, elements, state.policy.background()) {
         Ok(shot) => shot,
         Err(e) => {
@@ -359,17 +362,7 @@ pub fn take_screenshot_if_pending<
             return;
         }
     };
-    let home = std::env::var("HOME").ok();
-    match crate::screenshot::save(
-        &template,
-        home.as_deref(),
-        shot.width,
-        shot.height,
-        &shot.rgba,
-    ) {
-        Ok(path) => tracing::info!(path = %path.display(), "screenshot: saved"),
-        Err(e) => tracing::warn!("screenshot: {e}"),
-    }
+    crate::screenshot::deliver(state, shot.width, shot.height, &shot.rgba, true);
 }
 
 /// 提出したあとの後始末: クライアントへ frame コールバックを送り、Space・popup・レイヤーを整理する。

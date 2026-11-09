@@ -16,12 +16,13 @@ use smithay::{
     utils::{Buffer, Physical, Rectangle, Size, Transform},
 };
 
-/// `elements`（位置は描画先の左上からの物理座標）を、大きさ `size`（物理 px）の透明なテクスチャに描く。
+/// `elements`（位置は描画先の左上からの物理座標）を、大きさ `size`（物理 px）の、`clear` の色で塗ったテクスチャに描く。
 pub fn render_to_texture<E: RenderElement<GlesRenderer>>(
     renderer: &mut GlesRenderer,
     size: Size<i32, Physical>,
     scale: f64,
     elements: &[E],
+    clear: [f32; 4],
 ) -> Result<GlesTexture, String> {
     let buffer_size = Size::<i32, Buffer>::from((size.w.max(1), size.h.max(1)));
     let mut texture: GlesTexture =
@@ -30,7 +31,7 @@ pub fn render_to_texture<E: RenderElement<GlesRenderer>>(
     {
         let mut target = renderer.bind(&mut texture).map_err(|e| e.to_string())?;
         OutputDamageTracker::new(size, scale, Transform::Normal)
-            .render_output(renderer, &mut target, 0, elements, [0.0, 0.0, 0.0, 0.0])
+            .render_output(renderer, &mut target, 0, elements, clear)
             .map_err(|e| e.to_string())?;
     }
     Ok(texture)

@@ -137,7 +137,13 @@ impl Contrast {
                 let pos = event.position_transformed(bounds.size) + bounds.loc.to_f64();
                 let serial = SERIAL_COUNTER.next_serial();
                 let pointer = self.seat.get_pointer().expect("seat has pointer");
-                let under = self.surface_under(pos);
+                // スクリーンショットの UI が開いている間は、ポインタをクライアントに渡さず、選択に使う。
+                let under = if self.screenshot_ui.is_open() {
+                    self.screenshot_ui_motion(pos);
+                    None
+                } else {
+                    self.surface_under(pos)
+                };
                 pointer.motion(
                     self,
                     under,
@@ -171,7 +177,13 @@ impl Contrast {
                     };
                     clamp_to(moved, output_geo.to_f64())
                 };
-                let under = self.surface_under(pos);
+                // スクリーンショットの UI が開いている間は、ポインタをクライアントに渡さず、選択に使う。
+                let under = if self.screenshot_ui.is_open() {
+                    self.screenshot_ui_motion(pos);
+                    None
+                } else {
+                    self.surface_under(pos)
+                };
                 pointer.motion(
                     self,
                     under,
@@ -188,6 +200,27 @@ impl Contrast {
                 let pointer = self.seat.get_pointer().expect("seat has pointer");
                 let serial = SERIAL_COUNTER.next_serial();
                 let state = event.state();
+                // スクリーンショットの UI: 左ボタンで選択を描く（Mod を押したままなら選択ごと動かす）。クライアントには渡さない。
+                if self.screenshot_ui.is_open() {
+                    const BTN_LEFT: u32 = 0x110;
+                    if event.button_code() == BTN_LEFT {
+                        let mods = self
+                            .seat
+                            .get_keyboard()
+                            .map(|k| k.modifier_state())
+                            .unwrap_or_default();
+                        let mod_down = match self.policy.mod_key() {
+                            contrast_policy::ModKey::Super => mods.logo,
+                            contrast_policy::ModKey::Alt => mods.alt,
+                        };
+                        self.screenshot_ui_button(
+                            state == ButtonState::Pressed,
+                            pointer.current_location(),
+                            mod_down,
+                        );
+                    }
+                    return;
+                }
                 if state == ButtonState::Pressed && !pointer.is_grabbed() {
                     self.click_focus(pointer.current_location());
                 }
@@ -350,6 +383,16 @@ impl Contrast {
             time,
             |state, mods, handle| {
                 if key_state == KeyState::Released {
+                    // スクリーンショットの UI: Space を離すと、選択の移動を終える。
+                    if state.screenshot_ui.is_open()
+                        && handle
+                            .raw_latin_sym_or_raw_current_sym()
+                            .map(xkb::keysym_get_name)
+                            .as_deref()
+                            == Some("space")
+                    {
+                        state.screenshot_ui_space_released();
+                    }
                     if let Some(i) = state.suppressed_keys.iter().position(|k| *k == keycode) {
                         state.suppressed_keys.remove(i);
                         return FilterResult::Intercept(None);
@@ -367,6 +410,14 @@ impl Contrast {
                     state.pending_vt = Some(vt);
                     state.suppressed_keys.push(keycode);
                     return FilterResult::Intercept(None);
+                }
+                // スクリーンショットの UI が開いている間は、キーをクライアントに渡さない。
+                if state.screenshot_ui.is_open() {
+                    state.suppressed_keys.push(keycode);
+                    if state.screenshot_ui_key(&name, mods.ctrl, mods.alt, mods.shift) {
+                        return FilterResult::Intercept(None);
+                    }
+                    return FilterResult::Intercept(state.policy.resolve_key(to_mods(mods), &name));
                 }
                 match state.policy.resolve_key(to_mods(mods), &name) {
                     Some(action) => {

@@ -160,6 +160,112 @@ pub fn write_new(path: &Path, png: &[u8]) -> Result<(), SaveError> {
 ///
 /// # Errors
 /// 符号化・保存先の整形・書き込みの失敗。
+/// 撮った絵を、niri の `save_screenshot` と同じく扱う: PNG にしてクリップボード（`image/png`）に入れ、
+/// `write_to_disk` で保存先が有効なら別スレッドでファイルに書き、通知（`org.freedesktop.Notifications`）を出す。
+pub fn deliver(
+    state: &mut crate::state::Contrast,
+    width: u32,
+    height: u32,
+    rgba: &[u8],
+    write_to_disk: bool,
+) {
+    let png = match encode_png(width, height, rgba) {
+        Ok(png) => png,
+        Err(e) => {
+            tracing::warn!("screenshot: {e}");
+            return;
+        }
+    };
+    let png: std::sync::Arc<[u8]> = std::sync::Arc::from(png.into_boxed_slice());
+    smithay::wayland::selection::data_device::set_data_device_selection(
+        &state.display_handle,
+        &state.seat,
+        vec![String::from("image/png")],
+        png.clone(),
+    );
+    tracing::info!(
+        width,
+        height,
+        "screenshot: copied to the clipboard as image/png"
+    );
+    let template = write_to_disk
+        .then(|| state.policy.screenshot_path())
+        .flatten();
+    if write_to_disk && template.is_none() {
+        tracing::info!("screenshot: screenshot-path is disabled, not saving");
+    }
+    let home = std::env::var("HOME").ok();
+    let spawned = std::thread::Builder::new()
+        .name("screenshot-save".into())
+        .spawn(move || {
+            let mut saved = None;
+            if let Some(template) = template {
+                match resolve_path(&template, home.as_deref())
+                    .and_then(|p| write_new(&p, &png).map(|()| p))
+                {
+                    Ok(path) => {
+                        tracing::info!(path = %path.display(), "screenshot: saved");
+                        saved = Some(path);
+                    }
+                    Err(e) => tracing::warn!("screenshot: {e}"),
+                }
+            }
+            notify(saved.as_deref());
+        });
+    if let Err(e) = spawned {
+        tracing::warn!("screenshot: cannot start the saving thread: {e}");
+    }
+}
+
+/// niri と同じ通知（アプリ名 niri、要約 "Screenshot captured"、本文 "You can paste the image from the clipboard."、
+/// 画像は保存したファイル、transient・urgency 1）を、`busctl --user` で出す。失敗はログだけ。
+fn notify(path: Option<&Path>) {
+    let icon = path
+        .and_then(|p| p.canonicalize().ok())
+        .map(|p| format!("file://{}", p.display()))
+        .unwrap_or_default();
+    let result = std::process::Command::new("busctl")
+        .args([
+            "--user",
+            "call",
+            // 引数の `-1`（有効期限）を、オプションと読ませない。
+            "--",
+            "org.freedesktop.Notifications",
+            "/org/freedesktop/Notifications",
+            "org.freedesktop.Notifications",
+            "Notify",
+            "susssasa{sv}i",
+            "niri",
+            "0",
+            &icon,
+            "Screenshot captured",
+            "You can paste the image from the clipboard.",
+            "0",
+            "2",
+            "transient",
+            "b",
+            "true",
+            "urgency",
+            "y",
+            "1",
+            "-1",
+        ])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .output();
+    match result {
+        Ok(out) if out.status.success() => tracing::info!("screenshot: notification sent"),
+        Ok(out) => tracing::warn!(
+            "screenshot: notification failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ),
+        Err(e) => tracing::warn!("screenshot: cannot run busctl for the notification: {e}"),
+    }
+}
+
+/// `template` の保存先に、PNG を書く（既存のファイルは上書きしない）。テストで保存の手順を確かめるのに使う。
+#[cfg(test)]
 pub fn save(
     template: &str,
     home: Option<&str>,

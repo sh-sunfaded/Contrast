@@ -110,7 +110,35 @@ impl SeatHandler for Contrast {
 }
 
 impl SelectionHandler for Contrast {
-    type SelectionUserData = ();
+    /// コンポジタが出す選択（スクリーンショットの PNG）の中身。
+    type SelectionUserData = std::sync::Arc<[u8]>;
+
+    /// クライアントがコンポジタの選択を読む: 中身を別スレッドで fd に書く（大きい画像でループを止めない）。
+    fn send_selection(
+        &mut self,
+        _ty: smithay::wayland::selection::SelectionTarget,
+        mime_type: String,
+        fd: std::os::fd::OwnedFd,
+        _seat: smithay::input::Seat<Self>,
+        user_data: &Self::SelectionUserData,
+    ) {
+        if mime_type != "image/png" {
+            return;
+        }
+        let data = user_data.clone();
+        let spawned = std::thread::Builder::new()
+            .name("selection-send".into())
+            .spawn(move || {
+                use std::io::Write;
+                let mut file = std::fs::File::from(fd);
+                if let Err(e) = file.write_all(&data) {
+                    tracing::warn!("selection: write failed: {e}");
+                }
+            });
+        if let Err(e) = spawned {
+            tracing::warn!("selection: cannot start the writer thread: {e}");
+        }
+    }
 }
 
 impl DataDeviceHandler for Contrast {
