@@ -18,6 +18,7 @@ mod overview;
 mod power;
 mod reload;
 mod render;
+mod scale;
 mod screenshot;
 mod screenshot_ui;
 mod screenshot_ui_shell;

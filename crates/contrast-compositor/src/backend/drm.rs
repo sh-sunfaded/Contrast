@@ -999,6 +999,13 @@ fn new_output(
         },
     );
     let global = output.create_global::<Contrast>(&state.display_handle);
+    // niri は設定に拡大率が無ければ、物理の大きさと解像度から決める（`guess_monitor_scale`）。Contrast は描画（カーソル・枠・
+    // fractional-scale のプロトコル）が拡大率 1 前提なので、まだ 1 のまま使い、niri なら使う値をログに出す（実機で確かめる）。
+    let guessed = crate::scale::closest_representable_scale(crate::scale::guess_monitor_scale(
+        target.size_mm,
+        (mode.size.w, mode.size.h),
+    ));
+    tracing::info!(output = target.name, size_mm = ?target.size_mm, guessed, "drm: niri would use this scale; Contrast uses 1");
     output.change_current_state(Some(mode), Some(Transform::Normal), None, None);
     output.set_preferred(mode);
     (output, global)

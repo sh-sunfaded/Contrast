@@ -1,4 +1,4 @@
-//! libinput のデバイスへの設定の適用（タッチパッドのタップ・自然なスクロール・加速・タイピング中の無効化）。
+//! libinput のデバイスへの設定の適用（タッチパッドのタップ・自然なスクロール・加速・タイピング中の無効化、マウスの既定値）。
 //!
 //! デバイスが追加されたとき（起動時の既存デバイスを含む）と、設定のリロードのときに適用する。
 //! デバイスが使えない項目はログに出して続ける。
@@ -20,10 +20,62 @@ fn outcome(result: DeviceConfigResult) -> &'static str {
 /// タッチパッドの dwtp（トラックポイント操作中の無効化）。niri の既定に合わせて off に固定する。
 const DISABLE_WHILE_TRACKPOINTING: bool = false;
 
-/// タッチパッドに `settings` を適用する。タッチパッドでなければ何もしない。適用した項目をログに出す。
+/// マウスに niri の `mouse {}`（作者の設定は空）の既定を適用する（niri の `apply_libinput_settings` の mouse の部分）:
+/// 有効、natural-scroll なし、加速 0、左利きなし、中ボタンの模倣なし、加速の型とスクロールの方法はデバイスの既定。
+fn apply_mouse(device: &mut Device) {
+    use smithay::reexports::input::{ScrollButtonLockState, ScrollMethod, SendEventsMode};
+    let enabled = outcome(device.config_send_events_set_mode(SendEventsMode::ENABLED));
+    let natural = outcome(device.config_scroll_set_natural_scroll_enabled(false));
+    let accel = outcome(device.config_accel_set_speed(0.0));
+    let left = outcome(device.config_left_handed_set(false));
+    let middle = outcome(device.config_middle_emulation_set_enabled(false));
+    let profile = device
+        .config_accel_default_profile()
+        .map_or("none", |p| outcome(device.config_accel_set_profile(p)));
+    let scroll = match device.config_scroll_default_method() {
+        Some(m) => {
+            let r = outcome(device.config_scroll_set_method(m));
+            if m == ScrollMethod::OnButtonDown {
+                let _ = device.config_scroll_set_button_lock(ScrollButtonLockState::Disabled);
+            }
+            r
+        }
+        None => "none",
+    };
+    tracing::info!(
+        device = device.name(),
+        enabled,
+        natural_scroll = natural,
+        accel,
+        left_handed = left,
+        middle_emulation = middle,
+        accel_profile = profile,
+        scroll_method = scroll,
+        "input: mouse configured (niri defaults)"
+    );
+}
+
+/// トラックボールかトラックポイントか（niri・Mutter と同じく udev の `ID_INPUT_TRACKBALL`・`ID_INPUT_POINTINGSTICK`）。
+fn is_trackball_or_trackpoint(device: &Device) -> bool {
+    // SAFETY: `udev_device` は libinput の udev デバイスへの参照を増やして返すだけで、ここでは読み取りにしか使わない
+    // （libinput のコンテキストは `device` が生きている間は有効）。
+    let udev = unsafe { device.udev_device() };
+    udev.is_some_and(|u| {
+        u.property_value("ID_INPUT_TRACKBALL").is_some()
+            || u.property_value("ID_INPUT_POINTINGSTICK").is_some()
+    })
+}
+
+/// タッチパッドに `settings` を、マウスに niri の既定を適用する。どちらでもなければ何もしない。適用した項目をログに出す。
 pub fn apply(device: &mut Device, settings: &InputSettings) {
-    // タップのできるポインタデバイスをタッチパッドとみなす（マウスには触らない）。
-    if !device.has_capability(DeviceCapability::Pointer) || device.config_tap_finger_count() == 0 {
+    if !device.has_capability(DeviceCapability::Pointer) {
+        return;
+    }
+    // タップのできるポインタデバイスをタッチパッドとみなす。
+    if device.config_tap_finger_count() == 0 {
+        if !is_trackball_or_trackpoint(device) {
+            apply_mouse(device);
+        }
         return;
     }
     let tap = outcome(device.config_tap_set_enabled(settings.tap_to_click));
