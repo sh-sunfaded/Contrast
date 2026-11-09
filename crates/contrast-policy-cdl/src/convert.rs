@@ -671,6 +671,7 @@ fn read_action(cx: &mut Ctx<'_>, node: Node<'_>, name: &str, args: ActionArgs) -
         "screenshot-window" => Some(Action::ScreenshotWindow),
         "screenshot" => Some(Action::Screenshot),
         "show-hotkey-overlay" => Some(Action::ShowHotkeyOverlay),
+        "toggle-overview" => Some(Action::ToggleOverview),
         "focus-up" => Some(Action::FocusUp),
         "focus-down" => Some(Action::FocusDown),
         "move-up" => Some(Action::MoveUp),

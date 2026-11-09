@@ -53,7 +53,7 @@ niri の設定の既定値は niri の既定（wiki / パッケージの既定�
 | 名前つきワークスペース（`workspace "name"`） | いいえ | × | core と CDL | M |
 | `focus-monitor-*`・`move-column-to-monitor-*`・出力ごとのワークスペース | はい | ○ core は出力ごとの列（追補 17 節、参照モデルとの比較の proptest）。コンポジタは複数の出力を描き分け、IPC も出力ごと（nested の 2 出力で確認）。DRM の複数 connector・ホットプラグは実機で要確認 | — | — |
 | `output`（mode・scale・transform・position） | 無効 | × スケール 1 固定、modeset は preferred のみ | DRM のモード選択、スケール | L |
-| `toggle-overview` | いいえ | × | 縮小表示の描画と操作 | L |
+| `toggle-overview`・オーバービュー・ホットコーナー | 暗黙（ホットコーナー・4 本指） | ○ 縮める率・並び・背景・バネ・クリックで選ぶ・Escape/Enter・矢印 | 窓のドラッグでの移動、ワークスペースの影、切り替えと連動したアニメーション | — |
 
 ## 操作
 
@@ -133,3 +133,6 @@ niri の設定の既定値は niri の既定（wiki / パッケージの既定�
 
 - ○ に変えたもの: ワークスペースの数（窓のあるものと末尾の空 1 つ。ironbar のボタンも同じ数）、`focus-workspace N` の範囲外（末尾の空へ）、離れた空のワークスペースの整理、`move-column-to-workspace`（列ごと）、`move-workspace-down/up` の 4 個。
 - 差が残るもの: 離れた空のワークスペースの削除が、切り替えのアニメーションの終わりではなく直後（IPC は `WorkspaceActivated` → `WorkspacesChanged` の順で、niri と同じ）。複数モニタ（モニタごとのワークスペースの列）は未対応。
+
+| タッチパッドの 3 本指（横: ビュー、縦: ワークスペース）・4 本指（オーバービュー） | 既定 | ○ niri の閾値・係数・減速・吸着（core の追補 18 節） | 縦のスワイプの最中に画面が指についてこない（終わりに切り替える） | — |
+| DnD の端スクロール | 既定 | ○ 端 30px・100ms・最大 1500px/s | — | — |

@@ -118,6 +118,8 @@ pub enum Action {
     Screenshot,
     /// ホットキーのオーバーレイを出す（niri の `show-hotkey-overlay`）。
     ShowHotkeyOverlay,
+    /// オーバービューを開く・閉じる（niri の `toggle-overview`）。
+    ToggleOverview,
     /// 画面を消す（DPMS。niri の `power-off-monitors`）。どんな入力でも戻る。
     PowerOffMonitors,
 }
