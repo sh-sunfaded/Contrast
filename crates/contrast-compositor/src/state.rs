@@ -346,29 +346,114 @@ const KEY_REPEAT_DELAY_MS: i32 = 600;
 /// キーリピートの速さ（1 秒あたりの回数）。niri の既定（`repeat-rate 25`）。
 const KEY_REPEAT_RATE: i32 = 25;
 
-/// キーボードを seat に足す。配列は `CONTRAST_XKB_LAYOUT` / `_VARIANT` / `_MODEL` / `_OPTIONS`、
-/// 未指定は xkbcommon の既定。指定が不正でキーマップを作れなければ、警告して既定にする。
+/// xkb の設定（rules は使わない）。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct XkbNames {
+    /// 配列。
+    pub layout: String,
+    /// 変種。
+    pub variant: String,
+    /// 型。
+    pub model: String,
+    /// オプション（空なら None）。
+    pub options: Option<String>,
+}
+
+/// `busctl get-property` の 1 行（`s "us"`）から文字列を取り出す。形が違えば `None`。
+pub fn parse_busctl_string(line: &str) -> Option<String> {
+    let rest = line.trim().strip_prefix("s ")?;
+    let inner = rest.strip_prefix('"')?.strip_suffix('"')?;
+    Some(inner.replace("\\\"", "\"").replace("\\\\", "\\"))
+}
+
+/// systemd-localed（`org.freedesktop.locale1`、システムの D-Bus）の X11 の配列を読む（niri の `freedesktop_locale1`）。
+/// zbus は依存に無いので `busctl` を使う。読めなければ `None`。
+fn xkb_from_locale1() -> Option<XkbNames> {
+    let out = std::process::Command::new("busctl")
+        .args([
+            "--system",
+            "get-property",
+            "org.freedesktop.locale1",
+            "/org/freedesktop/locale1",
+            "org.freedesktop.locale1",
+            "X11Layout",
+            "X11Model",
+            "X11Variant",
+            "X11Options",
+        ])
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8(out.stdout).ok()?;
+    let values: Vec<String> = text.lines().filter_map(parse_busctl_string).collect();
+    let [layout, model, variant, options] = <[String; 4]>::try_from(values).ok()?;
+    Some(XkbNames {
+        layout,
+        variant,
+        model,
+        options: (!options.is_empty()).then_some(options),
+    })
+}
+
+/// キーボードを seat に足す。配列は `CONTRAST_XKB_LAYOUT` / `_VARIANT` / `_MODEL` / `_OPTIONS`。
+/// どれも指定が無ければ、niri と同じく systemd-localed の X11 の配列（起動時に 1 回読む）、それも無ければ xkbcommon の既定。
+/// 指定が不正でキーマップを作れなければ、警告して既定にする。
 fn add_keyboard(seat: &mut Seat<Contrast>) {
-    let var = |name: &str| std::env::var(name).unwrap_or_default();
-    let (layout, variant, model) = (
-        var("CONTRAST_XKB_LAYOUT"),
-        var("CONTRAST_XKB_VARIANT"),
-        var("CONTRAST_XKB_MODEL"),
-    );
-    let options = std::env::var("CONTRAST_XKB_OPTIONS").ok();
+    let var = |name: &str| std::env::var(name).ok().filter(|v| !v.is_empty());
+    let from_env = XkbNames {
+        layout: var("CONTRAST_XKB_LAYOUT").unwrap_or_default(),
+        variant: var("CONTRAST_XKB_VARIANT").unwrap_or_default(),
+        model: var("CONTRAST_XKB_MODEL").unwrap_or_default(),
+        options: var("CONTRAST_XKB_OPTIONS"),
+    };
+    let names = if from_env == XkbNames::default() {
+        match xkb_from_locale1() {
+            Some(n) => {
+                tracing::info!(?n, "xkb: using the settings of systemd-localed");
+                n
+            }
+            None => from_env,
+        }
+    } else {
+        from_env
+    };
     let config = smithay::input::keyboard::XkbConfig {
-        layout: &layout,
-        variant: &variant,
-        model: &model,
-        options: options.clone(),
+        layout: &names.layout,
+        variant: &names.variant,
+        model: &names.model,
+        options: names.options.clone(),
         ..Default::default()
     };
     if let Err(e) = seat.add_keyboard(config, KEY_REPEAT_DELAY_MS, KEY_REPEAT_RATE) {
-        tracing::warn!(?e, %layout, %variant, %model, ?options, "xkb: invalid keymap settings, using the default");
+        tracing::warn!(
+            ?e,
+            ?names,
+            "xkb: invalid keymap settings, using the default"
+        );
         if let Err(e) = seat.add_keyboard(Default::default(), KEY_REPEAT_DELAY_MS, KEY_REPEAT_RATE)
         {
             tracing::error!(?e, "xkb: failed to add a keyboard");
         }
+    }
+}
+
+#[cfg(test)]
+mod xkb_tests {
+    use super::parse_busctl_string;
+
+    #[test]
+    fn busctl_strings_are_unquoted() {
+        assert_eq!(parse_busctl_string("s \"us\""), Some("us".to_string()));
+        assert_eq!(parse_busctl_string("s \"\""), Some(String::new()));
+        assert_eq!(
+            parse_busctl_string("s \"terminate:ctrl_alt_bksp\"\n"),
+            Some("terminate:ctrl_alt_bksp".to_string())
+        );
+        assert_eq!(parse_busctl_string("u 3"), None);
     }
 }
 
