@@ -15,8 +15,10 @@ use contrast_core::{ExternalKey, WindowState, WorkspaceId};
 use smithay::{
     backend::renderer::{
         element::{
-            AsRenderElements, Id, Kind, solid::SolidColorRenderElement,
-            surface::WaylandSurfaceRenderElement, utils::CropRenderElement,
+            AsRenderElements, Element, Id, Kind,
+            solid::SolidColorRenderElement,
+            surface::WaylandSurfaceRenderElement,
+            utils::{CropRenderElement, RescaleRenderElement},
         },
         gles::GlesRenderer,
         utils::CommitCounter,
@@ -293,8 +295,9 @@ impl Contrast {
                 ws_loc.to_physical_precise_round(scale),
                 rect.size.to_physical_precise_round(scale),
             );
+            // 要素は縮める前の大きさ・位置で作り（`ws_loc` が原点）、`shrink_and_crop` で `zoom` 倍に縮めて切り抜く。
             let place = |p: Point<i32, Logical>| -> Point<i32, Physical> {
-                (ws_loc + p.to_f64().upscale(zoom)).to_physical_precise_round(scale)
+                (ws_loc + p.to_f64()).to_physical_precise_round(scale)
             };
             let keys: Vec<ExternalKey> = view
                 .workspace_windows_by_id(ws)
@@ -328,37 +331,27 @@ impl Contrast {
                 };
                 let local = Point::from((frame.x() - geo.loc.x, frame.y() - geo.loc.y))
                     - window.geometry().loc;
-                let elements = AsRenderElements::<GlesRenderer>::render_elements::<
-                    WaylandSurfaceRenderElement<GlesRenderer>,
-                >(
-                    &window,
-                    renderer,
-                    place(local),
-                    Scale::from(scale * zoom),
-                    1.0,
-                );
+                let elements =
+                    AsRenderElements::<GlesRenderer>::render_elements::<
+                        WaylandSurfaceRenderElement<GlesRenderer>,
+                    >(&window, renderer, place(local), Scale::from(scale), 1.0);
                 out.extend(
                     elements
                         .into_iter()
-                        .filter_map(|e| {
-                            CropRenderElement::from_element(e, Scale::from(scale), crop)
-                        })
+                        .filter_map(|e| shrink_and_crop(e, crop.loc, zoom, scale, crop))
                         .map(SceneElement::CroppedSurface),
                 );
             }
             // 背景のレイヤー面（壁紙など）を、ワークスペースの中に縮めて描く。
             for (loc, layer) in &lower {
-                let elements = AsRenderElements::<GlesRenderer>::render_elements::<
-                    WaylandSurfaceRenderElement<GlesRenderer>,
-                >(
-                    layer, renderer, place(*loc), Scale::from(scale * zoom), 1.0
-                );
+                let elements =
+                    AsRenderElements::<GlesRenderer>::render_elements::<
+                        WaylandSurfaceRenderElement<GlesRenderer>,
+                    >(layer, renderer, place(*loc), Scale::from(scale), 1.0);
                 out.extend(
                     elements
                         .into_iter()
-                        .filter_map(|e| {
-                            CropRenderElement::from_element(e, Scale::from(scale), crop)
-                        })
+                        .filter_map(|e| shrink_and_crop(e, crop.loc, zoom, scale, crop))
                         .map(SceneElement::CroppedSurface),
                 );
             }
@@ -486,9 +479,70 @@ impl Contrast {
     }
 }
 
+/// 要素を `origin`（物理座標）を中心に `zoom` 倍に縮め、`crop` で切り抜く。`scale` は出力の倍率。
+/// 切り抜いて何も残らなければ `None`。
+///
+/// `WaylandSurfaceRenderElement` の大きさは、作るときの倍率でなく、描くときの出力の倍率で決まる
+/// （作るときの倍率が効くのはサブサーフェスの位置だけ）。なので、縮めるには `RescaleRenderElement` で包む。
+fn shrink_and_crop<E: Element>(
+    element: E,
+    origin: Point<i32, Physical>,
+    zoom: f64,
+    scale: f64,
+    crop: Rectangle<i32, Physical>,
+) -> Option<CropRenderElement<RescaleRenderElement<E>>> {
+    CropRenderElement::from_element(
+        RescaleRenderElement::from_element(element, origin, Scale::from(zoom)),
+        Scale::from(scale),
+        crop,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 要素（`geometry` が `rect`）を、`origin` を中心に `zoom` 倍に縮めて `crop` で切り抜いた矩形。
+    fn shrunk_geometry(
+        rect: Rectangle<i32, Physical>,
+        origin: Point<i32, Physical>,
+        zoom: f64,
+        crop: Rectangle<i32, Physical>,
+    ) -> Rectangle<i32, Physical> {
+        let solid = SolidColorRenderElement::new(
+            Id::new(),
+            rect,
+            CommitCounter::default(),
+            [1.0; 4],
+            Kind::Unspecified,
+        );
+        shrink_and_crop(solid, origin, zoom, 1.0, crop)
+            .map(|e| e.geometry(Scale::from(1.0)))
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn a_window_is_shrunk_in_size_not_only_moved() {
+        // ワークスペースのタイル（480,300 から 960x600）の左上を中心に半分にする。
+        // 440x1044 の窓が (16,16) にあるとき、縮めた窓は (8,8) から 220x522（タイルの中では切れない）。
+        let origin = Point::from((480, 300));
+        let crop = Rectangle::new(origin, Size::from((960, 600)));
+        let window = Rectangle::new(Point::from((480 + 16, 300 + 16)), Size::from((440, 1044)));
+        let got = shrunk_geometry(window, origin, 0.5, crop);
+        assert_eq!(got.loc, Point::from((480 + 8, 300 + 8)));
+        assert_eq!(got.size, Size::from((220, 522)));
+    }
+
+    #[test]
+    fn a_shrunk_window_is_still_cropped_to_the_tile() {
+        let origin = Point::from((480, 300));
+        let crop = Rectangle::new(origin, Size::from((960, 600)));
+        // 縮めたあとも右へはみ出す窓は、タイルの右端で切れる。
+        let window = Rectangle::new(Point::from((480 + 1800, 300)), Size::from((400, 100)));
+        let got = shrunk_geometry(window, origin, 0.5, crop);
+        assert_eq!(got.loc, Point::from((480 + 900, 300)));
+        assert_eq!(got.size, Size::from((60, 50)));
+    }
 
     #[test]
     fn zoom_goes_from_one_to_a_half() {
