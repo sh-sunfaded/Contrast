@@ -225,6 +225,26 @@ impl Contrast {
         })
     }
 
+    /// 窓 `id` の枠（窓の外側の矩形、太さ、色）。全画面・枠なし（フォーカス外で `borderColor` が無い）は `None`。
+    /// 閉じる窓の絵に枠を含めるのに使う（フレームの描画の枠と同じ規則）。
+    pub fn window_border(&self, id: WindowId, output: &Output) -> Option<(Rect, i32, [f32; 4])> {
+        let view = self.core.view();
+        let w = view.window(id)?;
+        if !w.visible || w.state == WindowState::Fullscreen {
+            return None;
+        }
+        let frame = self.displayed_frame(id, self.frame_of(w.rect?, w.state, Some(output)));
+        let b = self.policy.border_width();
+        let (width, color) = if view.focus() == Some(id) {
+            (b, self.policy.focus_border_color())
+        } else {
+            let thin =
+                crate::render::unfocused_width(b, self.policy.appearance().inactive_border_width);
+            (thin, self.policy.unfocused_border_color()?)
+        };
+        Some((crate::geometry::outset(frame, width), width, color))
+    }
+
     /// フォーカス窓が開く途中なら、その `(透明度, 拡大率)`。
     pub fn focused_open_look(&self) -> Option<(f32, f64)> {
         let view = self.core.view();

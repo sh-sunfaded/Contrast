@@ -14,16 +14,18 @@ use smithay::{
     backend::renderer::{
         Renderer,
         element::{
-            AsRenderElements, Element, Id, Kind, surface::WaylandSurfaceRenderElement,
-            texture::TextureRenderElement, utils::RescaleRenderElement,
+            AsRenderElements, Element, Id, Kind, solid::SolidColorRenderElement,
+            surface::WaylandSurfaceRenderElement, texture::TextureRenderElement,
+            utils::RescaleRenderElement,
         },
         gles::{GlesRenderer, GlesTexture},
+        utils::CommitCounter,
     },
     output::Output,
     utils::{Logical, Physical, Point, Rectangle, Scale, Transform},
 };
 
-use contrast_core::ExternalKey;
+use contrast_core::{ExternalKey, WindowId};
 
 use crate::state::Contrast;
 
@@ -97,11 +99,15 @@ struct Snapshot {
     output: Output,
     /// 出力の拡大率。
     scale: f64,
+    /// 枠の帯（物理 px。左上は窓の描画の原点からのずれ）と色。閉じる窓の絵にだけ含める（niri はタイル全体を縮める）。
+    bands: Vec<(Rectangle<i32, Physical>, [f32; 4])>,
 }
 
 /// テクスチャに描いた窓。
 struct Drawn {
     texture: GlesTexture,
+    /// 枠の帯（閉じる窓だけ。`Snapshot::bands` と同じ）。
+    bands: Vec<(Rectangle<i32, Physical>, [f32; 4])>,
     bbox: Rectangle<i32, Physical>,
     origin: Point<i32, Logical>,
     center: Point<i32, Logical>,
@@ -174,7 +180,10 @@ impl WindowAnims {
         output: &Output,
         origin: Point<i32, Logical>,
         live: impl Fn(ExternalKey) -> bool,
-    ) -> (Vec<(ExternalKey, AnimElement)>, Vec<AnimElement>) {
+    ) -> (
+        Vec<(ExternalKey, AnimElement)>,
+        Vec<crate::render::SceneElement>,
+    ) {
         let now = Instant::now();
         let make = |d: &Drawn, alpha: f32, scale: f64| -> AnimElement {
             let at: Point<i32, Physical> = (d.origin - origin).to_physical_precise_round(d.scale);
@@ -220,8 +229,31 @@ impl WindowAnims {
                     stretched(CLOSE_DURATION),
                 ));
                 let (alpha, scale) = close_look(p);
-                Some(make(d, alpha, scale))
+                // 窓の絵と、同じ中心・拡大率・透明度の枠の帯（niri は枠も含めたタイルの絵を縮める）。
+                let at: Point<i32, Physical> =
+                    (d.origin - origin).to_physical_precise_round(d.scale);
+                let center: Point<i32, Physical> =
+                    (d.center - origin).to_physical_precise_round(d.scale);
+                let mut out = vec![crate::render::SceneElement::Anim(make(d, alpha, scale))];
+                out.extend(d.bands.iter().map(|(r, color)| {
+                    let mut c = crate::render::premultiplied(*color);
+                    c.iter_mut().for_each(|v| *v *= alpha);
+                    let solid = SolidColorRenderElement::new(
+                        Id::new(),
+                        Rectangle::new(at + r.loc, r.size),
+                        CommitCounter::default(),
+                        c,
+                        Kind::Unspecified,
+                    );
+                    crate::render::SceneElement::AnimBand(RescaleRenderElement::from_element(
+                        solid,
+                        center,
+                        Scale::from(scale),
+                    ))
+                }));
+                Some(out)
             })
+            .flatten()
             .collect();
         (opening, closing)
     }
@@ -241,6 +273,26 @@ fn window_elements(
         Scale::from(scale),
         1.0,
     )
+}
+
+/// 枠の矩形 `outer`（全体の論理座標、太さ `width`）の 4 本の帯を、窓の描画の原点 `origin` からの物理座標にする。
+fn band_rects(
+    outer: contrast_core::Rect,
+    width: i32,
+    origin: Point<i32, Logical>,
+    scale: f64,
+) -> Vec<Rectangle<i32, Physical>> {
+    crate::render::edges(outer, width)
+        .into_iter()
+        .flatten()
+        .map(|(x, y, w, h)| {
+            let loc = Point::<i32, Logical>::from((x - origin.x, y - origin.y))
+                .to_physical_precise_round(scale);
+            let size =
+                smithay::utils::Size::<i32, Logical>::from((w, h)).to_physical_precise_round(scale);
+            Rectangle::new(loc, size)
+        })
+        .collect()
 }
 
 /// 要素を囲む矩形（物理）。要素が無ければ `None`。
@@ -264,18 +316,18 @@ impl Contrast {
         let enabled = self.policy.layout_settings().animation_ms != 0;
         let now = Instant::now();
         let view = self.core.view();
-        let visible: Vec<(ExternalKey, smithay::desktop::Window, Output)> = view
+        let visible: Vec<(ExternalKey, smithay::desktop::Window, Output, WindowId)> = view
             .visible_windows()
             .iter()
             .filter_map(|w| {
                 let key = view.window_key(w.id)?;
                 let window = self.shell.windows.get(&key)?.clone();
                 let output = self.output_of_window(w.id)?;
-                Some((key, window, output))
+                Some((key, window, output, w.id))
             })
             .collect();
         let mut last = BTreeMap::new();
-        for (key, window, output) in visible {
+        for (key, window, output, w_id) in visible {
             let Some(location) = self.space.element_location(&window) else {
                 continue;
             };
@@ -289,6 +341,15 @@ impl Contrast {
             // テクスチャの左上を原点にした要素。
             let elements =
                 window_elements(&window, renderer, Point::from((0, 0)) - bbox.loc, scale);
+            let bands: Vec<_> = self
+                .window_border(w_id, &output)
+                .map(|(outer, width, color)| {
+                    band_rects(outer, width, origin, scale)
+                        .into_iter()
+                        .map(|r| (r, color))
+                        .collect()
+                })
+                .unwrap_or_default();
             let geo = window.geometry();
             let center = location + Point::from((geo.size.w / 2, geo.size.h / 2));
             if self.window_anims.seen.insert(key) && enabled {
@@ -303,6 +364,7 @@ impl Contrast {
                     center,
                     output,
                     scale,
+                    bands,
                 },
             );
         }
@@ -314,7 +376,7 @@ impl Contrast {
             .opening
             .retain(|_, (started, _)| now.duration_since(*started) < stretched(OPEN_DURATION));
         for (key, (_, drawn)) in &mut anims.opening {
-            *drawn = anims.last.get(key).and_then(|s| draw(renderer, s));
+            *drawn = anims.last.get(key).and_then(|s| draw(renderer, s, false));
         }
         // 閉じる窓: 最初の 1 回だけテクスチャに描き、要素は捨てる。
         anims
@@ -322,7 +384,7 @@ impl Contrast {
             .retain(|c| now.duration_since(c.started) < stretched(CLOSE_DURATION));
         for c in &mut anims.closing {
             if let Some(snapshot) = c.snapshot.take() {
-                c.drawn = draw(renderer, &snapshot);
+                c.drawn = draw(renderer, &snapshot, true);
             }
         }
     }
@@ -366,8 +428,8 @@ impl Contrast {
     }
 }
 
-/// 窓の絵をテクスチャに描く。失敗したら警告して `None`。
-fn draw(renderer: &mut GlesRenderer, s: &Snapshot) -> Option<Drawn> {
+/// 窓の絵をテクスチャに描く（枠は含めない）。失敗したら警告して `None`。
+fn draw(renderer: &mut GlesRenderer, s: &Snapshot, with_bands: bool) -> Option<Drawn> {
     match crate::render::offscreen::render_to_texture(
         renderer,
         s.bbox.size,
@@ -378,6 +440,11 @@ fn draw(renderer: &mut GlesRenderer, s: &Snapshot) -> Option<Drawn> {
         Ok(texture) => Some(Drawn {
             texture,
             bbox: s.bbox,
+            bands: if with_bands {
+                s.bands.clone()
+            } else {
+                Vec::new()
+            },
             origin: s.origin,
             center: s.center,
             output: s.output.clone(),
@@ -412,6 +479,25 @@ mod tests {
         let (a, s) = close_look(1.0);
         assert_eq!(a, 0.0);
         assert!((s - 0.8).abs() < 1e-12);
+    }
+
+    #[test]
+    fn a_border_is_four_bands_around_the_window_relative_to_its_origin() {
+        // 窓の枠 (10,20) から 100x50、太さ 4。窓の描画の原点は (6,16)、拡大率 1。
+        let outer = contrast_core::Rect::new(10, 20, 100, 50).expect("rect");
+        let got = band_rects(outer, 4, Point::from((6, 16)), 1.0);
+        let at = |x, y, w, h| Rectangle::<i32, Physical>::new(Point::from((x, y)), (w, h).into());
+        assert_eq!(
+            got,
+            [
+                at(4, 4, 100, 4),
+                at(4, 50, 100, 4),
+                at(4, 8, 4, 42),
+                at(100, 8, 4, 42)
+            ]
+        );
+        // 太さが 0 なら帯は無い。
+        assert!(band_rects(outer, 0, Point::from((0, 0)), 1.0).is_empty());
     }
 
     #[test]

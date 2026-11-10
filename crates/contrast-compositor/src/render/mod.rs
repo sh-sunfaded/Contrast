@@ -84,6 +84,8 @@ render_elements! {
     Pixel=PixelShaderElement,
     /// 開く・閉じる途中の窓（オフスクリーンのテクスチャを拡大・半透明にしたもの）。
     Anim=crate::window_anim::AnimElement,
+    /// 閉じる途中の窓の枠の帯（窓の絵と同じ中心・拡大率）。
+    AnimBand=smithay::backend::renderer::element::utils::RescaleRenderElement<SolidColorRenderElement>,
     /// オーバービューで、ワークスペースの範囲に切り抜いた窓・レイヤー面。
     CroppedSurface=CropRenderElement<RescaleRenderElement<WaylandSurfaceRenderElement<GlesRenderer>>>,
     /// スクリーンショットの UI で止めた出力の絵。
@@ -228,7 +230,7 @@ pub fn scene_elements(
             .window_anims
             .elements(renderer, output, origin, |k| shell_windows.contains_key(&k))
     };
-    elements.extend(closing.into_iter().map(SceneElement::Anim));
+    elements.extend(closing);
     let replaced: Vec<contrast_core::ExternalKey> = opening.iter().map(|(k, _)| *k).collect();
     elements.extend(opening.into_iter().map(|(_, e)| SceneElement::Anim(e)));
     // この出力に表示中の窓だけを、上に描かれるものから（Space の重なりの順）。
@@ -443,7 +445,7 @@ pub fn finish_frame(state: &mut Contrast, outputs: &[Output]) {
 type Band = (i32, i32, i32, i32);
 
 /// タイルの縁（窓とタイルの間の余白）を埋める 4 本の帯（上・下・左・右）。太さが足りなければ `None`。
-fn edges(tile: contrast_core::Rect, b: i32) -> Option<[Band; 4]> {
+pub(crate) fn edges(tile: contrast_core::Rect, b: i32) -> Option<[Band; 4]> {
     if b <= 0 || tile.width() <= b * 2 || tile.height() <= b * 2 {
         return None;
     }
@@ -462,7 +464,7 @@ fn logical(x: i32, y: i32, w: i32, h: i32) -> Rectangle<i32, Logical> {
 }
 
 /// 色をプリマルチプライドのアルファにする。
-fn premultiplied(c: [f32; 4]) -> [f32; 4] {
+pub(crate) fn premultiplied(c: [f32; 4]) -> [f32; 4] {
     [c[0] * c[3], c[1] * c[3], c[2] * c[3], c[3]]
 }
 
@@ -569,7 +571,7 @@ fn shadow_elements(
 }
 
 /// フォーカス外の枠の太さ。未指定は `border`、指定は 0〜`border` に収める。
-fn unfocused_width(border: i32, inactive: Option<i32>) -> i32 {
+pub(crate) fn unfocused_width(border: i32, inactive: Option<i32>) -> i32 {
     inactive.map_or(border, |w| w.clamp(0, border.max(0)))
 }
 
