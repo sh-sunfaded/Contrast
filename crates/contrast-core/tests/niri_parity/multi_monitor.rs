@@ -716,8 +716,7 @@ impl Model {
             ws: moved,
             active,
         });
-        // D74: どの列も、命令の最後に末尾の空を補う（niri は出力の追加で元の出力の列を補わないことがある。D84 の差）。
-        self.ensure_trailing();
+        // D74・D84: 出力の追加では、元の出力の列に末尾の空を補わない（niri の `add_output`）。次の命令の最後に補う。
     }
 
     fn remove_output(&mut self, output: usize) {
@@ -1072,6 +1071,10 @@ proptest! {
                         act(&mut c, Action::FocusDirection(d));
                     }
                 }
+            }
+            // D74・D84: 末尾の空は、`OutputAdded` 以外の命令の最後に補う（`OutputAdded` の補充は次の命令まで延ばす）。
+            if !matches!(op, Op::Add(_)) {
+                m.ensure_trailing();
             }
             prop_assert_eq!(observed(&c), expected(&m));
             let want_active = m.mons.get(m.active).map(|mon| mon.output);
