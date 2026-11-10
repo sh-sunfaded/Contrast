@@ -445,7 +445,9 @@ impl Contrast {
             let mut meta = read_meta(&window);
             meta.requested_size = contrast_core::Size::new(size.w, size.h);
             tracing::info!(app_id = ?meta.app_id, w = size.w, h = size.h, "window chose its width (default-column-width {{}})");
-            self.window_mapped(window, meta);
+            if let Some(key) = self.window_mapped(window, meta) {
+                self.fit_column_to_window_width(key, size.w);
+            }
             return;
         }
         let Some(index) = self
@@ -489,7 +491,7 @@ impl Contrast {
     }
 
     /// 窓を core に登録する。ポリシーが「開いた直後に全画面」を求めていれば、配置のあとに全画面にする。
-    fn window_mapped(&mut self, window: Window, meta: WindowMeta) {
+    fn window_mapped(&mut self, window: Window, meta: WindowMeta) -> Option<ExternalKey> {
         let key = self.shell.issue_key();
         self.shell.windows.insert(key, window);
         // core の配置（`PortPlacement`）と同じ問い合わせ。フックは純粋なので、答えは同じになる。
@@ -500,7 +502,7 @@ impl Contrast {
         if !self.submit(Command::WindowMapped { key, meta }) {
             // core に登録できなかった窓は管理しない（docs/questions.md Q9）。
             self.shell.windows.remove(&key);
-            return;
+            return None;
         }
         if want_fullscreen {
             match fullscreen_command(&self.core.view(), key) {
@@ -512,6 +514,39 @@ impl Contrast {
                     "open-fullscreen ignored: the window did not get the focus (focus=false or hidden workspace)"
                 ),
             }
+        }
+        Some(key)
+    }
+
+    /// 窓に決めさせた列（`default-column-width {}`）の幅を、フレーム（隙間と外側の隙間を引いた矩形）の幅が `want` になるよう直す。
+    /// core の列の幅は隙間を含む（`PortPlacement` は `want + gap` を渡す）が、画面の端の列は外側の隙間が `gap / 2` と違うので、
+    /// 位置が決まったあとで、実際のフレームとの差だけ列の幅を直す（niri の列の幅は隙間を含まない）。フォーカス列にだけ効く。
+    fn fit_column_to_window_width(&mut self, key: ExternalKey, want: i32) {
+        // 幅を変えると端の判定が変わりうるので、2 回まで。
+        for _ in 0..2 {
+            let view = self.core.view();
+            let Some(id) = view.window_id(key) else {
+                return;
+            };
+            let Some(w) = view.window(id) else {
+                return;
+            };
+            let (Some(tile), true) = (
+                w.rect,
+                w.state == WindowState::Tiled && view.focus() == Some(id),
+            ) else {
+                return;
+            };
+            let output = self.output_of_window(id);
+            let delta = self.frame_of(tile, w.state, output.as_ref()).width() - want;
+            let Some(width) = contrast_core::ColumnWidth::fixed(tile.width().saturating_sub(delta))
+            else {
+                return;
+            };
+            if delta == 0 {
+                return;
+            }
+            self.core_action(contrast_core::Action::SetColumnWidth(width));
         }
     }
 
