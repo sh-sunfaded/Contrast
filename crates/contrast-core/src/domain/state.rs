@@ -54,6 +54,8 @@ pub struct State {
     pub primary_output: Option<OutputId>,
     /// 出力の名前ごとの、最後に表示していたワークスペース（`Dynamic` のみ。D76・D77）。
     pub last_shown: BTreeMap<OutputName, WorkspaceId>,
+    /// 直前の命令が `OutputAdded` で、末尾の空の補充（D74）を次の命令まで延ばしている（D84。niri の `add_output`）。
+    pub trailing_deferred: bool,
 }
 
 /// `Dynamic` のワークスペースの個数の上限（`WorkspaceIndex` が `u8` なので）。
@@ -81,6 +83,7 @@ impl State {
             active_output: None,
             primary_output: None,
             last_shown: BTreeMap::new(),
+            trailing_deferred: false,
         }
     }
 
@@ -288,24 +291,32 @@ impl State {
     /// D64（`Dynamic`）: どの列も、末尾のワークスペースが空でなければ、新しい空を足す。
     /// 出力が 0 台なら、持ち主の無い列について同じことをする。
     pub fn ensure_trailing_empty(&mut self) {
+        for owner in self.owners_lacking_trailing_empty() {
+            self.append_empty_workspace(owner);
+        }
+    }
+
+    /// 末尾が空でない（または空っぽの）列の持ち主（`Dynamic` のときだけ。D64）。
+    #[must_use]
+    pub fn owners_lacking_trailing_empty(&self) -> Vec<Option<OutputId>> {
         if !self.is_dynamic() {
-            return;
+            return Vec::new();
         }
         let owners: Vec<Option<OutputId>> = if self.outputs.is_empty() {
             alloc::vec![None]
         } else {
             self.outputs.keys().copied().map(Some).collect()
         };
-        for owner in owners {
-            let last_is_empty = self
-                .list_of(owner)
-                .last()
-                .and_then(|id| self.workspace(*id))
-                .is_some_and(|ws| ws.windows.is_empty());
-            if !last_is_empty {
-                self.append_empty_workspace(owner);
-            }
-        }
+        owners
+            .into_iter()
+            .filter(|owner| {
+                !self
+                    .list_of(*owner)
+                    .last()
+                    .and_then(|id| self.workspace(*id))
+                    .is_some_and(|ws| ws.windows.is_empty())
+            })
+            .collect()
     }
 
     /// D65・D74（`Dynamic`）: 持ち主 `owner` の列で、末尾以外の、窓が無く表示されていないワークスペースを消す。

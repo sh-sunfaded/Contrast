@@ -101,7 +101,8 @@ fn check_i12(state: &State) -> Result<(), InvariantViolation> {
             return Err(InvariantViolation::I12(pos(state, ws.id)));
         }
     }
-    if state.is_dynamic() {
+    // D84: `OutputAdded` の直後は、元の出力の列の末尾の空の補充を次の命令まで延ばす（niri の `add_output`）。
+    if state.is_dynamic() && !state.trailing_deferred {
         let at_limit = state.workspaces.len() >= crate::domain::state::MAX_DYNAMIC_WORKSPACES;
         let owners: Vec<Option<OutputId>> = if state.outputs.is_empty() {
             alloc::vec![None]

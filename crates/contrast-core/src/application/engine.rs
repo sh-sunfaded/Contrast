@@ -152,9 +152,14 @@ impl<P: Policy, L: Layout> Core<P, L> {
     /// 仕様 6 節の `CoreError`。Err のとき状態は変わらない（I7）。
     pub fn apply(&mut self, command: Command) -> Result<Applied, CoreError> {
         let mut next = self.state.clone();
+        // D74・D84: 出力の追加は、元の出力の列に末尾の空を補わない（niri の `add_output`）。次の命令の最後に補う。
+        let adds_output = matches!(command, Command::OutputAdded { .. });
         let from_handler = handlers::dispatch(&mut next, &self.policy, command)?;
         // D64: `Dynamic` では、末尾のワークスペースを常に空にする。
-        next.ensure_trailing_empty();
+        if !adds_output {
+            next.ensure_trailing_empty();
+        }
+        next.trailing_deferred = adds_output && !next.owners_lacking_trailing_empty().is_empty();
         if next.layout.mode == LayoutMode::Scrolling {
             scrolling::sync(&mut next);
         }
