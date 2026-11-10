@@ -133,6 +133,10 @@ fn within_capture_button(scale: f64, panel: (i32, i32), pos: (i32, i32)) -> bool
     dx * dx + dy * dy <= radius * radius
 }
 
+/// 出力の中の論理座標のポインタの位置から、そのときのカーソルの描画要素を作るもの（バックエンドが持つテーマを使う）。
+pub type CursorSource<'a> =
+    dyn FnMut(&mut GlesRenderer, Point<f64, Logical>) -> Vec<SceneElement> + 'a;
+
 /// UI の状態（閉じているときは、前回の選択だけを覚える）。
 #[derive(Default)]
 pub struct ScreenshotUiState {
@@ -166,7 +170,7 @@ impl Contrast {
     pub fn process_screenshot_ui(
         &mut self,
         renderer: &mut GlesRenderer,
-        cursor: &mut dyn FnMut(&mut GlesRenderer, Point<f64, Logical>) -> Vec<SceneElement>,
+        cursor: &mut CursorSource,
     ) {
         if std::mem::take(&mut self.screenshot_ui.requested) && !self.screenshot_ui.is_open() {
             self.open_screenshot_ui(renderer, cursor);
@@ -182,11 +186,7 @@ impl Contrast {
     }
 
     /// 出力ごとの今の絵を止めて、UI を開く。既定の出力は、ポインタのある出力、なければアクティブな出力。
-    fn open_screenshot_ui(
-        &mut self,
-        renderer: &mut GlesRenderer,
-        cursor: &mut dyn FnMut(&mut GlesRenderer, Point<f64, Logical>) -> Vec<SceneElement>,
-    ) {
+    fn open_screenshot_ui(&mut self, renderer: &mut GlesRenderer, cursor: &mut CursorSource) {
         let outputs: Vec<Output> = self.shell.outputs.values().cloned().collect();
         let mut frozen = BTreeMap::new();
         let mut pointers = BTreeMap::new();
