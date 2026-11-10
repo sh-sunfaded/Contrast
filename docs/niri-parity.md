@@ -148,3 +148,10 @@ niri の設定の既定値は niri の既定（wiki / パッケージの既定�
 | XWayland（xwayland-satellite を必要になったときに起動） | ○ niri と同じ方式、`DISPLAY` を子に渡す | — |
 | マウスの既定値（`mouse {}`） | ○ | — |
 | 出力の自動スケール | △ 計算だけ（ログに出す）。描画は拡大率 1 | fractional scale の描画とプロトコル |
+
+## niri-portal（proto/niri-portal）で足したもの
+
+| niri の機能 | Contrast の今 | 差 |
+|---|---|---|
+| 起動時に環境を D-Bus の起動用の環境へ渡す（`import_environment` の `dbus-update-activation-environment`。`WAYLAND_DISPLAY` `DISPLAY` `XDG_CURRENT_DESKTOP` `XDG_SESSION_TYPE` `NIRI_SOCKET`） | ○ DRM のとき、Wayland のソケットと IPC・XWayland の後、`Startup` の前に一度だけ（`DBUS_SESSION_BUS_ADDRESS` のバス）。失敗は警告で、起動は続く。待ちは 5 秒まで | niri の `--session` に当たる DRM のときだけ。winit（ホストの中）では渡さない。`XDG_*` の値は `Environment` > コンポジタの環境 |
+| `systemctl --user import-environment` | × 実装しない | ホストの niri と同じ systemd --user を共有し、`WAYLAND_DISPLAY` などを上書きしてホストを壊すため |

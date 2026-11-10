@@ -13,7 +13,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use contrast_policy::CursorSettings;
 
@@ -215,7 +215,130 @@ fn attach_log(child: &mut Child, dir: &Path, name: &str, pid: u32) -> Option<Pat
     }
 }
 
+/// D-Bus の起動用の環境へ渡す変数の名前。niri の `import_environment`（`src/main.rs`）と同じ 5 個。
+const ACTIVATION_VARS: [&str; 5] = [
+    "WAYLAND_DISPLAY",
+    "DISPLAY",
+    "XDG_CURRENT_DESKTOP",
+    "XDG_SESSION_TYPE",
+    "NIRI_SOCKET",
+];
+
+/// `dbus-update-activation-environment` の終了を待つ上限。バスが応答しないときに起動を止めないため。
+const ACTIVATION_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// D-Bus の起動用の環境へ渡す `名前=値` の組（`ACTIVATION_VARS` の順）。値が無い変数は含めない。
+///
+/// 値は、`Startup` の子が見るものと同じ。`WAYLAND_DISPLAY` はこのコンポジタのソケット、`DISPLAY` は XWayland、
+/// `NIRI_SOCKET` は IPC のソケット（それぞれ無ければ渡さない）。`XDG_*` は `Environment`（後の指定が勝つ）、
+/// 無ければコンポジタ自身の環境（`inherited`）。
+pub(crate) fn activation_environment(
+    socket: &OsStr,
+    display: Option<&str>,
+    niri_socket: Option<&Path>,
+    environment: &[(String, String)],
+    inherited: impl Fn(&str) -> Option<String>,
+) -> Vec<(String, String)> {
+    let configured = |name: &str| {
+        environment
+            .iter()
+            .rev()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.clone())
+    };
+    ACTIVATION_VARS
+        .iter()
+        .filter_map(|&name| {
+            let value = match name {
+                "WAYLAND_DISPLAY" => Some(socket.to_string_lossy().into_owned()),
+                "DISPLAY" => display.map(str::to_owned),
+                "NIRI_SOCKET" => niri_socket.map(|p| p.to_string_lossy().into_owned()),
+                _ => configured(name).or_else(|| inherited(name)),
+            };
+            value
+                .filter(|v| !v.is_empty())
+                .map(|v| (name.to_owned(), v))
+        })
+        .collect()
+}
+
+/// `program` を `NAME=VALUE ...` で呼んで、`bus_address` のバスの起動用の環境を更新する（待つ）。
+/// 開発シェルの変数（`scrub`）は子に渡さない。起動できない・失敗する・`timeout` を過ぎるときは `Err`。
+pub(crate) fn update_activation_environment(
+    program: &str,
+    bus_address: &OsStr,
+    variables: &[(String, String)],
+    scrub: &[&str],
+    timeout: Duration,
+) -> io::Result<()> {
+    let mut cmd = Command::new(program);
+    cmd.stdin(Stdio::null());
+    for name in scrub {
+        cmd.env_remove(name);
+    }
+    cmd.env("DBUS_SESSION_BUS_ADDRESS", bus_address);
+    for (name, value) in variables {
+        cmd.arg(format!("{name}={value}"));
+    }
+    let mut child = cmd.spawn()?;
+    let deadline = Instant::now() + timeout;
+    loop {
+        if let Some(status) = child.try_wait()? {
+            return if status.success() {
+                Ok(())
+            } else {
+                Err(io::Error::other(format!("{program} exited with {status}")))
+            };
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(io::Error::other(format!(
+                "{program} did not finish in {}s",
+                timeout.as_secs()
+            )));
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
 impl Contrast {
+    /// niri の `import_environment` のうち D-Bus の部分。`DBUS_SESSION_BUS_ADDRESS` のバスの起動用の環境に
+    /// `ACTIVATION_VARS` を渡す。Wayland のソケットができたあと、`Startup` の前に一度だけ呼ぶ。
+    /// 失敗しても起動は続ける（警告だけ）。`systemctl --user import-environment` は呼ばない
+    /// （ホストの niri と同じ systemd --user を共有するため）。
+    pub(crate) fn import_activation_environment(&self) {
+        let Some(address) = std::env::var_os("DBUS_SESSION_BUS_ADDRESS").filter(|a| !a.is_empty())
+        else {
+            tracing::warn!(
+                "dbus: DBUS_SESSION_BUS_ADDRESS is not set; activation environment not updated"
+            );
+            return;
+        };
+        let display = self.xwayland.as_ref().map(|x| x.display_name.as_str());
+        let variables = activation_environment(
+            &self.socket_name,
+            display,
+            self.ipc_socket.as_deref(),
+            &self.policy.environment(),
+            |name| std::env::var(name).ok(),
+        );
+        let scrub = devshell_vars(std::env::var_os("IN_NIX_SHELL").is_some());
+        let names: Vec<_> = variables.iter().map(|(k, _)| k.as_str()).collect();
+        match update_activation_environment(
+            "dbus-update-activation-environment",
+            &address,
+            &variables,
+            scrub,
+            ACTIVATION_TIMEOUT,
+        ) {
+            Ok(()) => tracing::info!(?names, "dbus: activation environment updated"),
+            Err(err) => {
+                tracing::warn!(%err, ?names, "dbus: cannot update the activation environment")
+            }
+        }
+    }
+
     /// `command` をこのコンポジタのソケットにつないで起動する。失敗はログに出すだけ。`kind` はログ用の起動元。
     /// `niri_ipc` なら、niri 互換の IPC のソケットのパスを `NIRI_SOCKET` で渡す（IPC が無ければ渡せない）。
     pub(crate) fn spawn_command(&self, command: &str, kind: &'static str, niri_ipc: bool) {
@@ -593,6 +716,179 @@ mod tests {
         );
         assert!(path.starts_with(&dir));
         assert!(path.to_string_lossy().ends_with(&format!("-{pid}.log")));
+    }
+
+    fn pair(k: &str, v: &str) -> (String, String) {
+        (k.to_owned(), v.to_owned())
+    }
+
+    #[test]
+    fn activation_environment_uses_what_startup_children_see() {
+        let environment = vec![
+            pair("XDG_CURRENT_DESKTOP", "first"),
+            pair("XDG_CURRENT_DESKTOP", "niri"),
+        ];
+        let got = activation_environment(
+            OsStr::new("wayland-7"),
+            Some(":3"),
+            Some(Path::new("/run/user/1/contrast.sock")),
+            &environment,
+            |name| (name == "XDG_SESSION_TYPE").then(|| "tty".to_owned()),
+        );
+        assert_eq!(
+            got,
+            [
+                pair("WAYLAND_DISPLAY", "wayland-7"),
+                pair("DISPLAY", ":3"),
+                pair("XDG_CURRENT_DESKTOP", "niri"),
+                pair("XDG_SESSION_TYPE", "tty"),
+                pair("NIRI_SOCKET", "/run/user/1/contrast.sock"),
+            ]
+        );
+    }
+
+    #[test]
+    fn activation_environment_skips_what_has_no_value() {
+        let got = activation_environment(OsStr::new("w"), None, None, &[], |_| Some(String::new()));
+        assert_eq!(got, [pair("WAYLAND_DISPLAY", "w")]);
+    }
+
+    #[test]
+    fn update_activation_environment_reports_failures() {
+        let t = Duration::from_secs(5);
+        let addr = OsStr::new("unix:path=/nonexistent");
+        assert!(update_activation_environment("/nonexistent/prog", addr, &[], &[], t).is_err());
+        assert!(update_activation_environment("false", addr, &[], &[], t).is_err());
+        assert!(update_activation_environment("true", addr, &[], &[], t).is_ok());
+    }
+
+    #[test]
+    fn update_activation_environment_gives_up_after_the_timeout() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = temp_dir("slow-updater");
+        let script = dir.join("slow.sh");
+        std::fs::write(&script, "#!/bin/sh\nexec sleep 30\n").expect("write");
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+        let started = Instant::now();
+        let result = update_activation_environment(
+            script.to_str().expect("utf8"),
+            OsStr::new("unix:path=/nonexistent"),
+            &[],
+            &[],
+            Duration::from_millis(200),
+        );
+        assert!(result.is_err());
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    /// サービスを起動しない設定の専用 dbus-daemon（テスト用のサービス 1 個だけ。ホストのサービスは見ない）で、
+    /// 更新の前は起動されたプロセスに `WAYLAND_DISPLAY` が無く、更新の後は有ることを確かめる。
+    /// dbus-daemon・dbus-send・dbus-update-activation-environment が無い環境では何もしない。
+    #[test]
+    fn update_activation_environment_reaches_services_started_by_a_private_bus() {
+        use std::os::unix::fs::PermissionsExt;
+        let on_path = |p: &str| {
+            Command::new(p)
+                .arg("--version")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .is_ok()
+        };
+        if !(on_path("dbus-daemon")
+            && on_path("dbus-send")
+            && on_path("dbus-update-activation-environment"))
+        {
+            eprintln!("skipped: dbus tools are not installed");
+            return;
+        }
+        let dir = temp_dir("private-bus");
+        let services = dir.join("services");
+        std::fs::create_dir_all(&services).expect("services dir");
+        let probe = dir.join("probe.sh");
+        let out = dir.join("out.txt");
+        std::fs::write(
+            &probe,
+            format!("#!/bin/sh\nprintf 'WD=%s DISPLAY=%s\\n' \"$WAYLAND_DISPLAY\" \"$DISPLAY\" >> {}\nsleep 1\n", out.display()),
+        )
+        .expect("probe");
+        std::fs::set_permissions(&probe, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+        std::fs::write(
+            services.join("probe-before.service"),
+            format!(
+                "[D-BUS Service]\nName=org.contrast.ProbeBefore\nExec={}\n",
+                probe.display()
+            ),
+        )
+        .expect("service");
+        std::fs::write(
+            services.join("probe-after.service"),
+            format!(
+                "[D-BUS Service]\nName=org.contrast.ProbeAfter\nExec={}\n",
+                probe.display()
+            ),
+        )
+        .expect("service");
+        let conf = dir.join("bus.conf");
+        std::fs::write(
+            &conf,
+            format!(
+                "<busconfig><type>session</type><listen>unix:path={}/bus</listen><auth>EXTERNAL</auth>\
+                 <servicedir>{}</servicedir>\
+                 <policy context=\"default\"><allow send_destination=\"*\" eavesdrop=\"true\"/>\
+                 <allow eavesdrop=\"true\"/><allow own=\"*\"/></policy></busconfig>",
+                dir.display(),
+                services.display()
+            ),
+        )
+        .expect("conf");
+        let mut daemon = Command::new("dbus-daemon")
+            .arg(format!("--config-file={}", conf.display()))
+            .args(["--nofork", "--print-address=1"])
+            .env_clear()
+            .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect("dbus-daemon");
+        let mut address = String::new();
+        io::BufRead::read_line(
+            &mut io::BufReader::new(daemon.stdout.take().expect("stdout")),
+            &mut address,
+        )
+        .expect("address");
+        let address = address.trim().to_owned();
+        let activate = |name: &str| {
+            let _ = Command::new("dbus-send")
+                .env("DBUS_SESSION_BUS_ADDRESS", &address)
+                .args([
+                    "--session",
+                    "--print-reply",
+                    "--reply-timeout=3000",
+                    &format!("--dest=org.contrast.{name}"),
+                    "/",
+                    "org.freedesktop.DBus.Peer.Ping",
+                ])
+                .output();
+        };
+        activate("ProbeBefore");
+        let result = update_activation_environment(
+            "dbus-update-activation-environment",
+            OsStr::new(&address),
+            &[pair("WAYLAND_DISPLAY", "wayland-test-9")],
+            &[],
+            Duration::from_secs(5),
+        );
+        activate("ProbeAfter");
+        let _ = daemon.kill();
+        let _ = daemon.wait();
+        assert!(result.is_ok(), "{result:?}");
+        let text = std::fs::read_to_string(&out).unwrap_or_default();
+        let lines: Vec<_> = text.lines().collect();
+        assert_eq!(
+            lines,
+            ["WD= DISPLAY=", "WD=wayland-test-9 DISPLAY="],
+            "{text:?}"
+        );
     }
 
     #[test]

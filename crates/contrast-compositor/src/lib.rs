@@ -111,6 +111,12 @@ pub fn run(store: Rc<ConfigStore>, source: ConfigSource) -> Result<(), Box<dyn s
     // XWayland（niri と同じく、X のクライアントが来たら xwayland-satellite を起動する）。Startup の前に DISPLAY を決める。
     state.setup_xwayland(&event_loop.handle());
 
+    // niri の `--session`（tty から起動）に当たる DRM のときだけ、子（D-Bus の起動で立ち上がるポータルなど）が
+    // 新しいソケットにつながるよう、D-Bus の起動用の環境へ渡す。winit（ホストの中）では、ホストのバスを書き換えないよう渡さない。
+    if matches!(kind, backend::Kind::Drm) {
+        state.import_activation_environment();
+    }
+
     // Wayland のソケットを公開したので、`Startup` のコマンドを起動する（起動時に一度だけ。リロードでは再実行しない）。
     state.run_startup();
 
