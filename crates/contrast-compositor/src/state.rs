@@ -59,6 +59,10 @@ pub struct Contrast {
     pub ipc_socket: Option<std::path::PathBuf>,
     /// niri 互換の IPC のサーバー（起動していなければ `None`）。`Drop` でソケットを消す。
     pub(crate) ipc: Option<crate::ipc::IpcServer>,
+    /// 窓がフォーカスを得た時刻（IPC の `focus_timestamp`。窓の id から）。
+    pub(crate) ipc_focus_times: std::collections::BTreeMap<u64, crate::ipc::Timestamp>,
+    /// IPC で最後に見たフォーカスの窓。
+    pub(crate) ipc_last_focus: Option<u64>,
     /// Display のハンドル。
     pub display_handle: DisplayHandle,
     /// 窓と出力を置く 2 次元平面。
@@ -222,6 +226,8 @@ impl Contrast {
             socket_name,
             ipc_socket: None,
             ipc: None,
+            ipc_focus_times: Default::default(),
+            ipc_last_focus: None,
             display_handle: dh,
             space: Space::default(),
             loop_signal: event_loop.get_signal(),

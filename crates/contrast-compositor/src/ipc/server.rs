@@ -19,9 +19,10 @@ use std::rc::Rc;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction, generic::Generic};
 
 use super::protocol::{
-    self, Event, NAMES_UNSUPPORTED, NOT_FOUND, Reply, Request, Response, UNSUPPORTED, Workspace,
+    self, Event, KeyboardLayouts, LayerSurface, NAMES_UNSUPPORTED, NOT_FOUND, Output, Overview,
+    Reply, Request, Response, UNSUPPORTED, Workspace,
 };
-use super::state::diff;
+use super::state::{Extra, diff, diff_extra};
 
 /// 書き込み待ちのメッセージの上限。超えた接続は切る。
 const MAX_QUEUED: usize = 64;
@@ -34,6 +35,26 @@ pub(crate) trait Host {
     fn ipc_workspaces(&self) -> Vec<Workspace>;
     /// 0 始まりの位置のワークスペースに切り替える。
     fn ipc_focus(&mut self, index: u8);
+    /// 窓・キーボードの配列・オーバービューの状態。
+    fn ipc_extra(&mut self) -> Extra {
+        Extra::default()
+    }
+    /// 出力の一覧（名前順）。
+    fn ipc_outputs(&self) -> Vec<Output> {
+        Vec::new()
+    }
+    /// フォーカス中の出力（アクティブな出力）の名前。
+    fn ipc_focused_output(&self) -> Option<String> {
+        None
+    }
+    /// レイヤー面の一覧。
+    fn ipc_layers(&self) -> Vec<LayerSurface> {
+        Vec::new()
+    }
+    /// バージョンの文字列。
+    fn ipc_version(&self) -> String {
+        String::new()
+    }
 }
 
 /// 接続 1 つの書き込み側。
@@ -82,6 +103,10 @@ struct Shared {
     next_id: u64,
     /// 購読者に最後に伝えた一覧（差分の元）。
     last: Vec<Workspace>,
+    /// 購読者に最後に伝えた、窓・キーボード・オーバービューの状態。
+    last_extra: Extra,
+    /// 設定を読み込んだことがあれば、その失敗の有無（購読の最初に `ConfigLoaded` で伝える）。
+    config_failed: Option<bool>,
 }
 
 impl Shared {
@@ -134,6 +159,7 @@ impl IpcServer {
         handle: &LoopHandle<'static, D>,
         dir: &Path,
         initial: Vec<Workspace>,
+        initial_extra: Extra,
     ) -> io::Result<Self> {
         let path = dir.join(format!("contrast.{}.sock", std::process::id()));
         let listener = UnixListener::bind(&path)?;
@@ -144,6 +170,8 @@ impl IpcServer {
                 clients: BTreeMap::new(),
                 next_id: 1,
                 last: initial,
+                last_extra: initial_extra,
+                config_failed: None,
             })),
         };
         std::fs::set_permissions(&server.path, std::fs::Permissions::from_mode(0o600))?;
@@ -180,13 +208,24 @@ impl IpcServer {
     }
 
     /// 状態が変わったかもしれない: 前回との差分を、購読者に送る。
-    pub(crate) fn publish(&self, new: Vec<Workspace>) {
+    pub(crate) fn publish(&self, new: Vec<Workspace>, new_extra: Extra) {
         let mut shared = self.shared.borrow_mut();
-        let events = diff(&shared.last, &new);
+        let mut events = diff(&shared.last, &new);
+        events.extend(diff_extra(&shared.last_extra, &new_extra));
         shared.last = new;
+        shared.last_extra = new_extra;
         for event in events {
             shared.broadcast(&protocol::encode_event(&event));
         }
+    }
+
+    /// 状態の差分でないイベント（`ConfigLoaded`・`ScreenshotCaptured`）を、購読者に送る。
+    pub(crate) fn publish_event(&self, event: &Event) {
+        let mut shared = self.shared.borrow_mut();
+        if let Event::ConfigLoaded { failed } = event {
+            shared.config_failed = Some(*failed);
+        }
+        shared.broadcast(&protocol::encode_event(event));
     }
 
     /// つながっている接続の数（テスト用）。
@@ -303,7 +342,25 @@ fn handle_line<D: Host>(
     let request = protocol::parse_request(line);
     // `Host` の呼び出しは、`shared` を借りる前に済ませる（切り替えは `publish` を通って借りる）。
     let reply: Reply = match &request {
-        Request::EventStream | Request::Workspaces => Ok(Response::Handled),
+        Request::EventStream
+        | Request::Workspaces
+        | Request::Version
+        | Request::Outputs
+        | Request::Windows
+        | Request::Layers
+        | Request::KeyboardLayouts
+        | Request::FocusedOutput
+        | Request::FocusedWindow
+        | Request::OverviewState
+        | Request::Casts => Ok(Response::Handled),
+        Request::FocusWorkspaceIndex(n) => match n.checked_sub(1) {
+            // `idx` は 1 始まり。フォーカス中の出力の中の位置（`SwitchWorkspace` はアクティブな出力に効く）。
+            Some(index) => {
+                host.ipc_focus(index);
+                Ok(Response::Handled)
+            }
+            None => Err(NOT_FOUND.to_owned()),
+        },
         Request::FocusWorkspaceId(n) => {
             // id は位置と無関係（動的なワークスペース）。一覧から id で探して、その位置に切り替える。
             let position = host.ipc_workspaces().iter().position(|w| w.id == *n);
@@ -324,20 +381,57 @@ fn handle_line<D: Host>(
     match request {
         Request::EventStream => {
             let fresh = host.ipc_workspaces();
+            let extra = host.ipc_extra();
             let mut s = shared.borrow_mut();
             s.last = fresh.clone();
+            s.last_extra = extra.clone();
             s.send(id, protocol::encode_reply(&reply));
+            // niri の `replicate` と同じ順: ワークスペース、窓、キーボードの配列、オーバービュー、設定、画面の共有。
             s.send(
                 id,
                 protocol::encode_event(&Event::WorkspacesChanged { workspaces: fresh }),
+            );
+            s.send(
+                id,
+                protocol::encode_event(&Event::WindowsChanged {
+                    windows: extra.windows.clone(),
+                }),
+            );
+            if let Some(keyboard_layouts) = extra.keyboard {
+                s.send(
+                    id,
+                    protocol::encode_event(&Event::KeyboardLayoutsChanged { keyboard_layouts }),
+                );
+            }
+            s.send(
+                id,
+                protocol::encode_event(&Event::OverviewOpenedOrClosed {
+                    is_open: extra.overview,
+                }),
+            );
+            if let Some(failed) = s.config_failed {
+                s.send(id, protocol::encode_event(&Event::ConfigLoaded { failed }));
+            }
+            s.send(
+                id,
+                protocol::encode_event(&Event::CastsChanged { casts: Vec::new() }),
             );
             if let Some(client) = s.clients.get_mut(&id) {
                 client.subscribed = true;
             }
             Outcome::Subscribed
         }
-        Request::Workspaces => {
-            let reply = Ok(Response::Workspaces(host.ipc_workspaces()));
+        Request::Workspaces
+        | Request::Version
+        | Request::Outputs
+        | Request::Windows
+        | Request::Layers
+        | Request::KeyboardLayouts
+        | Request::FocusedOutput
+        | Request::FocusedWindow
+        | Request::OverviewState
+        | Request::Casts => {
+            let reply = Ok(query(&request, host));
             shared.borrow_mut().send(id, protocol::encode_reply(&reply));
             Outcome::Continue
         }
@@ -345,6 +439,43 @@ fn handle_line<D: Host>(
             shared.borrow_mut().send(id, protocol::encode_reply(&reply));
             Outcome::Continue
         }
+    }
+}
+
+/// 問い合わせのリクエストへの返事。
+fn query<D: Host>(request: &Request, host: &mut D) -> Response {
+    match request {
+        Request::Version => Response::Version(host.ipc_version()),
+        Request::Outputs => Response::Outputs(
+            host.ipc_outputs()
+                .into_iter()
+                .map(|o| (o.name.clone(), o))
+                .collect(),
+        ),
+        Request::Windows => Response::Windows(host.ipc_extra().windows),
+        Request::Layers => Response::Layers(host.ipc_layers()),
+        Request::KeyboardLayouts => {
+            Response::KeyboardLayouts(host.ipc_extra().keyboard.unwrap_or(KeyboardLayouts {
+                names: Vec::new(),
+                current_idx: 0,
+            }))
+        }
+        Request::FocusedOutput => {
+            let focused = host.ipc_focused_output();
+            Response::FocusedOutput(
+                host.ipc_outputs()
+                    .into_iter()
+                    .find(|o| Some(&o.name) == focused.as_ref()),
+            )
+        }
+        Request::FocusedWindow => {
+            Response::FocusedWindow(host.ipc_extra().windows.into_iter().find(|w| w.is_focused))
+        }
+        Request::OverviewState => Response::OverviewState(Overview {
+            is_open: host.ipc_extra().overview,
+        }),
+        Request::Casts => Response::Casts(Vec::new()),
+        _ => Response::Workspaces(host.ipc_workspaces()),
     }
 }
 
@@ -410,8 +541,13 @@ mod tests {
             list: list(4, 0),
             focused: Vec::new(),
         };
-        let server = IpcServer::start(&event_loop.handle(), &dir, host.list.clone())
-            .map_err(|e| e.to_string())?;
+        let server = IpcServer::start(
+            &event_loop.handle(),
+            &dir,
+            host.list.clone(),
+            Extra::default(),
+        )
+        .map_err(|e| e.to_string())?;
         Ok(Rig {
             event_loop,
             host,
@@ -490,7 +626,7 @@ mod tests {
         // 同じパスがあれば、作らずにエラー（上書きしない）。
         let event_loop: EventLoop<'static, Fake> =
             EventLoop::try_new().map_err(|e| e.to_string())?;
-        let second = IpcServer::start(&event_loop.handle(), &r.dir, Vec::new());
+        let second = IpcServer::start(&event_loop.handle(), &r.dir, Vec::new(), Extra::default());
         assert!(second.is_err());
         assert!(path.exists(), "the first socket must survive");
         drop(second);
@@ -527,10 +663,16 @@ mod tests {
                 .is_some_and(|l| l.starts_with(r#"{"WorkspacesChanged":{"workspaces":[{"id":1,"#)),
             "{lines:?}"
         );
-        assert_eq!(lines.len(), 2);
+        // 最初の状態: 返事、ワークスペース、窓、オーバービュー、画面の共有（キーボードは偽のホストには無い）。
+        assert_eq!(lines.len(), 5, "{lines:?}");
+        assert!(
+            lines
+                .get(2)
+                .is_some_and(|l| l.starts_with(r#"{"WindowsChanged""#))
+        );
 
         // 切り替えの差分。
-        r.server.publish(list(4, 2));
+        r.server.publish(list(4, 2), Extra::default());
         let (lines, eof) = r.read_lines(&stream, 1);
         assert!(!eof);
         assert_eq!(
@@ -539,7 +681,7 @@ mod tests {
         );
 
         // 変化がなければ何も来ず、接続は開いたまま（サーバーから閉じない）。
-        r.server.publish(list(4, 2));
+        r.server.publish(list(4, 2), Extra::default());
         let (lines, eof) = r.read_lines(&stream, 1);
         assert!(lines.is_empty() && !eof, "{lines:?} eof={eof}");
         assert_eq!(r.server.client_count(), 1);
@@ -553,9 +695,9 @@ mod tests {
         (&stream)
             .write_all(b"\"EventStream\"\n")
             .map_err(|e| e.to_string())?;
-        let (lines, _) = r.read_lines(&stream, 2);
-        assert_eq!(lines.len(), 2, "{lines:?}");
-        r.server.publish(list(4, 1));
+        let (lines, _) = r.read_lines(&stream, 5);
+        assert_eq!(lines.len(), 5, "{lines:?}");
+        r.server.publish(list(4, 1), Extra::default());
         let (lines, _) = r.read_lines(&stream, 1);
         assert_eq!(
             lines,
@@ -628,7 +770,7 @@ mod tests {
             &br#"{"Action":{"FocusWorkspace":{"reference":{"Id":9}}}}"#[..],
             br#"{"Action":{"FocusWorkspace":{"reference":{"Id":0}}}}"#,
             br#"{"Action":{"FocusWorkspace":{"reference":{"Name":"web"}}}}"#,
-            br#""Version""#,
+            br#""PickWindow""#,
             b"garbage",
         ] {
             (&stream)
@@ -704,7 +846,7 @@ mod tests {
             if let Some(first) = next.first_mut() {
                 first.name = Some(format!("n{round}"));
             }
-            r.server.publish(next);
+            r.server.publish(next, Extra::default());
             let (lines, _) = r.read_lines(&fast, 1);
             drained += lines.len();
         }

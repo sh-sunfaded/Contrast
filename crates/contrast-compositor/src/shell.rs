@@ -884,7 +884,7 @@ fn stacking(state: WindowState) -> u8 {
 }
 
 /// トップレベルの app_id・title・親の有無から WindowMeta を作る。
-fn read_meta(window: &Window) -> WindowMeta {
+pub(crate) fn read_meta(window: &Window) -> WindowMeta {
     let toplevel = window.toplevel().expect("wayland toplevel");
     let (app_id, title) = with_states(toplevel.wl_surface(), |states| {
         let data = states

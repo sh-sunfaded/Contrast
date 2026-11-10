@@ -344,14 +344,19 @@ pub fn deliver(
         tracing::info!("screenshot: screenshot-path is disabled, not saving");
     }
     let home = std::env::var("HOME").ok();
+    // 保存先は、ここで決める（IPC の `ScreenshotCaptured` に載せるため。書き込みは別スレッド）。
+    let target = template.map(|t| resolve_path(&t, home.as_deref()));
+    let announced = match &target {
+        Some(Ok(path)) => Some(path.to_string_lossy().into_owned()),
+        _ => None,
+    };
+    state.ipc_event_screenshot(announced);
     let spawned = std::thread::Builder::new()
         .name("screenshot-save".into())
         .spawn(move || {
             let mut saved = None;
-            if let Some(template) = template {
-                match resolve_path(&template, home.as_deref())
-                    .and_then(|p| write_new(&p, &png).map(|()| p))
-                {
+            if let Some(target) = target {
+                match target.and_then(|p| write_new(&p, &png).map(|()| p)) {
                     Ok(path) => {
                         tracing::info!(path = %path.display(), "screenshot: saved");
                         saved = Some(path);

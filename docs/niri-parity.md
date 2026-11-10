@@ -155,3 +155,12 @@ niri の設定の既定値は niri の既定（wiki / パッケージの既定�
 |---|---|---|
 | 起動時に環境を D-Bus の起動用の環境へ渡す（`import_environment` の `dbus-update-activation-environment`。`WAYLAND_DISPLAY` `DISPLAY` `XDG_CURRENT_DESKTOP` `XDG_SESSION_TYPE` `NIRI_SOCKET`） | ○ DRM のとき、Wayland のソケットと IPC・XWayland の後、`Startup` の前に一度だけ（`DBUS_SESSION_BUS_ADDRESS` のバス）。失敗は警告で、起動は続く。待ちは 5 秒まで | niri の `--session` に当たる DRM のときだけ。winit（ホストの中）では渡さない。`XDG_*` の値は `Environment` > コンポジタの環境 |
 | `systemctl --user import-environment` | × 実装しない | ホストの niri と同じ systemd --user を共有し、`WAYLAND_DISPLAY` などを上書きしてホストを壊すため |
+
+## niri-final（proto/niri-final）で足したもの
+
+| niri の機能 | Contrast の今 | 差 |
+|---|---|---|
+| IPC の `Version`・`Outputs`・`Windows`・`FocusedWindow`・`FocusedOutput`・`Layers`・`KeyboardLayouts`・`OverviewState`・`Casts`、`FocusWorkspace` の `Index` | ○（`niri msg` の実クライアントで確認） | `serial`・`max_bpc` は `None`、`is_urgent`・`is_minimized` は false、`Casts` は常に空。`pos_in_scrolling_layout` は core が列を出さないため、タイルの矩形から数える。`FocusWorkspace` の `Name` は名前が無いのでエラー。`PickWindow`・`PickColor` は未対応 |
+| IPC のイベント（`WindowsChanged`・`WindowOpenedOrChanged`・`WindowClosed`・`WindowFocusChanged`・`WindowFocusTimestampChanged`・`WindowLayoutsChanged`・`KeyboardLayoutsChanged`・`KeyboardLayoutSwitched`・`OverviewOpenedOrClosed`・`ConfigLoaded`・`ScreenshotCaptured`・`CastsChanged`） | ○ | `WorkspaceActiveWindowChanged`・`WindowUrgencyChanged` は出さない。`ScreenshotCaptured` は保存先を決めた時点で送る（書き込みの成否は待たない） |
+| スクリーンショットの PNG の圧縮 | ○ 自前の deflate（約 9MB → 数十 KB） | niri の `png` crate より圧縮率は低い（固定ハフマン） |
+| 範囲選択 UI のポインタの絵・タッチ | ○（ポインタの絵は DRM のみ。winit はホストがカーソルを描く） | — |

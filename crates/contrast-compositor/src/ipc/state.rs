@@ -122,6 +122,88 @@ pub(crate) fn diff(old: &[Workspace], new: &[Workspace]) -> Vec<Event> {
     events
 }
 
+/// 窓・キーボードの配列・オーバービューの状態（`diff_extra` の元）。
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct Extra {
+    /// 窓の一覧（id 昇順）。
+    pub windows: Vec<super::protocol::Window>,
+    /// フォーカス中の窓の id。
+    pub focus: Option<u64>,
+    /// キーボードの配列。
+    pub keyboard: Option<super::protocol::KeyboardLayouts>,
+    /// オーバービューが開いているか。
+    pub overview: bool,
+}
+
+/// 配置・フォーカス・時刻以外が同じか（`WindowOpenedOrChanged` を出すかの判定）。
+fn same_window(a: &super::protocol::Window, b: &super::protocol::Window) -> bool {
+    let mut x = a.clone();
+    x.layout = b.layout.clone();
+    x.is_focused = b.is_focused;
+    x.focus_timestamp = b.focus_timestamp;
+    x == *b
+}
+
+/// 前に送った状態 `old` から `new` になったときに送る、窓・キーボード・オーバービューのイベント。
+///
+/// 閉じた窓の `WindowClosed`、開いた・変わった窓の `WindowOpenedOrChanged`、前からある窓の配置の変化の
+/// `WindowLayoutsChanged`、`WindowFocusChanged`（と、フォーカスした窓の `WindowFocusTimestampChanged`）、
+/// `KeyboardLayoutsChanged`／`KeyboardLayoutSwitched`、`OverviewOpenedOrClosed`。何も変わらなければ空。
+pub(crate) fn diff_extra(old: &Extra, new: &Extra) -> Vec<Event> {
+    let mut events = Vec::new();
+    for w in &old.windows {
+        if !new.windows.iter().any(|n| n.id == w.id) {
+            events.push(Event::WindowClosed { id: w.id });
+        }
+    }
+    let mut layouts = Vec::new();
+    for w in &new.windows {
+        match old.windows.iter().find(|o| o.id == w.id) {
+            None => events.push(Event::WindowOpenedOrChanged { window: w.clone() }),
+            Some(o) => {
+                if !same_window(o, w) {
+                    events.push(Event::WindowOpenedOrChanged { window: w.clone() });
+                }
+                if o.layout != w.layout {
+                    layouts.push((w.id, w.layout.clone()));
+                }
+            }
+        }
+    }
+    if !layouts.is_empty() {
+        events.push(Event::WindowLayoutsChanged { changes: layouts });
+    }
+    if old.focus != new.focus {
+        events.push(Event::WindowFocusChanged { id: new.focus });
+        if let Some(w) = new
+            .focus
+            .and_then(|id| new.windows.iter().find(|w| w.id == id))
+        {
+            events.push(Event::WindowFocusTimestampChanged {
+                id: w.id,
+                focus_timestamp: w.focus_timestamp,
+            });
+        }
+    }
+    match (&old.keyboard, &new.keyboard) {
+        (a, Some(b)) if a.as_ref().is_none_or(|a| a.names != b.names) => {
+            events.push(Event::KeyboardLayoutsChanged {
+                keyboard_layouts: b.clone(),
+            });
+        }
+        (Some(a), Some(b)) if a.current_idx != b.current_idx => {
+            events.push(Event::KeyboardLayoutSwitched { idx: b.current_idx });
+        }
+        _ => {}
+    }
+    if old.overview != new.overview {
+        events.push(Event::OverviewOpenedOrClosed {
+            is_open: new.overview,
+        });
+    }
+    events
+}
+
 impl Contrast {
     /// いまのワークスペースの一覧。出力が無ければ、`output` が `None` で、どれも表示中でない一覧。
     pub(crate) fn ipc_workspaces(&self) -> Vec<Workspace> {
@@ -370,5 +452,114 @@ mod tests {
             list.iter().map(|w| (w.id, w.idx, w.is_active)).collect();
         assert_eq!(summary, [(7, 1, false), (8, 2, false)]);
         assert!(list.iter().all(|w| w.output.is_none() && !w.is_focused));
+    }
+}
+
+#[cfg(test)]
+mod extra_tests {
+    use super::super::protocol::{Window, WindowLayout};
+    use super::*;
+
+    fn window(id: u64, title: &str, focused: bool) -> Window {
+        Window {
+            id,
+            title: Some(title.to_owned()),
+            app_id: Some("a".to_owned()),
+            pid: None,
+            workspace_id: Some(1),
+            is_focused: focused,
+            is_floating: false,
+            is_urgent: false,
+            is_fullscreen: false,
+            is_minimized: false,
+            layout: WindowLayout {
+                pos_in_scrolling_layout: Some((1, 1)),
+                tile_size: (10.0, 10.0),
+                window_size: (8, 8),
+                tile_pos_in_workspace_view: Some((0.0, 0.0)),
+                window_offset_in_tile: (1.0, 1.0),
+            },
+            focus_timestamp: None,
+        }
+    }
+
+    fn extra(windows: Vec<Window>, focus: Option<u64>) -> Extra {
+        Extra {
+            windows,
+            focus,
+            keyboard: None,
+            overview: false,
+        }
+    }
+
+    #[test]
+    fn opening_a_window_sends_it_then_the_focus() {
+        let old = extra(vec![], None);
+        let new = extra(vec![window(1, "t", true)], Some(1));
+        let events = diff_extra(&old, &new);
+        assert!(matches!(events[0], Event::WindowOpenedOrChanged { .. }));
+        assert_eq!(events[1], Event::WindowFocusChanged { id: Some(1) });
+        assert!(matches!(
+            events[2],
+            Event::WindowFocusTimestampChanged { id: 1, .. }
+        ));
+    }
+
+    #[test]
+    fn a_new_title_is_a_change_and_a_moved_tile_is_only_a_layout_change() {
+        let old = extra(vec![window(1, "a", true)], Some(1));
+        let renamed = extra(vec![window(1, "b", true)], Some(1));
+        assert!(matches!(
+            diff_extra(&old, &renamed)[..],
+            [Event::WindowOpenedOrChanged { .. }]
+        ));
+        let mut moved = old.clone();
+        moved.windows[0].layout.tile_size = (20.0, 10.0);
+        assert!(matches!(
+            diff_extra(&old, &moved)[..],
+            [Event::WindowLayoutsChanged { .. }]
+        ));
+        assert!(diff_extra(&old, &old).is_empty());
+    }
+
+    #[test]
+    fn closing_sends_closed_and_the_focus_loss() {
+        let old = extra(vec![window(1, "a", true)], Some(1));
+        let new = extra(vec![], None);
+        assert_eq!(
+            diff_extra(&old, &new),
+            [
+                Event::WindowClosed { id: 1 },
+                Event::WindowFocusChanged { id: None }
+            ]
+        );
+    }
+
+    #[test]
+    fn overview_and_keyboard_changes_are_sent() {
+        use super::super::protocol::KeyboardLayouts;
+        let kb = |names: &[&str], idx| {
+            Some(KeyboardLayouts {
+                names: names.iter().map(|s| (*s).to_owned()).collect(),
+                current_idx: idx,
+            })
+        };
+        let mut old = extra(vec![], None);
+        old.keyboard = kb(&["us", "de"], 0);
+        let mut new = old.clone();
+        new.keyboard = kb(&["us", "de"], 1);
+        new.overview = true;
+        assert_eq!(
+            diff_extra(&old, &new),
+            [
+                Event::KeyboardLayoutSwitched { idx: 1 },
+                Event::OverviewOpenedOrClosed { is_open: true }
+            ]
+        );
+        new.keyboard = kb(&["us"], 0);
+        assert!(matches!(
+            diff_extra(&old, &new)[0],
+            Event::KeyboardLayoutsChanged { .. }
+        ));
     }
 }
