@@ -1,6 +1,6 @@
 //! スクリーンショットの保存: RGBA の画素を PNG にし、保存先（`~` と strftime の `%Y` など）を決めて書く。
 //!
-//! PNG は圧縮しない（deflate の「格納」ブロック）自前の符号化。依存を増やさないため。
+//! PNG は自前の符号化（フィルタ Sub／Up の選択、LZ77、固定ハフマンの deflate）。依存を増やさないため。
 //! 画素の読み出し（GL）は `render` にある。この module は時計も GL も触らない
 //! （保存先の日時の整形だけ、`date` コマンドを呼ぶ）。
 
@@ -64,7 +64,158 @@ fn chunk(out: &mut Vec<u8>, kind: &[u8; 4], data: &[u8]) {
     out.extend_from_slice(&crc32(&[kind, data]).to_be_bytes());
 }
 
-/// 8 ビット RGBA（上の行から）の画素を、圧縮しない PNG にする。
+/// 下位のビットから詰めるビット出力（deflate）。
+struct Bits {
+    out: Vec<u8>,
+    acc: u32,
+    used: u32,
+}
+
+impl Bits {
+    fn new(capacity: usize) -> Self {
+        Self {
+            out: Vec::with_capacity(capacity),
+            acc: 0,
+            used: 0,
+        }
+    }
+
+    /// 下位 `count` ビット（13 以下）を、下位から順に足す。
+    fn put(&mut self, value: u32, count: u32) {
+        self.acc |= value << self.used;
+        self.used += count;
+        while self.used >= 8 {
+            self.out.push(self.acc as u8);
+            self.acc >>= 8;
+            self.used -= 8;
+        }
+    }
+
+    /// ハフマン符号 `code`（`len` ビット）を、上位のビットから足す。
+    fn huffman(&mut self, code: u32, len: u32) {
+        self.put(code.reverse_bits() >> (32 - len), len);
+    }
+
+    fn finish(mut self) -> Vec<u8> {
+        if self.used > 0 {
+            self.out.push(self.acc as u8);
+        }
+        self.out
+    }
+}
+
+/// 固定ハフマンのリテラル・長さの符号（RFC 1951 の 3.2.6）。
+fn put_symbol(bits: &mut Bits, symbol: u32) {
+    match symbol {
+        0..=143 => bits.huffman(0x30 + symbol, 8),
+        144..=255 => bits.huffman(0x190 + symbol - 144, 9),
+        256..=279 => bits.huffman(symbol - 256, 7),
+        _ => bits.huffman(0xC0 + symbol - 280, 8),
+    }
+}
+
+const LEN_BASE: [u16; 29] = [
+    3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131,
+    163, 195, 227, 258,
+];
+const LEN_EXTRA: [u32; 29] = [
+    0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0,
+];
+const DIST_BASE: [u16; 30] = [
+    1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537,
+    2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577,
+];
+const DIST_EXTRA: [u32; 30] = [
+    0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13,
+    13,
+];
+
+/// 一致（長さ 3〜258、距離 1〜32768）を足す。
+fn put_match(bits: &mut Bits, length: usize, distance: usize) {
+    let li = LEN_BASE.partition_point(|b| usize::from(*b) <= length) - 1;
+    put_symbol(bits, 257 + li as u32);
+    bits.put((length - usize::from(LEN_BASE[li])) as u32, LEN_EXTRA[li]);
+    let di = DIST_BASE.partition_point(|b| usize::from(*b) <= distance) - 1;
+    bits.huffman(di as u32, 5);
+    bits.put(
+        (distance - usize::from(DIST_BASE[di])) as u32,
+        DIST_EXTRA[di],
+    );
+}
+
+/// `data` を、固定ハフマンの 1 ブロックの deflate にする（貪欲な LZ77。4 バイトのハッシュ、窓は 32 KiB）。
+fn deflate(data: &[u8]) -> Vec<u8> {
+    const HASH_BITS: u32 = 15;
+    const WINDOW: usize = 32768;
+    const MAX_MATCH: usize = 258;
+    let hash = |i: usize| -> usize {
+        let v = u32::from_le_bytes([data[i], data[i + 1], data[i + 2], data[i + 3]]);
+        (v.wrapping_mul(2_654_435_761) >> (32 - HASH_BITS)) as usize
+    };
+    let mut bits = Bits::new(data.len() / 4 + 16);
+    bits.put(1, 1); // BFINAL
+    bits.put(1, 2); // BTYPE = 01（固定ハフマン）
+    let mut table = vec![0_usize; 1 << HASH_BITS]; // 位置 + 1（0 は無し）
+    let mut i = 0;
+    while i < data.len() {
+        let mut best = 0;
+        let mut distance = 0;
+        if i + 4 <= data.len() {
+            let h = hash(i);
+            let candidate = table[h];
+            table[h] = i + 1;
+            if candidate > 0 {
+                let j = candidate - 1;
+                let d = i - j;
+                if d <= WINDOW {
+                    let limit = MAX_MATCH.min(data.len() - i);
+                    let mut l = 0;
+                    while l < limit && data[j + l] == data[i + l] {
+                        l += 1;
+                    }
+                    if l >= 4 {
+                        best = l;
+                        distance = d;
+                    }
+                }
+            }
+        }
+        if best == 0 {
+            put_symbol(&mut bits, u32::from(data[i]));
+            i += 1;
+        } else {
+            put_match(&mut bits, best, distance);
+            // 飛ばした位置も（次の一致の候補のために）覚える。
+            for k in i + 1..(i + best).min(data.len().saturating_sub(3)) {
+                table[hash(k)] = k + 1;
+            }
+            i += best;
+        }
+    }
+    put_symbol(&mut bits, 256);
+    bits.finish()
+}
+
+/// 1 行を PNG のフィルタ（0 なし・1 Sub・2 Up）にして、絶対値の和（小さいほど圧縮しやすい）と一緒に返す。
+fn filter_row(kind: u8, line: &[u8], above: Option<&[u8]>) -> (u64, Vec<u8>) {
+    let out: Vec<u8> = line
+        .iter()
+        .enumerate()
+        .map(|(x, byte)| match kind {
+            1 if x >= 4 => byte.wrapping_sub(line[x - 4]),
+            2 => byte.wrapping_sub(above.map_or(0, |a| a[x])),
+            _ => *byte,
+        })
+        .collect();
+    let cost = out
+        .iter()
+        .map(|b| u64::from((*b as i8).unsigned_abs()))
+        .sum();
+    (cost, out)
+}
+
+/// 8 ビット RGBA（上の行から）の画素を、PNG にする。行ごとに、フィルタ（なし・Sub・Up）のうち
+/// 絶対値の和が最も小さいものを選び、全体を 1 つの deflate にする。
 ///
 /// # Errors
 /// `rgba` の長さが `width × height × 4` でない、または 0 サイズ。
@@ -74,22 +225,20 @@ pub fn encode_png(width: u32, height: u32, rgba: &[u8]) -> Result<Vec<u8>, SaveE
     if width == 0 || height == 0 || rgba.len() != total {
         return Err(SaveError::BadSize);
     }
-    // 行ごとにフィルタの種類 0（なし）の 1 バイトを前に付ける。
     let mut raw = Vec::with_capacity(total + height as usize);
+    let mut above: Option<&[u8]> = None;
     for line in rgba.chunks_exact(row) {
-        raw.push(0);
-        raw.extend_from_slice(line);
+        let (kind, filtered) = (0..=2)
+            .map(|k| (k, filter_row(k, line, above)))
+            .min_by_key(|(_, (cost, _))| *cost)
+            .map_or((0, line.to_vec()), |(k, (_, f))| (k, f));
+        raw.push(kind);
+        raw.extend_from_slice(&filtered);
+        above = Some(line);
     }
-    // zlib: ヘッダ + 格納ブロック（1 つ 65535 バイトまで）+ Adler-32。
+    // zlib: ヘッダ + deflate + Adler-32。
     let mut z = vec![0x78, 0x01];
-    let mut blocks = raw.chunks(65535).peekable();
-    while let Some(block) = blocks.next() {
-        z.push(u8::from(blocks.peek().is_none()));
-        let len = block.len() as u16;
-        z.extend_from_slice(&len.to_le_bytes());
-        z.extend_from_slice(&(!len).to_le_bytes());
-        z.extend_from_slice(block);
-    }
+    z.extend_from_slice(&deflate(&raw));
     z.extend_from_slice(&adler32(&raw).to_be_bytes());
 
     let mut ihdr = Vec::with_capacity(13);
@@ -292,7 +441,7 @@ mod tests {
         assert_eq!(adler32(b""), 1);
     }
 
-    /// 参照の復号: PNG の署名・チャンク・zlib の格納ブロックを読み戻し、元の画素に戻ることを確かめる。
+    /// 参照の復号: PNG の署名・チャンク・zlib（格納・固定ハフマン）・フィルタを読み戻し、元の画素に戻ることを確かめる。
     fn decode(png: &[u8]) -> Result<(u32, u32, Vec<u8>), String> {
         let sig = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
         if png.get(..8) != Some(&sig[..]) {
@@ -338,30 +487,7 @@ mod tests {
         if !ended || idat.get(..2) != Some(&[0x78, 0x01][..]) {
             return Err("structure".into());
         }
-        let (mut raw, mut p) = (Vec::new(), 2);
-        loop {
-            let head = *idat.get(p).ok_or("block")?;
-            let len = u16::from_le_bytes(
-                idat.get(p + 1..p + 3)
-                    .ok_or("l")?
-                    .try_into()
-                    .map_err(|_| "l")?,
-            );
-            let nlen = u16::from_le_bytes(
-                idat.get(p + 3..p + 5)
-                    .ok_or("n")?
-                    .try_into()
-                    .map_err(|_| "n")?,
-            );
-            if nlen != !len {
-                return Err("nlen".into());
-            }
-            raw.extend_from_slice(idat.get(p + 5..p + 5 + usize::from(len)).ok_or("body")?);
-            p += 5 + usize::from(len);
-            if head & 1 == 1 {
-                break;
-            }
-        }
+        let (raw, p) = inflate(&idat, 2)?;
         let adler = u32::from_be_bytes(
             idat.get(p..p + 4)
                 .ok_or("adler")?
@@ -372,14 +498,117 @@ mod tests {
             return Err("adler".into());
         }
         let row = size.0 as usize * 4 + 1;
-        let mut pixels = Vec::new();
-        for line in raw.chunks(row) {
-            if line.first() != Some(&0) {
-                return Err("filter".into());
+        let mut pixels: Vec<u8> = Vec::new();
+        for (y, line) in raw.chunks(row).enumerate() {
+            let kind = *line.first().ok_or("filter")?;
+            let body = line.get(1..).ok_or("line")?;
+            let above_start = y.saturating_sub(1) * (row - 1);
+            for (x, byte) in body.iter().enumerate() {
+                let left = if x >= 4 { pixels[pixels.len() - 4] } else { 0 };
+                let up = if y > 0 { pixels[above_start + x] } else { 0 };
+                let value = match kind {
+                    0 => *byte,
+                    1 => byte.wrapping_add(left),
+                    2 => byte.wrapping_add(up),
+                    _ => return Err("filter".into()),
+                };
+                pixels.push(value);
             }
-            pixels.extend_from_slice(line.get(1..).ok_or("line")?);
         }
         Ok((size.0, size.1, pixels))
+    }
+
+    /// 参照の inflate（格納ブロックと固定ハフマンだけ。実装と別の書き方）。`start` は zlib ヘッダの次。
+    /// 展開した列と、deflate の終わりのバイト位置を返す。
+    fn inflate(data: &[u8], start: usize) -> Result<(Vec<u8>, usize), String> {
+        let (mut bit, mut out) = (start * 8, Vec::new());
+        let take = |bit: &mut usize, n: usize| -> Result<u32, String> {
+            let mut v = 0_u32;
+            for i in 0..n {
+                let byte = *data.get(*bit / 8).ok_or("eof")?;
+                v |= u32::from((byte >> (*bit % 8)) & 1) << i;
+                *bit += 1;
+            }
+            Ok(v)
+        };
+        loop {
+            let last = take(&mut bit, 1)?;
+            match take(&mut bit, 2)? {
+                0 => {
+                    bit = bit.div_ceil(8) * 8;
+                    let p = bit / 8;
+                    let len = usize::from(u16::from_le_bytes([
+                        *data.get(p).ok_or("l")?,
+                        *data.get(p + 1).ok_or("l")?,
+                    ]));
+                    out.extend_from_slice(data.get(p + 4..p + 4 + len).ok_or("body")?);
+                    bit = (p + 4 + len) * 8;
+                }
+                1 => loop {
+                    let mut code = 0_u32;
+                    let mut symbol = None;
+                    for len in 1..=9 {
+                        code = (code << 1) | take(&mut bit, 1)?;
+                        symbol = match (len, code) {
+                            (7, 0..=23) => Some(256 + code),
+                            (8, 48..=191) => Some(code - 48),
+                            (8, 192..=199) => Some(280 + code - 192),
+                            (9, 400..=511) => Some(144 + code - 400),
+                            _ => None,
+                        };
+                        if symbol.is_some() {
+                            break;
+                        }
+                    }
+                    let symbol = symbol.ok_or("code")?;
+                    match symbol {
+                        0..=255 => out.push(symbol as u8),
+                        256 => break,
+                        _ => {
+                            const BASE: [u32; 29] = [
+                                3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43,
+                                51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258,
+                            ];
+                            const EXTRA: [usize; 29] = [
+                                0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4,
+                                4, 4, 5, 5, 5, 5, 0,
+                            ];
+                            const DBASE: [u32; 30] = [
+                                1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257,
+                                385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289,
+                                16385, 24577,
+                            ];
+                            const DEXTRA: [usize; 30] = [
+                                0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9,
+                                10, 10, 11, 11, 12, 12, 13, 13,
+                            ];
+                            let i = (symbol - 257) as usize;
+                            let length = BASE.get(i).ok_or("len")?
+                                + take(&mut bit, *EXTRA.get(i).ok_or("len")?)?;
+                            let mut dcode = 0_u32;
+                            for _ in 0..5 {
+                                dcode = (dcode << 1) | take(&mut bit, 1)?;
+                            }
+                            let d = dcode as usize;
+                            let distance = (DBASE.get(d).ok_or("dist")?
+                                + take(&mut bit, *DEXTRA.get(d).ok_or("dist")?)?)
+                                as usize;
+                            if distance > out.len() {
+                                return Err("distance".into());
+                            }
+                            for _ in 0..length {
+                                out.push(out[out.len() - distance]);
+                            }
+                        }
+                    }
+                },
+                _ => return Err("block type".into()),
+            }
+            if last == 1 {
+                break;
+            }
+        }
+        Ok((out, bit.div_ceil(8)))
     }
 
     fn pattern(w: u32, h: u32) -> Vec<u8> {
@@ -397,6 +626,62 @@ mod tests {
             let (dw, dh, back) = decode(&png)?;
             assert_eq!((dw, dh), (w, h));
             assert_eq!(back, pixels, "{w}x{h}");
+        }
+        Ok(())
+    }
+
+    /// 画素の並びの種類: 一色・横の階調・縦の階調・窓のような矩形と細かい模様・乱数に近いもの。
+    fn picture(kind: u8, w: u32, h: u32) -> Vec<u8> {
+        let mut out = Vec::with_capacity((w * h * 4) as usize);
+        for y in 0..h {
+            for x in 0..w {
+                let px = match kind {
+                    0 => [38, 38, 38, 255],
+                    1 => [(x % 256) as u8, 0, 0, 255],
+                    2 => [0, (y % 256) as u8, 7, 255],
+                    3 if (x / 40 + y / 40) % 5 == 0 => {
+                        [(x * 7 % 256) as u8, 200, (y % 256) as u8, 255]
+                    }
+                    3 => [30, 30, 46, 255],
+                    _ => {
+                        let v = x
+                            .wrapping_mul(2_654_435_761)
+                            .wrapping_add(y.wrapping_mul(40_503));
+                        [(v >> 3) as u8, (v >> 11) as u8, (v >> 19) as u8, 255]
+                    }
+                };
+                out.extend_from_slice(&px);
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn compressed_png_decodes_back_for_every_kind_of_picture() -> Result<(), String> {
+        for kind in 0..5 {
+            for (w, h) in [(1, 1), (2, 3), (37, 11), (320, 200)] {
+                let pixels = picture(kind, w, h);
+                let png = encode_png(w, h, &pixels).map_err(|e| e.to_string())?;
+                let (dw, dh, back) = decode(&png)?;
+                assert_eq!((dw, dh), (w, h));
+                assert!(back == pixels, "kind {kind} {w}x{h}");
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn a_screen_sized_flat_or_window_like_picture_becomes_small() -> Result<(), String> {
+        let raw = 1920 * 1200 * 4;
+        for (kind, limit) in [(0_u8, 80_000_usize), (1, 150_000), (3, 400_000)] {
+            let pixels = picture(kind, 1920, 1200);
+            let png = encode_png(1920, 1200, &pixels).map_err(|e| e.to_string())?;
+            assert!(
+                png.len() < limit,
+                "kind {kind}: {} bytes (raw {raw})",
+                png.len()
+            );
+            assert!(decode(&png)?.2 == pixels, "kind {kind}");
         }
         Ok(())
     }
