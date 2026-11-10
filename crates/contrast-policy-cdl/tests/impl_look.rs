@@ -14,7 +14,7 @@ fn write_temp(dir: &str, body: &str) -> Result<PathBuf, String> {
     fs::create_dir_all(&base).map_err(|e| e.to_string())?;
     let path = base.join("config.cdl");
     let text = format!(
-        "\"use cdl 1\";\nimport {{ Contrast, Appearance, Layout, Cursor, Screenshot, Keybind }} from \"host:contrast\";\nexport default (\n  <Contrast>\n{body}\n  </Contrast>\n);\n"
+        "\"use cdl 1\";\nimport {{ Contrast, Appearance, Layout, Cursor, Screenshot, HotkeyOverlay, Keybind }} from \"host:contrast\";\nexport default (\n  <Contrast>\n{body}\n  </Contrast>\n);\n"
     );
     fs::write(&path, text).map_err(|e| e.to_string())?;
     Ok(path)
@@ -321,4 +321,24 @@ fn niri_example_animates() -> Result<(), String> {
         LoadOutcome::Failed(d) => Err(format!("{d:?}")),
         LoadOutcome::Absent => Err("niri.cdl が無い".to_owned()),
     }
+}
+
+#[test]
+fn hotkey_overlay_defaults_to_niri_and_can_skip_at_startup_and_hide_not_bound() -> Result<(), String>
+{
+    let none = load("hotkey-none", "")?.map_err(|d| format!("{d:?}"))?;
+    assert!(!none.hotkey_overlay.skip_at_startup);
+    assert!(!none.hotkey_overlay.hide_not_bound);
+    let both = load(
+        "hotkey-both",
+        "<HotkeyOverlay skipAtStartup={true} hideNotBound={true} />",
+    )?
+    .map_err(|d| format!("{d:?}"))?;
+    assert!(both.hotkey_overlay.skip_at_startup && both.hotkey_overlay.hide_not_bound);
+    let one = load("hotkey-one", "<HotkeyOverlay hideNotBound={true} />")?
+        .map_err(|d| format!("{d:?}"))?;
+    assert!(!one.hotkey_overlay.skip_at_startup && one.hotkey_overlay.hide_not_bound);
+    let bad = load("hotkey-bad", "<HotkeyOverlay skipAtStartup=\"yes\" />")?;
+    assert!(bad.is_err());
+    Ok(())
 }

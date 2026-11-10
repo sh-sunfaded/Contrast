@@ -35,6 +35,7 @@ pub(crate) fn contrast_schema() -> Result<Schema, Vec<String>> {
                     "Layout",
                     "Cursor",
                     "Screenshot",
+                    "HotkeyOverlay",
                     "Input",
                     "Startup",
                     "DataControlClient",
@@ -47,6 +48,7 @@ pub(crate) fn contrast_schema() -> Result<Schema, Vec<String>> {
                 .unique_child("Layout")
                 .unique_child("Cursor")
                 .unique_child("Screenshot")
+                .unique_child("HotkeyOverlay")
                 .unique_child("Input"),
         )
         .component(
@@ -85,6 +87,12 @@ pub(crate) fn contrast_schema() -> Result<Schema, Vec<String>> {
         .component(
             MODULE,
             ComponentDef::new("Screenshot").optional_prop("path", Ty::String),
+        )
+        .component(
+            MODULE,
+            ComponentDef::new("HotkeyOverlay")
+                .optional_prop("skipAtStartup", Ty::Boolean)
+                .optional_prop("hideNotBound", Ty::Boolean),
         )
         .component(
             MODULE,

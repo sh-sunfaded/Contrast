@@ -115,6 +115,7 @@ pub(crate) fn to_settings(
             "Layout" => read_layout(&mut cx, child, &mut settings),
             "Cursor" => read_cursor(&mut cx, child, &mut settings),
             "Screenshot" => read_screenshot(&mut cx, child, &mut settings),
+            "HotkeyOverlay" => read_hotkey_overlay(&mut cx, child, &mut settings),
             "Input" => read_input(&mut cx, child, &mut settings),
             "Startup" => read_startup(&mut cx, child, &mut settings),
             "DataControlClient" => data_control_nodes.push(child),
@@ -380,6 +381,16 @@ fn parse_presets(text: &str) -> Option<Vec<Ratio>> {
 fn read_screenshot(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
     if let Some(path) = cx.optional::<String>(node, "path") {
         settings.screenshot_path = Some(path.trim().to_owned()).filter(|p| !p.is_empty());
+    }
+}
+
+/// `HotkeyOverlay` を読む（niri の `hotkey-overlay`）。
+fn read_hotkey_overlay(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
+    if let Some(skip) = cx.optional::<bool>(node, "skipAtStartup") {
+        settings.hotkey_overlay.skip_at_startup = skip;
+    }
+    if let Some(hide) = cx.optional::<bool>(node, "hideNotBound") {
+        settings.hotkey_overlay.hide_not_bound = hide;
     }
 }
 

@@ -190,7 +190,8 @@ fn is_wheel(b: &KeyBinding) -> bool {
 }
 
 /// オーバーレイの行（niri の `collect_actions` と `format_bind`）。
-pub fn rows(binds: &[KeyBinding], mod_key: ModKey) -> Vec<Row> {
+/// `hide_not_bound` なら、束縛の無い行は出さない（niri の `hide-not-bound`）。
+pub fn rows(binds: &[KeyBinding], mod_key: ModKey, hide_not_bound: bool) -> Vec<Row> {
     let key_of = |a: &Action| {
         binds
             .iter()
@@ -200,6 +201,12 @@ pub fn rows(binds: &[KeyBinding], mod_key: ModKey) -> Vec<Row> {
     };
     let mut out: Vec<Row> = fixed_actions(binds)
         .into_iter()
+        .filter(|(action, _)| {
+            !hide_not_bound
+                || action
+                    .as_ref()
+                    .is_some_and(|a| binds.iter().any(|b| b.action == *a))
+        })
         .map(|(action, title)| Row {
             key: action
                 .as_ref()
@@ -296,10 +303,10 @@ pub struct HotkeyOverlay {
 }
 
 impl HotkeyOverlay {
-    /// 起動時の状態（niri の既定では開く）。
-    pub fn at_startup() -> Self {
+    /// 起動時の状態（niri の既定では開く。`skip_at_startup` なら開かない）。
+    pub fn at_startup(skip_at_startup: bool) -> Self {
         Self {
-            open: true,
+            open: !skip_at_startup,
             cache: BTreeMap::new(),
         }
     }
@@ -428,6 +435,24 @@ mod tests {
     }
 
     #[test]
+    fn hide_not_bound_drops_the_rows_without_a_bind() {
+        let binds = vec![bind(
+            false,
+            false,
+            false,
+            false,
+            "Print",
+            Action::Screenshot,
+        )];
+        let all = rows(&binds, ModKey::Super, false);
+        let bound = rows(&binds, ModKey::Super, true);
+        assert!(all.iter().any(|r| r.key == " (not bound) "));
+        assert!(bound.iter().all(|r| r.key != " (not bound) "));
+        assert_eq!(bound.len(), 1);
+        assert_eq!(bound[0].title, "Take a Screenshot");
+    }
+
+    #[test]
     fn rows_are_niris_list_with_not_bound_and_spawns() {
         let binds = vec![
             bind(
@@ -467,7 +492,7 @@ mod tests {
             ),
             bind(false, false, false, false, "Print", Action::Screenshot),
         ];
-        let r = rows(&binds, ModKey::Super);
+        let r = rows(&binds, ModKey::Super, false);
         let keys: Vec<(&str, &str)> = r
             .iter()
             .map(|r| (r.key.as_str(), r.title.as_str()))
@@ -500,7 +525,7 @@ mod tests {
             .filter(|b| b.action != Action::Screenshot)
             .collect();
         assert!(
-            !rows(&without, ModKey::Super)
+            !rows(&without, ModKey::Super, false)
                 .iter()
                 .any(|r| r.title == "Take a Screenshot")
         );

@@ -158,6 +158,15 @@ pub const MAX_WINDOW_HEIGHT_PX: u32 = 16_384;
 /// `animation_ms` の上限（ミリ秒）。
 pub const MAX_ANIMATION_MS: u32 = 2000;
 
+/// ホットキーのオーバーレイの設定（niri の `hotkey-overlay`）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct HotkeyOverlaySettings {
+    /// 起動時にオーバーレイを開かない（niri の `skip-at-startup`）。
+    pub skip_at_startup: bool,
+    /// 束縛が無い行を隠す（niri の `hide-not-bound`）。
+    pub hide_not_bound: bool,
+}
+
 /// カーソルの設定。`None` は「設定なし」（環境変数 `XCURSOR_THEME` / `XCURSOR_SIZE`、無ければ既定）。
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CursorSettings {
@@ -247,6 +256,8 @@ pub struct Settings {
     pub layout: LayoutSettings,
     /// カーソル。
     pub cursor: CursorSettings,
+    /// ホットキーのオーバーレイ。
+    pub hotkey_overlay: HotkeyOverlaySettings,
     /// スクリーンショットの保存先（`~` と strftime の `%Y` などを展開する）。`None` なら保存しない。
     pub screenshot_path: Option<String>,
     /// 起動時に一度だけ実行するコマンド（並びの順。空白で区切った先頭がプログラム、残りが引数）。リロードでは再実行しない。
@@ -322,6 +333,7 @@ impl Settings {
             input: InputSettings::default(),
             layout: LayoutSettings::default(),
             cursor: CursorSettings::default(),
+            hotkey_overlay: HotkeyOverlaySettings::default(),
             screenshot_path: Some(DEFAULT_SCREENSHOT_PATH.to_owned()),
             startup: Vec::new(),
             environment: BTreeMap::new(),

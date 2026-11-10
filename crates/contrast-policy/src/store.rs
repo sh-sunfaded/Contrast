@@ -255,6 +255,10 @@ impl Policy for ConfigStore {
         self.config().settings.screenshot_path.clone()
     }
 
+    fn hotkey_overlay_settings(&self) -> crate::HotkeyOverlaySettings {
+        self.config().settings.hotkey_overlay
+    }
+
     fn input_settings(&self) -> crate::InputSettings {
         self.config().settings.input
     }

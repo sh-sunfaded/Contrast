@@ -56,6 +56,10 @@ impl Policy for StaticPolicy {
         self.store.screenshot_path()
     }
 
+    fn hotkey_overlay_settings(&self) -> crate::HotkeyOverlaySettings {
+        self.store.hotkey_overlay_settings()
+    }
+
     fn cursor_settings(&self) -> crate::CursorSettings {
         self.store.cursor_settings()
     }

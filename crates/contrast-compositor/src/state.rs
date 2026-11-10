@@ -198,6 +198,7 @@ impl Contrast {
 
         let socket_name = Self::init_wayland_listener(display, event_loop);
         let layout = policy.layout_settings();
+        let skip_hotkey_overlay = policy.hotkey_overlay_settings().skip_at_startup;
         let mut core_config = contrast_core::CoreConfig::new(policy.workspace_count())
             .with_workspace_mode(policy.workspace_mode())
             .with_layout(layout.mode)
@@ -268,7 +269,7 @@ impl Contrast {
             window_anims: Default::default(),
             screenshot_window_pending: false,
             screenshot_ui: Default::default(),
-            hotkey_overlay: crate::hotkey_overlay::HotkeyOverlay::at_startup(),
+            hotkey_overlay: crate::hotkey_overlay::HotkeyOverlay::at_startup(skip_hotkey_overlay),
             gestures: Default::default(),
             overview: Default::default(),
             pointer_in_hot_corner: false,

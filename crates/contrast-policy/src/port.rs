@@ -197,6 +197,11 @@ pub trait Policy {
         crate::CursorSettings::default()
     }
 
+    /// ホットキーのオーバーレイの設定。
+    fn hotkey_overlay_settings(&self) -> crate::HotkeyOverlaySettings {
+        crate::HotkeyOverlaySettings::default()
+    }
+
     /// スクリーンショットの保存先（`~` と strftime の `%Y` などを展開する）。`None` なら保存しない。
     fn screenshot_path(&self) -> Option<String> {
         Some(crate::DEFAULT_SCREENSHOT_PATH.to_owned())

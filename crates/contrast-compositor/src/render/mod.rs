@@ -156,7 +156,13 @@ pub fn scene_elements(
     // ホットキーのオーバーレイ（niri と同じく、窓・レイヤー面より前）。
     {
         let policy = state.policy.clone();
-        let rows = || crate::hotkey_overlay::rows(&policy.keybindings(), policy.mod_key());
+        let rows = || {
+            crate::hotkey_overlay::rows(
+                &policy.keybindings(),
+                policy.mod_key(),
+                policy.hotkey_overlay_settings().hide_not_bound,
+            )
+        };
         if let Some(e) = state
             .hotkey_overlay
             .element(renderer, output, geo, origin, rows)

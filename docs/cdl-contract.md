@@ -16,6 +16,7 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
 | `Layout` | `gap?: Length`、`outerGap?: Length`、`mode?: "equal" \| "scrolling"`（既定 `"equal"`）、`defaultColumnWidth?: number`、`presetColumnWidths?: string`、`windowHeightPresets?: string`、`animation?: "easing" \| "spring"`（既定 `"easing"`）、`animationMs?: number`（既定 0） | なし | — |
 | `Cursor` | `theme?: string`、`size?: number`、`hideAfterInactiveMs?: number` | なし | — |
 | `Screenshot` | `path?: string`（`~` と strftime の `%Y` などを展開。既定は niri と同じ `~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png`。空文字列で保存しない） | なし | — |
+| `HotkeyOverlay` | `skipAtStartup?: boolean`（起動時にオーバーレイを開かない。niri の `skip-at-startup`）、`hideNotBound?: boolean`（束縛の無い行を隠す。`hide-not-bound`） | なし | — |
 | `Input` | `tapToClick?: boolean`（既定 true）、`naturalScroll?: boolean`（既定 false）、`accelSpeed?: number`（-1〜1、既定 0）、`disableWhileTyping?: boolean`（既定 true）、`focusFollowsMouse?: boolean`（既定 false） | なし | — |
 | `Startup` | `command: string`、`ipc?: "niri"` | なし | —（複数可） |
 | `DataControlClient` | `name: string` | なし | —（複数可） |
