@@ -226,6 +226,7 @@ impl DmabufHandler for Contrast {
 delegate_dmabuf!(Contrast);
 smithay::delegate_viewporter!(Contrast);
 smithay::delegate_fractional_scale!(Contrast);
+smithay::delegate_pointer_gestures!(Contrast);
 
 impl smithay::wayland::fractional_scale::FractionalScaleHandler for Contrast {
     /// 面が拡大率を問い合わせたら、その面がいる出力（無ければアクティブな出力、それも無ければ最初の出力）の拡大率を伝える。

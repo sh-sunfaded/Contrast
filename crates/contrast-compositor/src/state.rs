@@ -103,6 +103,8 @@ pub struct Contrast {
     /// wlr-data-control（ironbar の clipboard、wl-clipboard、cliphist）。許可リストのクライアントにだけ見せる。
     pub data_control_state: DataControlState,
     /// wp_viewporter（xwayland-satellite が要る。描画は smithay の面の状態が viewport を扱う）。
+    /// wp_pointer_gestures（スワイプ・ピンチ・ホールドをクライアントに渡す）。
+    pub pointer_gestures_state: smithay::wayland::pointer_gestures::PointerGesturesState,
     pub viewporter_state: smithay::wayland::viewporter::ViewporterState,
     /// wp_fractional_scale（出力の拡大率を、面ごとの好みの拡大率として伝える）。
     pub fractional_scale_state: smithay::wayland::fractional_scale::FractionalScaleManagerState,
@@ -135,6 +137,9 @@ pub struct Contrast {
     pub screenshot_window_pending: bool,
     /// スクリーンショットの範囲を選ぶ UI（niri の `screenshot`）。
     pub screenshot_ui: crate::screenshot_ui_shell::ScreenshotUiState,
+    /// 最後のタッチの位置（指が離れるときの位置に使う。全体の論理座標）。
+    /// いまのスワイプをクライアントに渡しているか（3・4 本指以外）。
+    pub swipe_forwarded: bool,
     /// 最後のタッチの位置（指が離れるときの位置に使う。全体の論理座標）。
     pub touch_last: smithay::utils::Point<f64, smithay::utils::Logical>,
     /// ホットキーのオーバーレイ（起動時に開く。niri の既定）。
@@ -196,6 +201,8 @@ impl Contrast {
         );
         let layer_shell_state = WlrLayerShellState::new::<Self>(&dh);
         let viewporter_state = smithay::wayland::viewporter::ViewporterState::new::<Self>(&dh);
+        let pointer_gestures_state =
+            smithay::wayland::pointer_gestures::PointerGesturesState::new::<Self>(&dh);
         let fractional_scale_state =
             smithay::wayland::fractional_scale::FractionalScaleManagerState::new::<Self>(&dh);
         let text_input_manager_state = TextInputManagerState::new::<Self>(&dh);
@@ -284,6 +291,8 @@ impl Contrast {
             screenshot_window_pending: false,
             screenshot_ui: Default::default(),
             touch_last: Default::default(),
+            swipe_forwarded: false,
+            pointer_gestures_state,
             hotkey_overlay: crate::hotkey_overlay::HotkeyOverlay::at_startup(skip_hotkey_overlay),
             gestures: Default::default(),
             overview: Default::default(),

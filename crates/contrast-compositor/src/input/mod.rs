@@ -8,8 +8,9 @@ pub mod wheel;
 use smithay::{
     backend::input::{
         AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, GestureBeginEvent,
-        GestureSwipeUpdateEvent, InputBackend, InputEvent, KeyState, KeyboardKeyEvent,
-        PointerAxisEvent, PointerButtonEvent, PointerMotionEvent, TouchEvent,
+        GestureEndEvent, GesturePinchUpdateEvent, GestureSwipeUpdateEvent, InputBackend,
+        InputEvent, KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
+        PointerMotionEvent, TouchEvent,
     },
     desktop::WindowSurfaceType,
     input::{
@@ -319,7 +320,106 @@ impl Contrast {
                 pointer.frame(self);
             }
             InputEvent::GestureSwipeBegin { event, .. } => {
-                self.swipe_begin(i32::try_from(GestureBeginEvent::fingers(&event)).unwrap_or(0));
+                let fingers = GestureBeginEvent::fingers(&event);
+                // 3・4 本指はコンポジタが使う。それ以外はクライアントに渡す（niri と同じ）。
+                if self.swipe_begin(i32::try_from(fingers).unwrap_or(0)) {
+                    self.swipe_forwarded = false;
+                } else if let Some(pointer) = self.seat.get_pointer() {
+                    self.swipe_forwarded = true;
+                    pointer.gesture_swipe_begin(
+                        self,
+                        &smithay::input::pointer::GestureSwipeBeginEvent {
+                            serial: SERIAL_COUNTER.next_serial(),
+                            time: Event::time_msec(&event),
+                            fingers,
+                        },
+                    );
+                }
+            }
+            InputEvent::GestureSwipeUpdate { event, .. } if self.swipe_forwarded => {
+                if let Some(pointer) = self.seat.get_pointer() {
+                    pointer.gesture_swipe_update(
+                        self,
+                        &smithay::input::pointer::GestureSwipeUpdateEvent {
+                            time: Event::time_msec(&event),
+                            delta: (event.delta_x(), event.delta_y()).into(),
+                        },
+                    );
+                }
+            }
+            InputEvent::GestureSwipeEnd { event, .. } if self.swipe_forwarded => {
+                self.swipe_forwarded = false;
+                if let Some(pointer) = self.seat.get_pointer() {
+                    pointer.gesture_swipe_end(
+                        self,
+                        &smithay::input::pointer::GestureSwipeEndEvent {
+                            serial: SERIAL_COUNTER.next_serial(),
+                            time: Event::time_msec(&event),
+                            cancelled: GestureEndEvent::cancelled(&event),
+                        },
+                    );
+                }
+            }
+            InputEvent::GesturePinchBegin { event, .. } => {
+                if let Some(pointer) = self.seat.get_pointer() {
+                    pointer.gesture_pinch_begin(
+                        self,
+                        &smithay::input::pointer::GesturePinchBeginEvent {
+                            serial: SERIAL_COUNTER.next_serial(),
+                            time: Event::time_msec(&event),
+                            fingers: GestureBeginEvent::fingers(&event),
+                        },
+                    );
+                }
+            }
+            InputEvent::GesturePinchUpdate { event, .. } => {
+                if let Some(pointer) = self.seat.get_pointer() {
+                    pointer.gesture_pinch_update(
+                        self,
+                        &smithay::input::pointer::GesturePinchUpdateEvent {
+                            time: Event::time_msec(&event),
+                            delta: (event.delta_x(), event.delta_y()).into(),
+                            scale: event.scale(),
+                            rotation: event.rotation(),
+                        },
+                    );
+                }
+            }
+            InputEvent::GesturePinchEnd { event, .. } => {
+                if let Some(pointer) = self.seat.get_pointer() {
+                    pointer.gesture_pinch_end(
+                        self,
+                        &smithay::input::pointer::GesturePinchEndEvent {
+                            serial: SERIAL_COUNTER.next_serial(),
+                            time: Event::time_msec(&event),
+                            cancelled: GestureEndEvent::cancelled(&event),
+                        },
+                    );
+                }
+            }
+            InputEvent::GestureHoldBegin { event, .. } => {
+                if let Some(pointer) = self.seat.get_pointer() {
+                    pointer.gesture_hold_begin(
+                        self,
+                        &smithay::input::pointer::GestureHoldBeginEvent {
+                            serial: SERIAL_COUNTER.next_serial(),
+                            time: Event::time_msec(&event),
+                            fingers: GestureBeginEvent::fingers(&event),
+                        },
+                    );
+                }
+            }
+            InputEvent::GestureHoldEnd { event, .. } => {
+                if let Some(pointer) = self.seat.get_pointer() {
+                    pointer.gesture_hold_end(
+                        self,
+                        &smithay::input::pointer::GestureHoldEndEvent {
+                            serial: SERIAL_COUNTER.next_serial(),
+                            time: Event::time_msec(&event),
+                            cancelled: GestureEndEvent::cancelled(&event),
+                        },
+                    );
+                }
             }
             InputEvent::GestureSwipeUpdate { event, .. } => {
                 let (dx, dy, natural) = swipe_delta(&event);
