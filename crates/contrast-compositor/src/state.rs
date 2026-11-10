@@ -104,6 +104,8 @@ pub struct Contrast {
     pub data_control_state: DataControlState,
     /// wp_viewporter（xwayland-satellite が要る。描画は smithay の面の状態が viewport を扱う）。
     pub viewporter_state: smithay::wayland::viewporter::ViewporterState,
+    /// wp_fractional_scale（出力の拡大率を、面ごとの好みの拡大率として伝える）。
+    pub fractional_scale_state: smithay::wayland::fractional_scale::FractionalScaleManagerState,
     /// wlr-data-control を使ってよいクライアントのプログラム名（設定の `DataControlClient`）。
     pub data_control_clients: crate::data_control::AllowList,
     pub layer_shell_state: WlrLayerShellState,
@@ -194,6 +196,8 @@ impl Contrast {
         );
         let layer_shell_state = WlrLayerShellState::new::<Self>(&dh);
         let viewporter_state = smithay::wayland::viewporter::ViewporterState::new::<Self>(&dh);
+        let fractional_scale_state =
+            smithay::wayland::fractional_scale::FractionalScaleManagerState::new::<Self>(&dh);
         let text_input_manager_state = TextInputManagerState::new::<Self>(&dh);
         let input_method_manager_state = InputMethodManagerState::new::<Self, _>(&dh, |_| true);
         let virtual_keyboard_manager_state =
@@ -248,6 +252,7 @@ impl Contrast {
             bind_cooldowns: Default::default(),
             data_control_state,
             viewporter_state,
+            fractional_scale_state,
             data_control_clients,
             xdg_shell_state,
             compositor_state,

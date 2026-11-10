@@ -181,6 +181,7 @@ pub fn cursor_elements(
     fallback: &mut SolidColorBuffer,
     status: &CursorImageStatus,
     pos: Point<f64, Logical>,
+    scale: f64,
 ) -> Vec<SceneElement> {
     match status {
         CursorImageStatus::Hidden => Vec::new(),
@@ -192,14 +193,16 @@ pub fn cursor_elements(
                     .and_then(|attrs| attrs.lock().ok().map(|a| a.hotspot))
             })
             .unwrap_or_default();
-            let at: Point<i32, Physical> = (pos - hotspot.to_f64()).to_physical_precise_round(1);
-            render_elements_from_surface_tree(renderer, surface, at, 1.0, 1.0, Kind::Cursor)
+            let at: Point<i32, Physical> =
+                (pos - hotspot.to_f64()).to_physical_precise_round(scale);
+            render_elements_from_surface_tree(renderer, surface, at, scale, 1.0, Kind::Cursor)
         }
         CursorImageStatus::Named(icon) => match theme.get(icon.name()) {
             Some(cursor) => {
                 let (hx, hy) = cursor.hotspot();
+                // 画像は物理 px のまま（テーマの大きさ）。位置だけ拡大率を掛ける。
                 let at: Point<f64, Physical> =
-                    (pos.x - f64::from(hx), pos.y - f64::from(hy)).into();
+                    (pos.x * scale - f64::from(hx), pos.y * scale - f64::from(hy)).into();
                 match MemoryRenderBufferRenderElement::from_buffer(
                     renderer,
                     at,
@@ -212,19 +215,23 @@ pub fn cursor_elements(
                     Ok(element) => vec![SceneElement::Memory(element)],
                     Err(e) => {
                         tracing::warn!("cursor: texture import failed: {e}");
-                        vec![fallback_square(fallback, pos)]
+                        vec![fallback_square(fallback, pos, scale)]
                     }
                 }
             }
-            None => vec![fallback_square(fallback, pos)],
+            None => vec![fallback_square(fallback, pos, scale)],
         },
     }
 }
 
 /// テーマが使えないときの、色つきの四角。
-fn fallback_square(buffer: &mut SolidColorBuffer, pos: Point<f64, Logical>) -> SceneElement {
+fn fallback_square(
+    buffer: &mut SolidColorBuffer,
+    pos: Point<f64, Logical>,
+    scale: f64,
+) -> SceneElement {
     buffer.update((FALLBACK_SIZE, FALLBACK_SIZE), FALLBACK_COLOR);
-    let at: Point<i32, Logical> = pos.to_i32_round();
+    let at: Point<i32, Physical> = pos.to_physical(scale).to_i32_round();
     SceneElement::Solid(SolidColorRenderElement::from_buffer(
         buffer,
         (at.x, at.y),

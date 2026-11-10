@@ -581,6 +581,7 @@ fn border_elements(
     output: &Output,
     origin: Point<i32, Logical>,
 ) -> Vec<SolidColorRenderElement> {
+    let scale = output.current_scale().fractional_scale();
     let b = state.policy.border_width();
     let mut bands: Vec<(Band, [f32; 4], f32)> = Vec::new();
     let focused_alpha = state.focused_open_look().map_or(1.0, |(a, _)| a);
@@ -611,8 +612,11 @@ fn border_elements(
             buffer.update((ew, eh), color);
             SolidColorRenderElement::from_buffer(
                 buffer,
-                (ex - origin.x, ey - origin.y),
-                1.0,
+                (
+                    (f64::from(ex - origin.x) * scale).round() as i32,
+                    (f64::from(ey - origin.y) * scale).round() as i32,
+                ),
+                scale,
                 alpha,
                 Kind::Unspecified,
             )

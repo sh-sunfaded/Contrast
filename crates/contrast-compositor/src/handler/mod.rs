@@ -225,3 +225,19 @@ impl DmabufHandler for Contrast {
 
 delegate_dmabuf!(Contrast);
 smithay::delegate_viewporter!(Contrast);
+smithay::delegate_fractional_scale!(Contrast);
+
+impl smithay::wayland::fractional_scale::FractionalScaleHandler for Contrast {
+    /// 面が拡大率を問い合わせたら、その面がいる出力（無ければアクティブな出力、それも無ければ最初の出力）の拡大率を伝える。
+    fn new_fractional_scale(&mut self, surface: WlSurface) {
+        let scale = self
+            .active_output()
+            .or_else(|| self.shell.outputs.values().next().cloned())
+            .map_or(1.0, |o| o.current_scale().fractional_scale());
+        smithay::wayland::compositor::with_states(&surface, |states| {
+            smithay::wayland::fractional_scale::with_fractional_scale(states, |fs| {
+                fs.set_preferred_scale(scale);
+            });
+        });
+    }
+}

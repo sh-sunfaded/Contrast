@@ -366,6 +366,7 @@ impl Drm {
             return;
         }
         let output_name = head.output.clone();
+        let scale = output_name.current_scale().fractional_scale();
         let (Some(output), Some(renderer)) = (head.handle.as_mut(), gpu.renderer.as_mut()) else {
             return;
         };
@@ -381,6 +382,7 @@ impl Drm {
                 &mut self.fallback_cursor,
                 &ui_status,
                 pos,
+                scale,
             )
         });
         let geo = state.space.output_geometry(&output_name);
@@ -396,6 +398,7 @@ impl Drm {
                 &mut self.fallback_cursor,
                 &cursor_status,
                 pointer_pos - origin.to_f64(),
+                scale,
             )
         };
         let elements = match scene_elements(state, renderer, &output_name, origin, cursor) {
@@ -1007,8 +1010,13 @@ fn new_output(
         target.size_mm,
         (mode.size.w, mode.size.h),
     ));
-    tracing::info!(output = target.name, size_mm = ?target.size_mm, guessed, "drm: niri would use this scale; Contrast uses 1");
-    output.change_current_state(Some(mode), Some(Transform::Normal), None, None);
+    tracing::info!(output = target.name, size_mm = ?target.size_mm, guessed, "drm: output scale (auto, like niri)");
+    let scale = if guessed > 1.0 {
+        Some(smithay::output::Scale::Fractional(guessed))
+    } else {
+        None
+    };
+    output.change_current_state(Some(mode), Some(Transform::Normal), scale, None);
     output.set_preferred(mode);
     (output, global)
 }
