@@ -376,7 +376,7 @@ pub fn parse_busctl_string(line: &str) -> Option<String> {
 
 /// systemd-localed（`org.freedesktop.locale1`、システムの D-Bus）の X11 の配列を読む（niri の `freedesktop_locale1`）。
 /// zbus は依存に無いので `busctl` を使う。読めなければ `None`。
-fn xkb_from_locale1() -> Option<XkbNames> {
+pub(crate) fn xkb_from_locale1() -> Option<XkbNames> {
     let out = std::process::Command::new("busctl")
         .args([
             "--system",
