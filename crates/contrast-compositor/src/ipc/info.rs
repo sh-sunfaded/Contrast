@@ -151,7 +151,7 @@ impl Contrast {
         }
         let view = self.core.view();
         let mut tiled: Vec<(u64, u64, i32, i32)> = Vec::new();
-        for (key, _) in &self.shell.windows {
+        for key in self.shell.windows.keys() {
             if let Some(id) = view.window_id(*key)
                 && let Some(w) = view.window(id)
                 && w.state == WindowState::Tiled
