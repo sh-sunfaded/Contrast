@@ -10,9 +10,12 @@ use smithay::{
         Bind, ExportMem, ImportDma, Offscreen, TextureMapping,
         damage::OutputDamageTracker,
         element::{
-            AsRenderElements, Kind, memory::MemoryRenderBufferRenderElement, render_elements,
-            solid::SolidColorRenderElement, surface::WaylandSurfaceRenderElement,
-            utils::CropRenderElement,
+            AsRenderElements, Kind,
+            memory::MemoryRenderBufferRenderElement,
+            render_elements,
+            solid::SolidColorRenderElement,
+            surface::WaylandSurfaceRenderElement,
+            utils::{CropRenderElement, RescaleRenderElement},
         },
         gles::{GlesRenderer, GlesTarget, Uniform, element::PixelShaderElement},
     },
@@ -82,7 +85,7 @@ render_elements! {
     /// 開く・閉じる途中の窓（オフスクリーンのテクスチャを拡大・半透明にしたもの）。
     Anim=crate::window_anim::AnimElement,
     /// オーバービューで、ワークスペースの範囲に切り抜いた窓・レイヤー面。
-    CroppedSurface=CropRenderElement<WaylandSurfaceRenderElement<GlesRenderer>>,
+    CroppedSurface=CropRenderElement<RescaleRenderElement<WaylandSurfaceRenderElement<GlesRenderer>>>,
     /// スクリーンショットの UI で止めた出力の絵。
     Frozen=smithay::backend::renderer::element::texture::TextureRenderElement<smithay::backend::renderer::gles::GlesTexture>,
 }

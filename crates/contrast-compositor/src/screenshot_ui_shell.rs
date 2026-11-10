@@ -275,6 +275,7 @@ impl Contrast {
             return;
         };
         let (x, y, w, h) = open.ui.rect();
+        tracing::info!(rect = ?(x, y, w, h), output = open.ui.output, write_to_disk, "screenshot ui: confirm");
         let Some((texture, size)) = open.frozen.get(&open.ui.output) else {
             self.close_screenshot_ui();
             return;
@@ -520,6 +521,7 @@ impl Contrast {
                 }
                 return;
             }
+            tracing::info!(?pos, ?point, mod_down, "screenshot ui: pointer down");
             self.with_ui(|ui| {
                 ui.pointer_down(&name, point, mod_down);
             });
@@ -549,6 +551,9 @@ impl Contrast {
             self.with_ui(|ui| {
                 ui.pointer_up();
             });
+            if let Some(open) = self.screenshot_ui.open.as_ref() {
+                tracing::info!(?pos, rect = ?open.ui.rect(), "screenshot ui: pointer up");
+            }
         }
     }
 

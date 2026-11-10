@@ -72,3 +72,104 @@ pub fn render_to_rgba<E: RenderElement<GlesRenderer>>(
         bytes.to_vec()
     })
 }
+
+/// 実際の GL（`/dev/dri/renderD*` のオフスクリーン EGL）で、撮った画像の大きさが出力のモードの大きさと一致し、
+/// 右端・下端の画素まで描かれることを確かめる。描画ノードが無い環境では、何もせず戻る。
+#[cfg(test)]
+mod tests {
+    use smithay::{
+        backend::renderer::{
+            element::{Id, Kind, solid::SolidColorRenderElement},
+            utils::CommitCounter,
+        },
+        output::{Mode, Output, PhysicalProperties, Subpixel},
+        utils::{Physical, Point, Rectangle, Size, Transform},
+    };
+
+    use super::render_to_rgba;
+    use crate::render::{capture, look::offscreen::renderer};
+
+    const RED: [f32; 4] = [1.0, 0.0, 0.0, 1.0];
+    const BLUE: [f32; 4] = [0.0, 0.0, 1.0, 1.0];
+
+    /// 出力の全体を `RED` で塗る 1 要素。
+    fn full(width: i32, height: i32) -> SolidColorRenderElement {
+        SolidColorRenderElement::new(
+            Id::new(),
+            Rectangle::new(
+                Point::from((0, 0)),
+                Size::<i32, Physical>::from((width, height)),
+            ),
+            CommitCounter::default(),
+            RED,
+            Kind::Unspecified,
+        )
+    }
+
+    fn pixel(rgba: &[u8], width: usize, x: usize, y: usize) -> [u8; 4] {
+        let i = (y * width + x) * 4;
+        [rgba[i], rgba[i + 1], rgba[i + 2], rgba[i + 3]]
+    }
+
+    #[test]
+    fn render_to_rgba_covers_every_pixel_of_the_requested_size() {
+        let Some(mut renderer) = renderer() else {
+            eprintln!("skipped: no usable render node");
+            return;
+        };
+        for (w, h) in [(1920, 1200), (1919, 1200), (928, 1076), (1, 1)] {
+            let size = Size::<i32, Physical>::from((w, h));
+            let rgba = render_to_rgba(&mut renderer, size, 1.0, &[full(w, h)], BLUE)
+                .expect("render_to_rgba");
+            let (wu, hu) = (w as usize, h as usize);
+            assert_eq!(rgba.len(), wu * hu * 4, "{w}x{h}");
+            // 四隅と右端・下端の列が、背景（青）でなく要素（赤）の色。
+            for (x, y) in [(0, 0), (wu - 1, 0), (0, hu - 1), (wu - 1, hu - 1)] {
+                assert_eq!(
+                    pixel(&rgba, wu, x, y),
+                    [255, 0, 0, 255],
+                    "{w}x{h} at ({x},{y})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn capture_matches_the_mode_size() {
+        let Some(mut renderer) = renderer() else {
+            eprintln!("skipped: no usable render node");
+            return;
+        };
+        for (w, h) in [(1920, 1200), (1920, 1080), (2560, 1440)] {
+            let output = Output::new(
+                "test".to_owned(),
+                PhysicalProperties {
+                    size: (300, 200).into(),
+                    subpixel: Subpixel::Unknown,
+                    make: "t".into(),
+                    model: "t".into(),
+                },
+            );
+            let mode = Mode {
+                size: (w, h).into(),
+                refresh: 60_000,
+            };
+            output.change_current_state(Some(mode), Some(Transform::Normal), None, None);
+            output.set_preferred(mode);
+            let shot = capture(&mut renderer, &output, &[full(w, h)], BLUE).expect("capture");
+            assert_eq!((shot.width, shot.height), (w as u32, h as u32));
+            let (wu, hu) = (w as usize, h as usize);
+            assert_eq!(shot.rgba.len(), wu * hu * 4, "{w}x{h}");
+            assert_eq!(
+                pixel(&shot.rgba, wu, wu - 1, hu - 1),
+                [255, 0, 0, 255],
+                "{w}x{h}"
+            );
+            assert_eq!(
+                pixel(&shot.rgba, wu, wu - 1, 0),
+                [255, 0, 0, 255],
+                "{w}x{h}"
+            );
+        }
+    }
+}
