@@ -4,7 +4,7 @@
 //!
 //! 安全策:
 //! - `CONTRAST_EXIT_AFTER`（秒、既定 30）で必ず自動終了する。`0` と明示したときだけ、タイマーを無効にする。
-//! - SIGINT / SIGTERM はイベントループで受けて、ループを抜けて通常の終了処理に入る。Alt+Shift+Q も同じ道を通る。
+//! - SIGINT / SIGTERM / SIGHUP は `lib.rs` がイベントループで受けて、ループを抜けて通常の終了処理に入る。Alt+Shift+Q も同じ道を通る。
 //! - 終了処理は `Drop`（`DrmGuard` と `Gpu`）に置く。正常終了・シグナル・パニック（unwind）のどれでも通る。
 //!   出力を止め（surface の Drop が CRTC を無効化）、DRM master を手放し、fd を閉じるとカーネルが fbcon を戻す。
 //! - 最初の page flip が 2 秒以内に終わらなければ、エラーで終了する。
@@ -53,7 +53,6 @@ use smithay::output::{Mode as OutputMode, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::{
     calloop::{
         EventLoop, LoopHandle,
-        signals::{Signal, Signals},
         timer::{TimeoutAction, Timer},
     },
     drm::{
@@ -909,14 +908,7 @@ pub fn init(
             event => state.process_input_event(event),
         })
         .map_err(|e| DrmError::EventLoop(e.to_string()))?;
-    let signals = Signals::new(&[Signal::SIGINT, Signal::SIGTERM])
-        .map_err(|e| DrmError::EventLoop(e.to_string()))?;
-    handle
-        .insert_source(signals, |event, _, state| {
-            tracing::info!("drm: signal {:?}, exiting", event.signal());
-            state.loop_signal.stop();
-        })
-        .map_err(|e| DrmError::EventLoop(e.to_string()))?;
+    // SIGINT・SIGTERM は `lib.rs` の `run` が（バックエンドに依らず）受ける。
 
     // 終了タイマー（`0` の明示で無効）と、最初の page flip の見張り。
     match exit_after {

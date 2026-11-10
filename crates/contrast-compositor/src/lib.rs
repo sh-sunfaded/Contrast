@@ -80,11 +80,24 @@ pub fn run(store: Rc<ConfigStore>, source: ConfigSource) -> Result<(), Box<dyn s
     let kind = detect_backend()?;
 
     let mut event_loop: EventLoop<Contrast> = EventLoop::try_new()?;
-    // SIGUSR1 はスレッドを作る前にブロックして calloop で受ける（既定の動作は終了）。
-    let signals = Signals::new(&[Signal::SIGUSR1])?;
+    // シグナルはスレッドを作る前にブロックして calloop で受ける（既定の動作は終了）。バックエンドに依らない。
+    // SIGUSR1 は設定の再読み込み。SIGINT・SIGTERM・SIGHUP はループを抜けて通常の終了処理に入る（niri と同じ。
+    // IPC のソケットや XWayland のソケットを、Drop で片付けるため）。
+    let signals = Signals::new(&[
+        Signal::SIGUSR1,
+        Signal::SIGINT,
+        Signal::SIGTERM,
+        Signal::SIGHUP,
+    ])?;
     event_loop
         .handle()
-        .insert_source(signals, |_, _, state| state.reload_config())?;
+        .insert_source(signals, |event, _, state| match event.signal() {
+            Signal::SIGUSR1 => state.reload_config(),
+            signal => {
+                tracing::info!("quitting due to receiving signal {signal:?}");
+                state.loop_signal.stop();
+            }
+        })?;
     let display: Display<Contrast> = Display::new()?;
     let mut state = Contrast::new(&mut event_loop, display, store, source);
 
