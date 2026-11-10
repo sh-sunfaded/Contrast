@@ -304,7 +304,7 @@ mod tests {
 /// オフスクリーンの EGL（`/dev/dri/renderD*`）でシェーダを動かし、ピクセルを純粋な関数と突き合わせるテスト。
 /// 描画ノードが開けない・EGL が使えない環境では、何もせず戻る。
 #[cfg(test)]
-mod offscreen {
+pub(crate) mod offscreen {
     use super::*;
     use smithay::{
         backend::{
@@ -319,7 +319,7 @@ mod offscreen {
     };
 
     /// 描画ノードから GLES のレンダラーを作る。作れなければ `None`。
-    fn renderer() -> Option<GlesRenderer> {
+    pub(crate) fn renderer() -> Option<GlesRenderer> {
         let mut nodes: Vec<_> = std::fs::read_dir("/dev/dri")
             .ok()?
             .filter_map(Result::ok)
