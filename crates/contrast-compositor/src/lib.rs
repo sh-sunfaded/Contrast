@@ -28,6 +28,7 @@ mod spawn;
 mod spring;
 mod state;
 mod text;
+mod touch;
 mod window_anim;
 mod xwayland;
 

@@ -211,6 +211,20 @@ impl Contrast {
             }
             (Some("shot"), None, None) => self.screenshot_pending = true,
             (Some("hotkey"), Some("hide"), None) => self.hotkey_overlay.open = false,
+            (Some("touch"), Some(kind), Some(x)) => {
+                let y = words.next().unwrap_or("");
+                if let (Ok(x), Ok(y)) = (x.parse::<f64>(), y.parse::<f64>()) {
+                    let pos = smithay::utils::Point::from((x, y));
+                    let slot = smithay::backend::input::TouchSlot::from(Some(0));
+                    self.touch_last = pos;
+                    match kind {
+                        "down" => self.touch_down(slot, pos, 0),
+                        "move" => self.touch_motion(slot, pos, 0),
+                        "up" => self.touch_up(slot, pos, 0),
+                        _ => {}
+                    }
+                }
+            }
             (Some("unplug"), Some(name), None) => self.debug_unplug(name),
             (Some("replug"), Some(name), None) => self.debug_replug(name),
             (Some("corner"), Some(x), Some(y)) => {

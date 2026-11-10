@@ -9,7 +9,7 @@ use smithay::{
     backend::input::{
         AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, GestureBeginEvent,
         GestureSwipeUpdateEvent, InputBackend, InputEvent, KeyState, KeyboardKeyEvent,
-        PointerAxisEvent, PointerButtonEvent, PointerMotionEvent,
+        PointerAxisEvent, PointerButtonEvent, PointerMotionEvent, TouchEvent,
     },
     desktop::WindowSurfaceType,
     input::{
@@ -265,6 +265,28 @@ impl Contrast {
                 );
                 pointer.frame(self);
             }
+            InputEvent::TouchDown { event } => {
+                let Some(bounds) = self.outputs_bounds() else {
+                    return;
+                };
+                let pos = event.position_transformed(bounds.size) + bounds.loc.to_f64();
+                self.touch_last = pos;
+                self.touch_down(event.slot(), pos, Event::time_msec(&event));
+            }
+            InputEvent::TouchMotion { event } => {
+                let Some(bounds) = self.outputs_bounds() else {
+                    return;
+                };
+                let pos = event.position_transformed(bounds.size) + bounds.loc.to_f64();
+                self.touch_last = pos;
+                self.touch_motion(event.slot(), pos, Event::time_msec(&event));
+            }
+            InputEvent::TouchUp { event } => {
+                let pos = self.touch_last;
+                self.touch_up(event.slot(), pos, Event::time_msec(&event));
+            }
+            InputEvent::TouchFrame { .. } => self.touch_frame(),
+            InputEvent::TouchCancel { .. } => self.touch_cancel(),
             InputEvent::PointerAxis { event, .. } => {
                 let source = event.source();
                 // ホイールのバインド（`Mod+WheelScrollDown` など）に当たれば、クライアントには渡さない。

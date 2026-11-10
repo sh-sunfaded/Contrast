@@ -129,6 +129,8 @@ pub struct Contrast {
     pub screenshot_window_pending: bool,
     /// スクリーンショットの範囲を選ぶ UI（niri の `screenshot`）。
     pub screenshot_ui: crate::screenshot_ui_shell::ScreenshotUiState,
+    /// 最後のタッチの位置（指が離れるときの位置に使う。全体の論理座標）。
+    pub touch_last: smithay::utils::Point<f64, smithay::utils::Logical>,
     /// ホットキーのオーバーレイ（起動時に開く。niri の既定）。
     pub hotkey_overlay: crate::hotkey_overlay::HotkeyOverlay,
     /// タッチパッドのジェスチャーと DnD の端スクロール。
@@ -195,6 +197,7 @@ impl Contrast {
         let mut seat: Seat<Self> = seat_state.new_wl_seat(&dh, "contrast");
         add_keyboard(&mut seat);
         seat.add_pointer();
+        seat.add_touch();
 
         let socket_name = Self::init_wayland_listener(display, event_loop);
         let layout = policy.layout_settings();
@@ -269,6 +272,7 @@ impl Contrast {
             window_anims: Default::default(),
             screenshot_window_pending: false,
             screenshot_ui: Default::default(),
+            touch_last: Default::default(),
             hotkey_overlay: crate::hotkey_overlay::HotkeyOverlay::at_startup(skip_hotkey_overlay),
             gestures: Default::default(),
             overview: Default::default(),

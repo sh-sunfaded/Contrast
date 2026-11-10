@@ -39,6 +39,8 @@ pub struct Open {
     opened: Instant,
     /// 確定の要求（`Some(ディスクに保存するか)`）。次のフレームの前に処理する。
     confirm: Option<bool>,
+    /// 開いた瞬間のポインタの絵（透明な背景に、出力の大きさで描いたもの）。ポインタのある出力だけ。`P` で出す・隠す（niri と同じ）。
+    pointers: BTreeMap<String, GlesTexture>,
     /// 説明のパネル（ポインタを出す・隠すの 2 通り）。出力ごと: `(出す, 隠す, 大きさ（物理 px）)`。
     panels: BTreeMap<String, (GlesTexture, GlesTexture, (i32, i32))>,
     /// 撮影のボタンを押した出力（離したときにボタンの上なら保存する）。
@@ -140,6 +142,8 @@ pub struct ScreenshotUiState {
     pub requested: bool,
     /// 前回の選択（出力の名前と矩形）。
     last: Option<(String, Px)>,
+    /// UI の選択に使っている指（タッチのスロット）。
+    pub touch_slot: Option<smithay::backend::input::TouchSlot>,
 }
 
 impl ScreenshotUiState {
@@ -158,9 +162,14 @@ fn open_progress(opened: Instant) -> f32 {
 
 impl Contrast {
     /// フレームの描画の前に呼ぶ: 開く要求があれば絵を止めて開き、確定の要求があれば選択を読み出して渡す。
-    pub fn process_screenshot_ui(&mut self, renderer: &mut GlesRenderer) {
+    /// `cursor` は、出力の中の論理座標のポインタの位置から、そのときのカーソルの描画要素を作る（バックエンドが持つテーマを使う）。
+    pub fn process_screenshot_ui(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        cursor: &mut dyn FnMut(&mut GlesRenderer, Point<f64, Logical>) -> Vec<SceneElement>,
+    ) {
         if std::mem::take(&mut self.screenshot_ui.requested) && !self.screenshot_ui.is_open() {
-            self.open_screenshot_ui(renderer);
+            self.open_screenshot_ui(renderer, cursor);
         }
         let confirm = self
             .screenshot_ui
@@ -173,9 +182,15 @@ impl Contrast {
     }
 
     /// 出力ごとの今の絵を止めて、UI を開く。既定の出力は、ポインタのある出力、なければアクティブな出力。
-    fn open_screenshot_ui(&mut self, renderer: &mut GlesRenderer) {
+    fn open_screenshot_ui(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        cursor: &mut dyn FnMut(&mut GlesRenderer, Point<f64, Logical>) -> Vec<SceneElement>,
+    ) {
         let outputs: Vec<Output> = self.shell.outputs.values().cloned().collect();
         let mut frozen = BTreeMap::new();
+        let mut pointers = BTreeMap::new();
+        let pointer_now = self.seat.get_pointer().map(|p| p.current_location());
         let mut infos = BTreeMap::new();
         for output in &outputs {
             let (Some(geo), Some(mode)) =
@@ -194,6 +209,21 @@ impl Contrast {
                 };
             // 出力の背景色で塗る（背景色はフレームの描画の塗りつぶしの色で、要素には無い）。
             let background = self.policy.background();
+            // ポインタの絵（このフレームで見えているカーソル。ポインタのある出力だけ）。
+            if let Some(pos) = pointer_now.filter(|p| geo.to_f64().contains(*p)) {
+                let items = cursor(renderer, pos - geo.loc.to_f64());
+                if !items.is_empty()
+                    && let Ok(texture) = crate::render::offscreen::render_to_texture(
+                        renderer,
+                        mode.size,
+                        scale,
+                        &items,
+                        [0.0, 0.0, 0.0, 0.0],
+                    )
+                {
+                    pointers.insert(output.name(), texture);
+                }
+            }
             match crate::render::offscreen::render_to_texture(
                 renderer, mode.size, scale, &elements, background,
             ) {
@@ -252,6 +282,7 @@ impl Contrast {
             frozen,
             opened: Instant::now(),
             confirm: None,
+            pointers,
             panels,
             capture_down: None,
         });
@@ -298,11 +329,31 @@ impl Contrast {
             None,
             Kind::Unspecified,
         );
+        // 前から: ポインタ（出していれば）、止めた絵。
+        let mut elements = Vec::with_capacity(2);
+        if open.ui.show_pointer
+            && let Some(pointer) = open.pointers.get(&open.ui.output)
+        {
+            elements.push(TextureRenderElement::from_static_texture(
+                Id::new(),
+                renderer.context_id(),
+                Point::<f64, Physical>::from((f64::from(-x), f64::from(-y))),
+                pointer.clone(),
+                1,
+                Transform::Normal,
+                None,
+                None,
+                Some(size.to_f64().to_logical(scale).to_i32_round()),
+                None,
+                Kind::Unspecified,
+            ));
+        }
+        elements.push(element);
         let result = crate::render::offscreen::render_to_rgba(
             renderer,
             Size::from((w, h)),
             scale,
-            &[element],
+            &elements,
             [0.0, 0.0, 0.0, 0.0],
         );
         self.close_screenshot_ui();
@@ -379,6 +430,26 @@ impl Contrast {
                 .into_iter()
                 .filter_map(|r| solid(r, [0.0, 0.0, 0.0, 0.5 * p])),
         );
+        if open.ui.show_pointer
+            && let (Some(pointer), Some((_, size))) =
+                (open.pointers.get(&name), open.frozen.get(&name))
+        {
+            out.push(SceneElement::Frozen(
+                TextureRenderElement::from_static_texture(
+                    Id::new(),
+                    renderer.context_id(),
+                    offset.to_f64(),
+                    pointer.clone(),
+                    1,
+                    Transform::Normal,
+                    None,
+                    None,
+                    Some(size.to_f64().to_logical(scale).to_i32_round()),
+                    None,
+                    Kind::Unspecified,
+                ),
+            ));
+        }
         if let Some((texture, size)) = open.frozen.get(&name) {
             out.push(SceneElement::Frozen(
                 TextureRenderElement::from_static_texture(
@@ -416,7 +487,7 @@ impl Contrast {
                 open.ui.show_pointer = !open.ui.show_pointer;
                 tracing::info!(
                     show_pointer = open.ui.show_pointer,
-                    "screenshot ui: pointer toggled (the pointer image is not captured)"
+                    "screenshot ui: pointer toggled"
                 );
             }
             None => return false,
