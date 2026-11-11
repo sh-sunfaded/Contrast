@@ -177,3 +177,7 @@ niri の設定の既定値は niri の既定（wiki / パッケージの既定�
 | niri の機能 | Contrast の今 | 差 |
 |---|---|---|
 | 出力の make・model・serial（EDID）、core への出力名、自動配置の順 | ○ EDID の基本ブロックを自前で読む（`edid.rs`）。シリアルが分かれば core の出力名は `make model serial`（挿し替えても同じモニタ）、無ければ接続の名前。配置は make・model・serial の順、同じか不明なら接続の名前 | 製造元は PNP の 3 文字（niri は会社名）。`output "…"` の設定が Contrast に無いので、設定との照合は無い。実機（DRM）でのみ確認できる |
+
+| niri の機能 | Contrast の今 | 差 |
+|---|---|---|
+| 2 枚目以降の GPU（`backend/tty.rs` の `GpuManager`・`MultiRenderer`） | △ 出力のある DRM デバイスをすべて開き、2 枚目以降は**自分の renderer で自分の出力だけを描く**（独立描画）。出力名が重なれば `-gpu<N>`。2 枚目の失敗は警告してそのフレームを飛ばす | niri は主の GPU で描いて 2 枚目へコピーする。主の GPU の dmabuf は 2 枚目で取り込めないことがあり、その出力に窓が出ない場合がある。範囲選択 UI は 2 枚目の出力で正しく出ない可能性。実機（GPU 2 枚）でのみ確認できる |

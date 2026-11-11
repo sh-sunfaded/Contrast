@@ -19,7 +19,11 @@
 //! 複数出力: 選んだ GPU の接続済みの connector すべてを、それぞれの CRTC で駆動する（出力ごとに vblank で描く）。
 //! 出力の位置は niri の自動配置と同じく、名前の順に左から右へ並べる（`auto_positions`）。udev の変化で connector を
 //! 調べ直し、増えた出力を足し、外れた出力を外す（ホットプラグ）。
-//! 未対応: 2 枚目以降の GPU、スケール、クライアントのカーソル画像。
+//! 複数 GPU: 出力のある DRM デバイスをすべて開く（先頭が `primary_gpu`）。2 枚目以降の GPU は、自分の EGL・renderer で
+//! 自分の出力だけを描く（niri は主の GPU で描いて 2 枚目へコピーする `MultiRenderer`。Contrast は独立に描く）。
+//! 主の GPU で作ったバッファ（dmabuf）は、2 枚目の GPU で取り込めないことがある。その出力のフレームは警告して飛ばす
+//! （主の GPU の失敗だけが致命的）。出力の名前が GPU のあいだで重なったら、2 枚目以降に `-gpu<N>` を付ける。
+//! 未対応: クライアントのカーソル画像（スケール 1 以外の一部）。
 
 use std::cell::RefCell;
 use std::fmt;
@@ -216,6 +220,8 @@ struct Head {
 
 /// GPU 側の資源。`Drop` で、出力を止める → DRM master を手放す → renderer と fd を閉じる、の順に片付ける。
 struct Gpu {
+    /// このデバイスのパス（udev の変化を絞る）。
+    path: PathBuf,
     heads: Vec<Head>,
     manager: Option<Manager>,
     renderer: Option<GlesRenderer>,
@@ -241,11 +247,10 @@ impl Drop for Gpu {
 
 /// DRM バックエンドの状態。イベントループのコールバックが `Rc<RefCell<_>>` 越しに触る。
 struct Drm {
-    // `gpu` を `_session` より先に落とす（フィールドは宣言順に Drop される）。
-    gpu: Option<Gpu>,
+    // `gpus` を `_session` より先に落とす（フィールドは宣言順に Drop される）。
+    // 先頭が主の GPU。2 枚目以降は、自分の renderer で自分の出力だけを描く（モジュールの説明の「複数 GPU」）。
+    gpus: Vec<Gpu>,
     _session: LibSeatSession,
-    /// 開いている DRM デバイスのパス（udev の変化を絞る）。
-    path: PathBuf,
     /// テーマを作ったときの設定（リロードで変わったら作り直す）。
     cursor_cfg: CursorSettings,
     /// xcursor のテーマ。
@@ -321,22 +326,29 @@ impl Drm {
 
     /// すべての出力の次のフレームを描く（vblank を待っている出力は飛ばす）。
     fn render(&mut self, state: &mut Contrast, shared: &Shared) {
-        let crtcs: Vec<crtc::Handle> = self
-            .gpu
-            .as_ref()
-            .map(|g| g.heads.iter().map(|h| h.crtc).collect())
-            .unwrap_or_default();
-        for crtc in crtcs {
-            self.render_head(state, shared, crtc);
+        let heads: Vec<(usize, crtc::Handle)> = self
+            .gpus
+            .iter()
+            .enumerate()
+            .flat_map(|(i, g)| g.heads.iter().map(move |h| (i, h.crtc)))
+            .collect();
+        for (gpu, crtc) in heads {
+            self.render_head(state, shared, gpu, crtc);
             if self.error.is_some() {
                 return;
             }
         }
     }
 
-    /// CRTC `crtc` の出力の次のフレームを描いて queue し、成功したら frame callback を送る。
+    /// `gpu_index` 番目の GPU の CRTC `crtc` の出力の次のフレームを描いて queue し、成功したら frame callback を送る。
     /// クライアントの commit を拾うため、毎回バッファの age を捨てて全面を描き直す（プロトタイプ）。
-    fn render_head(&mut self, state: &mut Contrast, shared: &Shared, crtc: crtc::Handle) {
+    fn render_head(
+        &mut self,
+        state: &mut Contrast,
+        shared: &Shared,
+        gpu_index: usize,
+        crtc: crtc::Handle,
+    ) {
         if !self.active || self.monitors_off {
             return;
         }
@@ -358,7 +370,7 @@ impl Drm {
             self.theme = CursorTheme::resolve(&cursor_cfg);
             self.cursor_cfg = cursor_cfg;
         }
-        let Some(gpu) = self.gpu.as_mut() else {
+        let Some(gpu) = self.gpus.get_mut(gpu_index) else {
             return;
         };
         let Some(head) = gpu.heads.iter_mut().find(|h| h.crtc == crtc) else {
@@ -405,6 +417,14 @@ impl Drm {
         };
         let elements = match scene_elements(state, renderer, &output_name, origin, cursor) {
             Ok(e) => e,
+            // 2 枚目以降の GPU の失敗（別の GPU からのバッファの取り込みなど）は、その出力のフレームを飛ばすだけにする。
+            Err(e) if gpu_index > 0 => {
+                tracing::warn!(
+                    output = output_name.name(),
+                    "drm: secondary gpu frame skipped: {e}"
+                );
+                return;
+            }
             Err(e) => {
                 self.fail(state, DrmError::Frame(e.to_string()));
                 return;
@@ -446,6 +466,12 @@ impl Drm {
                     );
                 }
             }
+            Err(Some((error, _))) if gpu_index > 0 => {
+                tracing::warn!(
+                    output = output_name.name(),
+                    "drm: secondary gpu frame failed: {error}"
+                );
+            }
             Err(Some((error, denied))) => self.handle_failure(state, error, denied),
             Err(None) => {
                 // 空のフレーム: 少し待ってやり直す。
@@ -453,7 +479,9 @@ impl Drm {
                 let scheduled = self.handle.insert_source(
                     Timer::from_duration(RETRY_INTERVAL),
                     move |_, _, state| {
-                        with(&shared.clone(), |d| d.render_head(state, &shared, crtc));
+                        with(&shared.clone(), |d| {
+                            d.render_head(state, &shared, gpu_index, crtc)
+                        });
                         TimeoutAction::Drop
                     },
                 );
@@ -468,7 +496,7 @@ impl Drm {
     fn set_monitors(&mut self, on: bool, handle: &LoopHandle<'static, Contrast>, shared: &Shared) {
         self.monitors_off = !on;
         if !on {
-            for head in self.gpu.iter_mut().flat_map(|g| g.heads.iter_mut()) {
+            for head in self.gpus.iter_mut().flat_map(|g| g.heads.iter_mut()) {
                 if let Some(output) = head.handle.as_mut()
                     && let Err(e) = output.with_compositor(|c| c.clear())
                 {
@@ -495,13 +523,19 @@ impl Drm {
     }
 
     /// vblank: CRTC `crtc` の提出済みのフレームを確定して、その出力の次を出す。
-    fn on_vblank(&mut self, state: &mut Contrast, shared: &Shared, crtc: crtc::Handle) {
+    fn on_vblank(
+        &mut self,
+        state: &mut Contrast,
+        shared: &Shared,
+        gpu_index: usize,
+        crtc: crtc::Handle,
+    ) {
         if self.monitors_off {
             return;
         }
         let Some(head) = self
-            .gpu
-            .as_mut()
+            .gpus
+            .get_mut(gpu_index)
             .and_then(|g| g.heads.iter_mut().find(|h| h.crtc == crtc))
         else {
             return;
@@ -527,7 +561,7 @@ impl Drm {
             self.last_log = Instant::now();
             tracing::info!("drm: frame={}", self.frames);
         }
-        self.render_head(state, shared, crtc);
+        self.render_head(state, shared, gpu_index, crtc);
     }
 
     /// session が inactive になった（VT 切り替え）: 描画と入力を止めて master を手放す。
@@ -539,7 +573,7 @@ impl Drm {
         self.libinput.suspend();
         // デバイスが外れると、離したキーのイベントが来ない（押しっぱなしの修飾キーが残る）ので、ここで離す。
         state.release_all_keys();
-        if let Some(gpu) = self.gpu.as_mut() {
+        for gpu in &mut self.gpus {
             if let Some(manager) = gpu.manager.as_mut() {
                 manager.pause();
             }
@@ -558,9 +592,20 @@ impl Drm {
         if self.libinput.resume().is_err() {
             tracing::warn!("drm: libinput resume failed");
         }
-        if let Some(manager) = self.gpu.as_mut().and_then(|g| g.manager.as_mut())
-            && let Err(e) = manager.activate(false)
-        {
+        // 主の GPU の失敗は致命的、2 枚目以降は警告して、その GPU は描かれないまま続ける。
+        let mut primary_error = None;
+        for (i, gpu) in self.gpus.iter_mut().enumerate() {
+            if let Some(manager) = gpu.manager.as_mut()
+                && let Err(e) = manager.activate(false)
+            {
+                if i == 0 {
+                    primary_error = Some(e.to_string());
+                } else {
+                    tracing::warn!("drm: {} cannot be activated: {e}", gpu.path.display());
+                }
+            }
+        }
+        if let Some(e) = primary_error {
             self.fail(state, DrmError::Frame(format!("activate failed: {e}")));
             return;
         }
@@ -583,22 +628,39 @@ impl Drm {
             return;
         }
         // 離れているあいだに抜き差しされた connector を反映する（`rescan` は最後に描く）。
-        self.rescan(state, shared);
+        self.rescan_all(state, shared);
     }
 }
 
 impl Drm {
-    /// udev のデバイス番号 `device_id` が、開いている DRM デバイスか。
-    fn is_device(&self, device_id: u64) -> bool {
-        smithay::reexports::rustix::fs::stat(&self.path).is_ok_and(|st| st.st_rdev == device_id)
+    /// udev のデバイス番号 `device_id` の、開いている DRM デバイスの番号（`gpus` の添字）。
+    fn device_index(&self, device_id: u64) -> Option<usize> {
+        self.gpus.iter().position(|g| {
+            smithay::reexports::rustix::fs::stat(&g.path).is_ok_and(|st| st.st_rdev == device_id)
+        })
     }
 
     /// connector を調べ直す（udev の変化・session の再開）。外れた出力を外し、増えた出力を足し、位置を niri の自動配置に直す。
-    fn rescan(&mut self, state: &mut Contrast, shared: &Shared) {
+    fn rescan_all(&mut self, state: &mut Contrast, shared: &Shared) {
+        for i in 0..self.gpus.len() {
+            self.rescan(state, shared, i);
+        }
+    }
+
+    /// `gpu_index` 番目の GPU の connector を調べ直す。
+    fn rescan(&mut self, state: &mut Contrast, shared: &Shared, gpu_index: usize) {
         if !self.active {
             return;
         }
-        let Some(gpu) = self.gpu.as_mut() else {
+        // 全 GPU の出力の名前（2 枚目以降の GPU の出力が、ほかと同じ名前なら変える）。
+        let taken: Vec<String> = self
+            .gpus
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i != gpu_index)
+            .flat_map(|(_, g)| g.heads.iter().map(|h| h.output.name()))
+            .collect();
+        let Some(gpu) = self.gpus.get_mut(gpu_index) else {
             return;
         };
         let (Some(manager), Some(renderer)) = (gpu.manager.as_mut(), gpu.renderer.as_mut()) else {
@@ -631,13 +693,14 @@ impl Drm {
         // 増えた出力。
         let skip: Vec<control::connector::Handle> = gpu.heads.iter().map(|h| h.connector).collect();
         let mut used: Vec<crtc::Handle> = gpu.heads.iter().map(|h| h.crtc).collect();
-        let targets = match targets_on(manager.device(), &skip, &mut used, false) {
+        let mut targets = match targets_on(manager.device(), &skip, &mut used, false) {
             Ok(t) => t,
             Err(e) => {
                 tracing::warn!("drm: rescan failed: {e}");
                 return;
             }
         };
+        rename_colliding(&mut targets, &taken, gpu_index);
         let mut added = Vec::new();
         for target in targets {
             let (output, global) = new_output(state, &target);
@@ -675,7 +738,11 @@ impl Drm {
                 }
             }
         }
-        let outputs: Vec<Output> = gpu.heads.iter().map(|h| h.output.clone()).collect();
+        let outputs: Vec<Output> = self
+            .gpus
+            .iter()
+            .flat_map(|g| g.heads.iter().map(|h| h.output.clone()))
+            .collect();
         place_outputs(state, &outputs, &added);
         self.render(state, shared);
     }
@@ -744,7 +811,7 @@ impl DrmGuard {
             .drm
             .try_borrow_mut()
             .map_err(|_| DrmError::Frame("DRM state is still borrowed".to_string()))?;
-        drm.gpu = None;
+        drm.gpus.clear();
         match drm.error.take() {
             Some(e) => Err(e),
             None => Ok(()),
@@ -755,7 +822,7 @@ impl DrmGuard {
 impl Drop for DrmGuard {
     fn drop(&mut self) {
         if let Ok(mut drm) = self.drm.try_borrow_mut() {
-            drm.gpu = None;
+            drm.gpus.clear();
         }
     }
 }
@@ -786,16 +853,37 @@ pub fn init(
     let seat = session.seat();
     tracing::info!(seat = %seat, active = session.is_active(), "drm: session opened");
 
-    let (path, targets) = enumerate(&mut session, &seat)?;
-    for target in &targets {
-        tracing::info!(
-            "drm: modeset connector={} mode={}",
-            target.name,
-            format_mode(&target.mode)
-        );
+    let mut devices = enumerate(&mut session, &seat)?;
+    // 出力の名前が GPU のあいだで重ならないようにする（先頭の GPU の名前はそのまま）。
+    let mut taken: Vec<String> = Vec::new();
+    for (index, (_, targets)) in devices.iter_mut().enumerate() {
+        rename_colliding(targets, &taken, index);
+        taken.extend(targets.iter().map(|t| t.name.clone()));
+        for target in targets.iter() {
+            tracing::info!(
+                "drm: modeset gpu={index} connector={} mode={}",
+                target.name,
+                format_mode(&target.mode)
+            );
+        }
     }
-    let (gpu, drm_notifier) = open_gpu(&mut session, &path, &targets, state)?;
-    let outputs: Vec<Output> = gpu.heads.iter().map(|h| h.output.clone()).collect();
+    // 先頭（主の GPU）は失敗したら起動に失敗する。2 枚目以降は、開けなければ警告して使わない。
+    let mut gpus: Vec<Gpu> = Vec::new();
+    let mut notifiers: Vec<DrmDeviceNotifier> = Vec::new();
+    for (index, (path, targets)) in devices.iter().enumerate() {
+        match open_gpu(&mut session, path, targets, state) {
+            Ok((gpu, notifier)) => {
+                gpus.push(gpu);
+                notifiers.push(notifier);
+            }
+            Err(e) if index == 0 => return Err(e),
+            Err(e) => tracing::warn!("drm: secondary gpu {} is not used: {e}", path.display()),
+        }
+    }
+    let outputs: Vec<Output> = gpus
+        .iter()
+        .flat_map(|g| g.heads.iter().map(|h| h.output.clone()))
+        .collect();
     let first_output = outputs.first().cloned().ok_or(DrmError::NoOutput)?;
 
     // libinput: session 経由でデバイスを開き、この seat に割り当てる。
@@ -808,9 +896,8 @@ pub fn init(
 
     let handle = event_loop.handle();
     let drm: Shared = Rc::new(RefCell::new(Drm {
-        gpu: Some(gpu),
+        gpus,
         _session: session.clone(),
-        path: path.clone(),
         cursor_cfg: state.policy.cursor_settings(),
         theme: CursorTheme::resolve(&state.policy.cursor_settings()),
         fallback_cursor: SolidColorBuffer::default(),
@@ -832,7 +919,7 @@ pub fn init(
         .try_borrow()
         .ok()
         .and_then(|d| {
-            let r = d.gpu.as_ref()?.renderer.as_ref()?;
+            let r = d.gpus.first()?.renderer.as_ref()?;
             Some((
                 r.dmabuf_formats().iter().copied().collect(),
                 crate::render::dmabuf_feedback(r),
@@ -847,7 +934,7 @@ pub fn init(
             let Ok(mut d) = importer.try_borrow_mut() else {
                 return false;
             };
-            match d.gpu.as_mut().and_then(|g| g.renderer.as_mut()) {
+            match d.gpus.first_mut().and_then(|g| g.renderer.as_mut()) {
                 Some(r) => r.import_dmabuf(dmabuf, None).is_ok(),
                 None => false,
             }
@@ -900,12 +987,15 @@ pub fn init(
             })
             .map_err(|e| DrmError::EventLoop(e.to_string()))?;
     }
-    {
+    for (gpu_index, drm_notifier) in notifiers.into_iter().enumerate() {
         let shared = drm.clone();
         handle
             .insert_source(drm_notifier, move |event, _, state| match event {
-                DrmEvent::VBlank(crtc) => {
-                    with(&shared.clone(), |d| d.on_vblank(state, &shared, crtc))
+                DrmEvent::VBlank(crtc) => with(&shared.clone(), |d| {
+                    d.on_vblank(state, &shared, gpu_index, crtc)
+                }),
+                DrmEvent::Error(e) if gpu_index > 0 => {
+                    tracing::warn!("drm: secondary gpu error: {e}");
                 }
                 DrmEvent::Error(e) => with(&shared.clone(), |d| {
                     d.handle_failure(
@@ -967,9 +1057,9 @@ pub fn init(
             .insert_source(udev, move |event, _, state| {
                 if let UdevEvent::Changed { device_id } = event {
                     with(&shared.clone(), |d| {
-                        if d.is_device(device_id) {
-                            tracing::info!("drm: udev change, rescanning connectors");
-                            d.rescan(state, &shared);
+                        if let Some(index) = d.device_index(device_id) {
+                            tracing::info!(gpu = index, "drm: udev change, rescanning connectors");
+                            d.rescan(state, &shared, index);
                         }
                     });
                 }
@@ -1067,7 +1157,10 @@ fn center_pointer(state: &mut Contrast, output: &Output) {
 
 /// seat の DRM デバイスを列挙してログに出し、modeset の対象（デバイスと、接続済みの connector すべて）を決める。
 /// primary の GPU に接続済みの出力があればそれ、なければ出力のある最初のデバイス。
-fn enumerate(session: &mut LibSeatSession, seat: &str) -> Result<(PathBuf, Vec<Target>), DrmError> {
+fn enumerate(
+    session: &mut LibSeatSession,
+    seat: &str,
+) -> Result<Vec<(PathBuf, Vec<Target>)>, DrmError> {
     let primary = primary_gpu(seat).map_err(|e| DrmError::Udev(e.to_string()))?;
     let udev = UdevBackend::new(seat).map_err(|e| DrmError::Udev(e.to_string()))?;
     let mut paths: Vec<PathBuf> = udev.device_list().map(|(_, p)| p.to_path_buf()).collect();
@@ -1077,21 +1170,15 @@ fn enumerate(session: &mut LibSeatSession, seat: &str) -> Result<(PathBuf, Vec<T
     }
 
     let mut readable = 0usize;
-    let mut chosen: Option<(PathBuf, Vec<Target>)> = None;
-    let mut fallback: Option<(PathBuf, Vec<Target>)> = None;
+    let mut found: Vec<(PathBuf, Vec<Target>, bool)> = Vec::new();
     for path in &paths {
         let is_primary = primary.as_deref() == Some(path.as_path());
         tracing::info!("drm: device={} primary={is_primary}", path.display());
         match list_device(session, path) {
             Ok(targets) => {
                 readable = readable.saturating_add(1);
-                if targets.is_empty() {
-                    continue;
-                }
-                if is_primary && chosen.is_none() {
-                    chosen = Some((path.clone(), targets));
-                } else if fallback.is_none() {
-                    fallback = Some((path.clone(), targets));
+                if !targets.is_empty() {
+                    found.push((path.clone(), targets, is_primary));
                 }
             }
             Err(e) => tracing::warn!("drm: device={} skipped: {e}", path.display()),
@@ -1102,7 +1189,37 @@ fn enumerate(session: &mut LibSeatSession, seat: &str) -> Result<(PathBuf, Vec<T
             active: session.is_active(),
         });
     }
-    chosen.or(fallback).ok_or(DrmError::NoOutput)
+    order_devices(found)
+        .filter(|d| !d.is_empty())
+        .ok_or(DrmError::NoOutput)
+}
+
+/// 出力のある DRM デバイスを、主の GPU を先頭に（無ければパスの順の先頭を主として）並べる。2 枚目以降はパスの順。
+/// 出力のあるデバイスが無ければ `None`。
+fn order_devices<T>(mut found: Vec<(PathBuf, T, bool)>) -> Option<Vec<(PathBuf, T)>> {
+    if found.is_empty() {
+        return None;
+    }
+    // 安定な並べ替え: 主の GPU が先頭、ほかは元の（パスの）順。
+    found.sort_by_key(|(_, _, primary)| !*primary);
+    Some(found.into_iter().map(|(p, t, _)| (p, t)).collect())
+}
+
+/// `index` 番目（1 以上）の GPU の出力の名前が `taken`（ほかの GPU の出力の名前）と重なるなら、`-gpu<index>` を付けて変える。
+/// 先頭の GPU の名前は変えない。
+fn rename_colliding(targets: &mut [Target], taken: &[String], index: usize) {
+    for target in targets {
+        target.name = unique_name(&target.name, taken, index);
+    }
+}
+
+/// `index` 番目の GPU の出力の名前 `name` を、`taken` と重ならない名前にする（`index` が 0 なら、そのまま）。
+fn unique_name(name: &str, taken: &[String], index: usize) -> String {
+    if index > 0 && taken.iter().any(|t| t == name) {
+        format!("{name}-gpu{index}")
+    } else {
+        name.to_owned()
+    }
 }
 
 /// 1 つの DRM デバイスを session 経由で開き、connector と CRTC をログに出して閉じる。
@@ -1327,6 +1444,7 @@ fn open_gpu(
 
     Ok((
         Gpu {
+            path: path.to_path_buf(),
             heads,
             manager: Some(manager),
             renderer: Some(renderer),
@@ -1361,5 +1479,55 @@ mod placement_tests {
         assert_eq!(auto_positions(&[]), Vec::<i32>::new());
         assert_eq!(auto_positions(&[1920]), [0]);
         assert_eq!(auto_positions(&[1920, 2560, 1280]), [0, 1920, 4480]);
+    }
+}
+
+#[cfg(test)]
+mod multi_gpu_tests {
+    use super::*;
+
+    fn dev(path: &str, primary: bool) -> (PathBuf, u8, bool) {
+        (PathBuf::from(path), 0, primary)
+    }
+
+    #[test]
+    fn the_primary_gpu_comes_first_and_the_others_keep_the_path_order() {
+        let found = vec![
+            dev("/dev/dri/card0", false),
+            dev("/dev/dri/card1", true),
+            dev("/dev/dri/card2", false),
+        ];
+        let ordered = order_devices(found).expect("devices");
+        let paths: Vec<_> = ordered
+            .iter()
+            .map(|(p, _)| p.to_str().unwrap_or(""))
+            .collect();
+        assert_eq!(
+            paths,
+            ["/dev/dri/card1", "/dev/dri/card0", "/dev/dri/card2"]
+        );
+    }
+
+    #[test]
+    fn without_a_primary_the_first_path_leads_and_no_device_is_none() {
+        let ordered = order_devices(vec![
+            dev("/dev/dri/card0", false),
+            dev("/dev/dri/card1", false),
+        ])
+        .expect("devices");
+        assert_eq!(
+            ordered.first().map(|(p, _)| p.to_str().unwrap_or("")),
+            Some("/dev/dri/card0")
+        );
+        assert!(order_devices::<u8>(Vec::new()).is_none());
+    }
+
+    #[test]
+    fn a_colliding_output_name_gets_the_gpu_suffix_only_after_the_first_gpu() {
+        let taken = vec!["HDMI-A-1".to_owned(), "eDP-1".to_owned()];
+        assert_eq!(unique_name("HDMI-A-1", &taken, 1), "HDMI-A-1-gpu1");
+        assert_eq!(unique_name("DP-1", &taken, 1), "DP-1");
+        // 先頭の GPU の名前は変えない。
+        assert_eq!(unique_name("HDMI-A-1", &taken, 0), "HDMI-A-1");
     }
 }
