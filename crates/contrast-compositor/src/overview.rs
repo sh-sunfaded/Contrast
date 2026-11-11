@@ -148,6 +148,7 @@ pub fn zoom_at(p: f64) -> f64 {
 
 /// 出力の大きさ `size`（論理）、縮める率 `zoom`、アクティブな位置 `active`、ワークスペースの数 `count` から、
 /// 各ワークスペースの矩形（出力の中の論理座標）。niri の `workspaces_render_geo`。
+#[cfg(test)]
 pub fn workspace_rects(
     size: (f64, f64),
     zoom: f64,
@@ -390,6 +391,40 @@ impl Contrast {
                 background,
                 Kind::Unspecified,
             )));
+        }
+        // ワークスペースの影（niri の `workspace-shadow` の既定: やわらかさ 40・広がり 10・下へ 10、色 #00000050。
+        // 出力の高さ / 1080 と、縮める率を掛け、開く進みを透明度にする）。全ワークスペースの後ろ、背景（暗い面）の前。
+        if let Some(sh) = crate::render::look::Shaders::get(renderer) {
+            let norm = f64::from(geo.size.h) / 1080.0 * zoom;
+            let (blur, spread, off_y) = (40.0 * norm, 10.0 * norm, 10.0 * norm);
+            let alpha = self.overview.value().clamp(0.0, 1.0) as f32;
+            for (_, rect) in self.overview_workspaces(output) {
+                let ws_loc: Point<f64, Logical> = rect.loc - geo.loc.to_f64() + out_origin.to_f64();
+                let pad = blur + spread;
+                let area = crate::render::logical(
+                    (ws_loc.x - pad).round() as i32,
+                    (ws_loc.y - pad + off_y).round() as i32,
+                    (rect.size.w + 2.0 * pad).round() as i32,
+                    (rect.size.h + 2.0 * pad).round() as i32,
+                );
+                out.push(SceneElement::Pixel(
+                    smithay::backend::renderer::gles::element::PixelShaderElement::new(
+                        sh.shadow.clone(),
+                        area,
+                        None,
+                        alpha,
+                        vec![
+                            smithay::backend::renderer::gles::Uniform::new(
+                                "color",
+                                crate::render::premultiplied([0.0, 0.0, 0.0, 80.0 / 255.0]),
+                            ),
+                            smithay::backend::renderer::gles::Uniform::new("radius", 0.0_f32),
+                            smithay::backend::renderer::gles::Uniform::new("blur", blur as f32),
+                        ],
+                        Kind::Unspecified,
+                    ),
+                ));
+            }
         }
         out.push(SceneElement::Solid(SolidColorRenderElement::new(
             Id::new(),

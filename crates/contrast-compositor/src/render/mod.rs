@@ -28,7 +28,7 @@ use smithay::{
 
 use crate::state::Contrast;
 
-mod look;
+pub(crate) mod look;
 pub mod offscreen;
 mod rounded;
 
@@ -459,7 +459,7 @@ pub(crate) fn edges(tile: contrast_core::Rect, b: i32) -> Option<[Band; 4]> {
 }
 
 /// 論理矩形。
-fn logical(x: i32, y: i32, w: i32, h: i32) -> Rectangle<i32, Logical> {
+pub(crate) fn logical(x: i32, y: i32, w: i32, h: i32) -> Rectangle<i32, Logical> {
     Rectangle::new((x, y).into(), (w.max(1), h.max(1)).into())
 }
 
