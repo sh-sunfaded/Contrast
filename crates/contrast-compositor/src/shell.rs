@@ -383,7 +383,7 @@ impl Contrast {
         self.anim.suppress(true);
         let ok = self.submit(Command::OutputAdded {
             key,
-            name: OutputName::new(output.name()),
+            name: OutputName::new(crate::edid::identity_of(output).core_name()),
             geometry,
         });
         self.anim.suppress(false);

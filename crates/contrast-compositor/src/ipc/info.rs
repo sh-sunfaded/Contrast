@@ -62,7 +62,7 @@ fn output_info(contrast: &Contrast, output: &SmOutput) -> Output {
         name: output.name(),
         make: props.make,
         model: props.model,
-        serial: None,
+        serial: crate::edid::identity_of(output).serial,
         physical_size: u32::try_from(props.size.w)
             .ok()
             .zip(u32::try_from(props.size.h).ok()),

@@ -189,6 +189,8 @@ struct Target {
     crtc: crtc::Handle,
     mode: control::Mode,
     size_mm: (i32, i32),
+    /// モニタの EDID から読んだ識別（読めなければ `None`）。
+    edid: Option<crate::edid::Edid>,
 }
 
 type Allocator = GbmAllocator<DrmDeviceFd>;
@@ -693,7 +695,8 @@ fn place_outputs(state: &mut Contrast, outputs: &[Output], added: &[Output]) {
         .iter()
         .map(|o| (o.name(), output_size(o), o))
         .collect();
-    named.sort_by(|a, b| a.0.cmp(&b.0));
+    // niri と同じく、make・model・serial の順に、同じか不明なら接続の名前の順（接続の順に依らない並びにする）。
+    named.sort_by(|a, b| crate::edid::identity_of(a.2).compare(&crate::edid::identity_of(b.2)));
     let widths: Vec<i32> = named.iter().map(|(_, (w, _), _)| *w).collect();
     for ((_, (w, h), output), x) in named.iter().zip(auto_positions(&widths)) {
         let before = state.space.output_geometry(output).map(|g| g.loc);
@@ -999,10 +1002,26 @@ fn new_output(
         PhysicalProperties {
             size: target.size_mm.into(),
             subpixel: Subpixel::Unknown,
-            make: "Contrast".into(),
-            model: "DRM".into(),
+            make: target
+                .edid
+                .as_ref()
+                .map_or_else(|| "Unknown".to_owned(), |e| e.make.clone()),
+            model: target
+                .edid
+                .as_ref()
+                .map_or_else(|| "Unknown".to_owned(), |e| e.model.clone()),
         },
     );
+    let identity = crate::edid::OutputIdentity::from_edid(&target.name, target.edid.as_ref());
+    tracing::info!(
+        output = target.name,
+        core_name = identity.core_name(),
+        make = ?identity.make,
+        model = ?identity.model,
+        serial = ?identity.serial,
+        "drm: output identity (EDID)"
+    );
+    output.user_data().insert_if_missing(|| identity);
     let global = output.create_global::<Contrast>(&state.display_handle);
     // niri は設定に拡大率が無ければ、物理の大きさと解像度から決める（`guess_monitor_scale`）。Contrast は描画（カーソル・枠・
     // fractional-scale のプロトコル）が拡大率 1 前提なので、まだ 1 のまま使い、niri なら使う値をログに出す（実機で確かめる）。
@@ -1112,6 +1131,26 @@ fn connected_connectors<D: ControlDevice>(dev: &D) -> io::Result<Vec<control::co
     Ok(out)
 }
 
+/// connector の EDID（`EDID` プロパティの blob）を読む。無い・読めない・形が違うなら `None`。
+fn read_edid<D: ControlDevice>(
+    dev: &D,
+    handle: control::connector::Handle,
+) -> Option<crate::edid::Edid> {
+    let props = dev.get_properties(handle).ok()?;
+    let (handles, values) = props.as_props_and_values();
+    for (prop, raw) in handles.iter().zip(values) {
+        let info = dev.get_property(*prop).ok()?;
+        if info.name().to_bytes() != b"EDID" {
+            continue;
+        }
+        let control::property::Value::Blob(id) = info.value_type().convert_value(*raw) else {
+            return None;
+        };
+        return crate::edid::parse_edid(&dev.get_property_blob(id).ok()?);
+    }
+    None
+}
+
 /// 接続済みの connector のうち `skip` に無いものを、`used` に無い CRTC を割り当てて、modeset の対象にする
 /// （割り当てた CRTC は `used` に足す）。`log` なら、connector（名前・状態・モード・物理サイズ）と CRTC をログに出す。
 fn targets_on<D: ControlDevice>(
@@ -1164,6 +1203,7 @@ fn targets_on<D: ControlDevice>(
                 crtc,
                 mode,
                 size_mm: (i32::try_from(w).unwrap_or(0), i32::try_from(h).unwrap_or(0)),
+                edid: read_edid(dev, handle),
             });
         } else {
             tracing::warn!("drm: connector={name} has no free CRTC or mode, not driven");
