@@ -154,13 +154,24 @@ pub fn workspace_rects(
     active: usize,
     count: usize,
 ) -> Vec<(f64, f64, f64, f64)> {
-    let (w, h) = (size.0 * zoom, size.1 * zoom);
     let gap = (size.1 * 0.1 * zoom).round().max(1.0);
+    workspace_rects_at(size, zoom, active as f64, count, gap)
+}
+
+/// `workspace_rects` の、アクティブな位置が小数（縦のスワイプの途中）で、隙間 `gap`（論理 px）を指定できる版。
+pub fn workspace_rects_at(
+    size: (f64, f64),
+    zoom: f64,
+    active: f64,
+    count: usize,
+    gap: f64,
+) -> Vec<(f64, f64, f64, f64)> {
+    let (w, h) = (size.0 * zoom, size.1 * zoom);
     let off_x = ((size.0 - w) / 2.0).round();
     let off_y = ((size.1 - h) / 2.0).round();
     (0..count)
         .map(|k| {
-            let y = (k as f64 - active as f64) * (h + gap) + off_y;
+            let y = (k as f64 - active) * (h + gap) + off_y;
             (off_x, y.round(), w, h)
         })
         .collect()
@@ -206,12 +217,14 @@ impl Contrast {
         let list = view.output_workspaces(id);
         let active = self.shown_position(output).map_or(0, usize::from);
         let zoom = zoom_at(self.overview.value());
-        let rects = workspace_rects(
-            (f64::from(geo.size.w), f64::from(geo.size.h)),
-            zoom,
-            active,
-            list.len(),
-        );
+        let size = (f64::from(geo.size.w), f64::from(geo.size.h));
+        // 縦のスワイプの途中（とその後のバネ）は、オーバービューと同じ並べ方を、ズーム 1・隙間 0 で、小数の位置で描く。
+        let rects = match self.workspace_follow_offset() {
+            Some(offset) if !self.overview.is_visible() => {
+                workspace_rects_at(size, 1.0, active as f64 + offset, list.len(), 0.0)
+            }
+            _ => workspace_rects(size, zoom, active, list.len()),
+        };
         list.into_iter()
             .zip(rects)
             .map(|(ws, (x, y, w, h))| {
@@ -249,7 +262,7 @@ impl Contrast {
         output: &Output,
         origin: Point<i32, Logical>,
     ) -> Option<Vec<SceneElement>> {
-        if !self.overview.is_visible() {
+        if !self.overview.is_visible() && self.workspace_follow_offset().is_none() {
             return None;
         }
         let geo = self.space.output_geometry(output)?;

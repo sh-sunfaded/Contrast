@@ -19,6 +19,7 @@ mod overview;
 mod power;
 mod reload;
 mod render;
+mod rubber_band;
 mod scale;
 mod screenshot;
 mod screenshot_ui;

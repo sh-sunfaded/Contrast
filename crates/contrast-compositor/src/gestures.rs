@@ -14,6 +14,8 @@ use std::time::{Duration, Instant};
 use contrast_core::{Command, ExternalKey, WorkspaceIndex};
 use smithay::utils::{Logical, Point};
 
+use crate::rubber_band::RubberBand;
+use crate::spring::{Spring, SpringParams};
 use crate::state::Contrast;
 
 /// 速度を見る履歴の長さ（niri の `HISTORY_LIMIT`）。
@@ -26,6 +28,11 @@ const DECIDE_DISTANCE: f64 = 16.0;
 const VIEW_MOVEMENT: f64 = 1200.0;
 /// ワークスペースの切り替えで、1 つ動くのに要る指の移動（niri の `WORKSPACE_GESTURE_MOVEMENT`）。
 const WORKSPACE_MOVEMENT: f64 = 300.0;
+/// ワークスペースの切り替えで端を越えて引いたときのゴム（niri の `WORKSPACE_GESTURE_RUBBER_BAND`）。
+const WORKSPACE_RUBBER_BAND: RubberBand = RubberBand {
+    stiffness: 0.5,
+    limit: 0.05,
+};
 /// DnD の端スクロール（niri の `dnd-edge-view-scroll` の既定）。
 const DND_TRIGGER_WIDTH: f64 = 30.0;
 const DND_DELAY: Duration = Duration::from_millis(100);
@@ -91,6 +98,59 @@ pub fn workspace_target(start: usize, count: usize, projected_px: f64) -> usize 
         .round() as usize
 }
 
+/// 縦のスワイプの途中の、ワークスペースの位置の、始めた位置からのずれ（ワークスペース何個分か）。
+/// 指の移動 `pos_px` を 300 px で 1 つとして、今の ±1（と、端）の外はゴムのように収める（niri の `workspace_switch_gesture_update`）。
+pub fn workspace_follow(start: usize, count: usize, pos_px: f64) -> f64 {
+    let last = count.saturating_sub(1);
+    let min = start.saturating_sub(1) as f64 - start as f64;
+    let max = (start + 1).min(last) as f64 - start as f64;
+    WORKSPACE_RUBBER_BAND.clamp(min, max, pos_px / WORKSPACE_MOVEMENT)
+}
+
+/// 指を離した瞬間の、位置の動く速さ（ワークスペース/秒）。端を越えているときはゴムの傾きを掛ける。
+pub fn workspace_release_velocity(
+    start: usize,
+    count: usize,
+    pos_px: f64,
+    velocity_px: f64,
+) -> f64 {
+    let last = count.saturating_sub(1);
+    let min = start.saturating_sub(1) as f64 - start as f64;
+    let max = (start + 1).min(last) as f64 - start as f64;
+    velocity_px / WORKSPACE_MOVEMENT
+        * WORKSPACE_RUBBER_BAND.clamp_derivative(min, max, pos_px / WORKSPACE_MOVEMENT)
+}
+
+/// 縦のスワイプで、ワークスペースが指についてくる間と、離したあとにバネで落ち着く間の状態。
+/// 値は、いま表示中のワークスペースの位置からのずれ（ワークスペース何個分か。正なら下のものが上がってくる）。
+#[derive(Debug, Clone, Copy)]
+pub enum WsFollow {
+    /// 指についていく。
+    Gesture(f64),
+    /// 離した。バネで 0 へ。
+    Settling {
+        /// 動き。
+        spring: Spring,
+        /// 始めた時刻。
+        start: Instant,
+    },
+}
+
+impl WsFollow {
+    /// 今のずれ。
+    pub fn value(&self) -> f64 {
+        match self {
+            Self::Gesture(v) => *v,
+            Self::Settling { spring, start } => spring.value_at(start.elapsed().as_secs_f64()),
+        }
+    }
+
+    /// バネが落ち着いたか。
+    pub fn is_settled(&self) -> bool {
+        matches!(self, Self::Settling { spring, start } if start.elapsed() >= spring.settle_time())
+    }
+}
+
 /// DnD の端スクロールの強さ（−1〜1。左の端なら負）。`x` は作業領域の中の位置、`width` は作業領域の幅（niri の式）。
 pub fn dnd_edge_delta(x: f64, width: f64) -> f64 {
     let x = x.clamp(0.0, width);
@@ -146,6 +206,8 @@ pub struct Gestures {
     pub swipe: Option<Swipe>,
     /// DnD の端スクロール。
     pub dnd: Option<DndScroll>,
+    /// 縦のスワイプでワークスペースが指についてくる状態（描画に使う）。
+    pub follow: Option<WsFollow>,
 }
 
 impl Contrast {
@@ -192,7 +254,16 @@ impl Contrast {
                 let offset = (tracker.pos() * *norm).round() as i32;
                 self.gesture_command(Command::ViewGestureUpdate { offset });
             }
-            Some(Swipe::Workspace { tracker, .. }) => tracker.push(dy, t),
+            Some(Swipe::Workspace {
+                tracker,
+                start,
+                count,
+                ..
+            }) => {
+                tracker.push(dy, t);
+                let offset = workspace_follow(*start, *count, tracker.pos());
+                self.gestures.follow = Some(WsFollow::Gesture(offset));
+            }
             Some(Swipe::Overview { tracker, start }) => {
                 // niri は反転前の縦の移動の符号を逆にして使う（上へで開く）。
                 tracker.push(-uninverted_dy, t);
@@ -252,6 +323,23 @@ impl Contrast {
                 tracker.push(0.0, now);
                 let target = workspace_target(start, count, tracker.projected_end_pos());
                 tracing::info!(start, target, "gesture: workspace switch");
+                // 離した位置から目標まで、指の速さを引き継いでバネで動かす（目標が表示中になったあとのずれで書く）。
+                let shift = target as f64 - start as f64;
+                let from = workspace_follow(start, count, tracker.pos()) - shift;
+                self.gestures.follow = Some(WsFollow::Settling {
+                    spring: Spring {
+                        from,
+                        to: 0.0,
+                        initial_velocity: workspace_release_velocity(
+                            start,
+                            count,
+                            tracker.pos(),
+                            tracker.velocity(),
+                        ),
+                        params: SpringParams::workspace_switch(),
+                    },
+                    start: Instant::now(),
+                });
                 if target != start {
                     // 切り替えは、その出力をアクティブにしてから（core の SwitchWorkspace はアクティブな出力の列で動く）。
                     if self.core.view().active_output() != self.core.view().output_id(output) {
@@ -421,5 +509,60 @@ mod tests {
         assert_eq!(dnd_edge_delta(985.0, 1000.0), 0.5);
         assert_eq!(dnd_edge_delta(-50.0, 1000.0), -1.0);
         assert_eq!(dnd_edge_delta(5.0, 0.0), 0.0);
+    }
+}
+
+impl Contrast {
+    /// 縦のスワイプの途中・離したあとの、表示中のワークスペースからのずれ。無ければ `None`（落ち着いたら捨てる）。
+    pub fn workspace_follow_offset(&self) -> Option<f64> {
+        self.gestures
+            .follow
+            .filter(|f| !f.is_settled())
+            .map(|f| f.value())
+    }
+}
+
+#[cfg(test)]
+mod follow_tests {
+    use super::*;
+
+    #[test]
+    fn the_view_follows_the_finger_one_workspace_per_300_px() {
+        assert!((workspace_follow(1, 3, 150.0) - 0.5).abs() < 1e-12);
+        assert!((workspace_follow(1, 3, -300.0) + 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn past_the_neighbour_or_the_end_it_is_rubber_banded() {
+        // 隣（+1）を越えると、+1 より少しだけ（限界 0.05 まで）動く。
+        let over = workspace_follow(1, 3, 900.0);
+        assert!(over > 1.0 && over < 1.05, "{over}");
+        // 一番上（start 0）で下へ引くと、−1 ではなく、0 より少しだけ。
+        let top = workspace_follow(0, 3, -300.0);
+        assert!(top < 0.0 && top > -0.05, "{top}");
+        // 一番下（start = count − 1）で上へ引く。
+        let bottom = workspace_follow(2, 3, 300.0);
+        assert!(bottom > 0.0 && bottom < 0.05, "{bottom}");
+    }
+
+    #[test]
+    fn the_release_velocity_is_damped_only_past_the_range() {
+        assert!((workspace_release_velocity(1, 3, 100.0, 600.0) - 2.0).abs() < 1e-12);
+        assert!(workspace_release_velocity(1, 3, 900.0, 600.0) < 2.0);
+    }
+
+    #[test]
+    fn a_settling_spring_ends_at_zero() {
+        let f = WsFollow::Settling {
+            spring: Spring {
+                from: 0.4,
+                to: 0.0,
+                initial_velocity: 0.0,
+                params: SpringParams::workspace_switch(),
+            },
+            start: Instant::now() - Duration::from_secs(5),
+        };
+        assert!(f.is_settled());
+        assert!(f.value().abs() < 1e-3);
     }
 }
