@@ -891,4 +891,59 @@ mod tests {
         assert_eq!(check(&state), Err(InvariantViolation::I6));
         Ok(())
     }
+
+    /// `Dynamic` の列（出力 0 台なら持ち主の無い列）の末尾が空でない状態。
+    fn dynamic_with_busy_last() -> State {
+        let mut state = State::new(1);
+        state.layout.workspaces = crate::domain::column::WorkspaceMode::Dynamic;
+        if let Some(ws) = state.workspaces.last_mut() {
+            ws.windows.push(WindowId::from_raw(1));
+        }
+        state
+    }
+
+    #[test]
+    fn i12_requires_a_trailing_empty_workspace_in_dynamic_mode() {
+        let state = dynamic_with_busy_last();
+        assert!(matches!(
+            super::check_i12(&state),
+            Err(InvariantViolation::I12(_))
+        ));
+    }
+
+    #[test]
+    fn i12_is_relaxed_only_while_the_trailing_empty_is_deferred() {
+        // D84: `OutputAdded` の直後だけ、末尾の空を要求しない。
+        let mut state = dynamic_with_busy_last();
+        state.trailing_deferred = true;
+        assert_eq!(super::check_i12(&state), Ok(()));
+        // 空の末尾があれば、延ばしていなくても通る。
+        let mut ok = State::new(1);
+        ok.layout.workspaces = crate::domain::column::WorkspaceMode::Dynamic;
+        assert_eq!(super::check_i12(&ok), Ok(()));
+    }
+
+    #[test]
+    fn i12_does_not_require_a_trailing_empty_at_the_workspace_limit() {
+        let mut state = dynamic_with_busy_last();
+        while state.workspaces.len() < crate::domain::state::MAX_DYNAMIC_WORKSPACES {
+            let id = WorkspaceId::from_raw(state.workspaces.len() as u64 + 10);
+            state
+                .workspaces
+                .insert(0, crate::domain::workspace::Workspace::new(id));
+        }
+        assert_eq!(super::check_i12(&state), Ok(()));
+        state.workspaces.remove(0);
+        assert!(super::check_i12(&state).is_err());
+    }
+
+    #[test]
+    fn i12_rejects_duplicate_workspace_ids() {
+        let mut state = State::new(2);
+        let id = WorkspaceId::from_raw(1);
+        for ws in &mut state.workspaces {
+            ws.id = id;
+        }
+        assert!(super::check_i12(&state).is_err());
+    }
 }
