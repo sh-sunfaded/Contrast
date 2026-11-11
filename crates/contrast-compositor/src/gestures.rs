@@ -37,6 +37,30 @@ const WORKSPACE_RUBBER_BAND: RubberBand = RubberBand {
 const DND_TRIGGER_WIDTH: f64 = 30.0;
 const DND_DELAY: Duration = Duration::from_millis(100);
 const DND_MAX_SPEED: f64 = 1500.0;
+/// オーバービューでの DnD の縦の端スクロール（niri の `dnd-edge-workspace-switch` の既定。1 つ動くのに 1500 px 分）。
+const DND_TRIGGER_HEIGHT: f64 = 50.0;
+const DND_WORKSPACE_MOVEMENT: f64 = 1500.0;
+
+/// 縦の端スクロールの強さ（−1〜1。上の端なら負）。`y` は作業領域の中の位置、`height` は作業領域の高さ、
+/// `x`・`width` は、ワークスペースが並ぶ帯（縮めた幅）の中の横の位置と幅。帯の外は 0（niri の `dnd_scroll_gesture_scroll`）。
+pub fn dnd_vertical_delta(x: f64, width: f64, y: f64, height: f64) -> f64 {
+    if x < 0.0 || width <= x {
+        return 0.0;
+    }
+    let y = y.clamp(0.0, height);
+    let trigger = DND_TRIGGER_HEIGHT.clamp(0.0, height / 2.0);
+    if trigger < 0.01 {
+        return 0.0;
+    }
+    let d = if y < trigger {
+        -(trigger - y)
+    } else if height - y < trigger {
+        trigger - (height - y)
+    } else {
+        0.0
+    };
+    d / trigger
+}
 
 /// 指の移動の履歴（niri の `SwipeTracker`）。
 #[derive(Debug, Clone, Default)]
@@ -197,6 +221,12 @@ pub struct DndScroll {
     started: Instant,
     /// core のジェスチャーを始めたか（列の無いワークスペースでは始まらない）。
     begun: bool,
+    /// オーバービューでの縦の端スクロールの、表示中のワークスペースからのずれ（ワークスペース何個分か）。
+    ws_offset: f64,
+    /// 縦の端スクロールの強さが 0 でなくなった時刻（遅延の起点）。
+    v_nonzero_since: Option<Instant>,
+    /// 縦の端スクロールの前回の時刻。
+    v_last: Instant,
 }
 
 /// ジェスチャーの状態。
@@ -382,6 +412,9 @@ impl Contrast {
             tracker: SwipeTracker::default(),
             started: now,
             begun: false,
+            ws_offset: 0.0,
+            v_nonzero_since: None,
+            v_last: now,
         });
     }
 
@@ -410,6 +443,7 @@ impl Contrast {
 
     /// 毎フレーム: DnD の端スクロールを進める。
     pub fn dnd_tick(&mut self) {
+        self.dnd_vertical_tick();
         let Some(d) = self.gestures.dnd.as_ref() else {
             return;
         };
@@ -444,11 +478,92 @@ impl Contrast {
         self.gesture_command(Command::ViewGestureUpdate { offset });
     }
 
+    /// オーバービューが開いている間の DnD の縦の端スクロール: ポインタが上下の端にいる間、ワークスペースの位置を進める。
+    fn dnd_vertical_tick(&mut self) {
+        if !self.overview.open {
+            return;
+        }
+        let Some(d) = self.gestures.dnd.as_ref() else {
+            return;
+        };
+        let pos = d.pos;
+        let Some(output) = self.output_at(pos.x, pos.y) else {
+            return;
+        };
+        let (Some(area), Some(geo), Some(shown)) = (
+            self.work_area(&output),
+            self.space.output_geometry(&output),
+            self.shown_position(&output),
+        ) else {
+            return;
+        };
+        let count = self
+            .core_output(&output)
+            .map_or(1, |id| self.core.view().output_workspaces(id).len());
+        let zoom = crate::overview::zoom_at(self.overview.value());
+        let strip = f64::from(geo.size.w) * zoom;
+        let x = pos.x - f64::from(geo.loc.x) - (f64::from(geo.size.w) - strip) / 2.0;
+        let delta = dnd_vertical_delta(
+            x,
+            strip,
+            pos.y - f64::from(area.y()),
+            f64::from(area.height()),
+        );
+        let now = Instant::now();
+        let Some(d) = self.gestures.dnd.as_mut() else {
+            return;
+        };
+        let dt = now.duration_since(d.v_last).as_secs_f64();
+        d.v_last = now;
+        if delta == 0.0 {
+            d.v_nonzero_since = None;
+            return;
+        }
+        let since = *d.v_nonzero_since.get_or_insert(now);
+        if now.duration_since(since) < DND_DELAY {
+            return;
+        }
+        // 範囲の外へ引いても溜まらない（端で止める）。
+        let min = -(usize::from(shown) as f64);
+        let max = count.saturating_sub(1) as f64 - usize::from(shown) as f64;
+        d.ws_offset =
+            (d.ws_offset + delta * dt * DND_MAX_SPEED / DND_WORKSPACE_MOVEMENT).clamp(min, max);
+        self.gestures.follow = Some(WsFollow::Gesture(d.ws_offset));
+    }
+
     /// DnD が終わった（落とした・取りやめた）。
     pub fn dnd_ended(&mut self) {
         let Some(mut d) = self.gestures.dnd.take() else {
             return;
         };
+        if d.ws_offset != 0.0 && matches!(self.gestures.follow, Some(WsFollow::Gesture(_))) {
+            // 縦の端スクロールをしていた: いちばん近いワークスペースへ切り替え、そこまでバネで動かす。
+            let output = self.active_output();
+            let shown = output
+                .as_ref()
+                .and_then(|o| self.shown_position(o))
+                .map_or(0, usize::from);
+            let count = output
+                .as_ref()
+                .and_then(|o| self.core_output(o))
+                .map_or(1, |id| self.core.view().output_workspaces(id).len());
+            let target = (shown as f64 + d.ws_offset)
+                .round()
+                .clamp(0.0, count.saturating_sub(1) as f64) as usize;
+            if target != shown {
+                let index = WorkspaceIndex::new(u8::try_from(target).unwrap_or(u8::MAX));
+                self.core_action(contrast_core::Action::SwitchWorkspace(index));
+            }
+            self.gestures.follow = Some(WsFollow::Settling {
+                spring: Spring {
+                    from: d.ws_offset - (target as f64 - shown as f64),
+                    to: 0.0,
+                    initial_velocity: 0.0,
+                    params: SpringParams::workspace_switch(),
+                },
+                start: Instant::now(),
+            });
+        }
         if !d.begun {
             return;
         }
@@ -525,6 +640,18 @@ impl Contrast {
 #[cfg(test)]
 mod follow_tests {
     use super::*;
+
+    #[test]
+    fn the_vertical_edge_scroll_follows_niris_trigger_height() {
+        // 高さ 1000 の作業領域、帯は x 0..900。上の端 50 px（上端で −1、50 px の位置で 0）、下も同じ。
+        assert_eq!(dnd_vertical_delta(10.0, 900.0, 0.0, 1000.0), -1.0);
+        assert_eq!(dnd_vertical_delta(10.0, 900.0, 25.0, 1000.0), -0.5);
+        assert_eq!(dnd_vertical_delta(10.0, 900.0, 500.0, 1000.0), 0.0);
+        assert_eq!(dnd_vertical_delta(10.0, 900.0, 1000.0, 1000.0), 1.0);
+        // 帯の外（横）は 0。
+        assert_eq!(dnd_vertical_delta(-1.0, 900.0, 0.0, 1000.0), 0.0);
+        assert_eq!(dnd_vertical_delta(900.0, 900.0, 0.0, 1000.0), 0.0);
+    }
 
     #[test]
     fn the_view_follows_the_finger_one_workspace_per_300_px() {

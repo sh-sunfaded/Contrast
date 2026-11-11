@@ -219,11 +219,25 @@ impl Contrast {
         let zoom = zoom_at(self.overview.value());
         let size = (f64::from(geo.size.w), f64::from(geo.size.h));
         // 縦のスワイプの途中（とその後のバネ）は、オーバービューと同じ並べ方を、ズーム 1・隙間 0 で、小数の位置で描く。
-        let rects = match self.workspace_follow_offset() {
-            Some(offset) if !self.overview.is_visible() => {
-                workspace_rects_at(size, 1.0, active as f64 + offset, list.len(), 0.0)
-            }
-            _ => workspace_rects(size, zoom, active, list.len()),
+        let offset = self.workspace_follow_offset();
+        let rects = if self.overview.is_visible() {
+            // オーバービューの中の DnD の縦の端スクロールでも、位置は小数になる。
+            let gap = (size.1 * 0.1 * zoom).round().max(1.0);
+            workspace_rects_at(
+                size,
+                zoom,
+                active as f64 + offset.unwrap_or(0.0),
+                list.len(),
+                gap,
+            )
+        } else {
+            workspace_rects_at(
+                size,
+                1.0,
+                active as f64 + offset.unwrap_or(0.0),
+                list.len(),
+                0.0,
+            )
         };
         list.into_iter()
             .zip(rects)
