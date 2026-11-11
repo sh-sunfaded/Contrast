@@ -238,6 +238,32 @@ pub struct Gestures {
     pub dnd: Option<DndScroll>,
     /// 縦のスワイプでワークスペースが指についてくる状態（描画に使う）。
     pub follow: Option<WsFollow>,
+    /// オーバービューで窓を押している（ドラッグして別のワークスペースへ移す）。
+    pub overview_drag: Option<OverviewDrag>,
+}
+
+/// オーバービューでの窓のドラッグ。
+#[derive(Debug, Clone, Copy)]
+pub struct OverviewDrag {
+    /// 押した窓。
+    pub key: ExternalKey,
+    /// 押した位置（全体の論理座標）。
+    pub press: Point<f64, Logical>,
+    /// 窓（縮めた見た目）の左上からの、押した位置。
+    pub grab: Point<f64, Logical>,
+    /// ポインタの今の位置。
+    pub pos: Point<f64, Logical>,
+    /// 一定の距離を動かして、ドラッグになったか（それまではクリック）。
+    pub moving: bool,
+}
+
+/// ドラッグを始める距離（論理 px）。
+const DRAG_THRESHOLD: f64 = 8.0;
+
+/// 押した位置から `pos` までが、ドラッグを始める距離を超えたか。
+pub fn past_drag_threshold(press: Point<f64, Logical>, pos: Point<f64, Logical>) -> bool {
+    let (dx, dy) = (pos.x - press.x, pos.y - press.y);
+    dx * dx + dy * dy > DRAG_THRESHOLD * DRAG_THRESHOLD
 }
 
 impl Contrast {
@@ -640,6 +666,13 @@ impl Contrast {
 #[cfg(test)]
 mod follow_tests {
     use super::*;
+
+    #[test]
+    fn a_press_becomes_a_drag_only_past_eight_pixels() {
+        let p = Point::from((100.0, 100.0));
+        assert!(!past_drag_threshold(p, Point::from((105.0, 105.0))));
+        assert!(past_drag_threshold(p, Point::from((100.0, 109.0))));
+    }
 
     #[test]
     fn the_vertical_edge_scroll_follows_niris_trigger_height() {

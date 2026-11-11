@@ -84,6 +84,8 @@ render_elements! {
     Pixel=PixelShaderElement,
     /// 開く・閉じる途中の窓（オフスクリーンのテクスチャを拡大・半透明にしたもの）。
     Anim=crate::window_anim::AnimElement,
+    /// オーバービューでドラッグ中の窓（縮めた見た目）。
+    DragSurface=RescaleRenderElement<WaylandSurfaceRenderElement<GlesRenderer>>,
     /// 閉じる途中の窓の枠の帯（窓の絵と同じ中心・拡大率）。
     AnimBand=smithay::backend::renderer::element::utils::RescaleRenderElement<SolidColorRenderElement>,
     /// オーバービューで、ワークスペースの範囲に切り抜いた窓・レイヤー面。

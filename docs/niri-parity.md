@@ -164,3 +164,12 @@ niri の設定の既定値は niri の既定（wiki / パッケージの既定�
 | IPC のイベント（`WindowsChanged`・`WindowOpenedOrChanged`・`WindowClosed`・`WindowFocusChanged`・`WindowFocusTimestampChanged`・`WindowLayoutsChanged`・`KeyboardLayoutsChanged`・`KeyboardLayoutSwitched`・`OverviewOpenedOrClosed`・`ConfigLoaded`・`ScreenshotCaptured`・`CastsChanged`） | ○ | `WorkspaceActiveWindowChanged`・`WindowUrgencyChanged` は出さない。`ScreenshotCaptured` は保存先を決めた時点で送る（書き込みの成否は待たない） |
 | スクリーンショットの PNG の圧縮 | ○ 自前の deflate（約 9MB → 数十 KB） | niri の `png` crate より圧縮率は低い（固定ハフマン） |
 | 範囲選択 UI のポインタの絵・タッチ | ○（ポインタの絵は DRM のみ。winit はホストがカーソルを描く） | — |
+
+## niri-final のジェスチャー（縦のスワイプ・オーバービュー）
+
+| niri の機能 | Contrast の今 | 差 |
+|---|---|---|
+| 3 本指の縦のスワイプでワークスペースが指についてくる・rubber band（硬さ 0.5・限界 0.05）・離したあとのバネ | ○（`gestures.rs`・`rubber_band.rs`。core は変更なし。`docs/core-spec-p15.md`） | 窓の再配置の補間とは別に、オーバービューの描画を再利用して描く |
+| オーバービューでの DnD の縦の端スクロール（上下 50px・100ms・最大 1500px/s） | ○ | `dnd-edge-workspace-switch` の設定（CDL）は未対応（既定値のみ） |
+| オーバービューでの窓のドラッグ（別のワークスペースのタイルへ落として移す） | ○（押して 8px 動かすとドラッグ、動かさなければクリック） | タイルの間（新しいワークスペースを作る落とし先）は未対応 |
+| オーバービューのワークスペースの影（`workspace-shadow` の既定） | ○ | 設定（CDL）は未対応（既定値のみ） |

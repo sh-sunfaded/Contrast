@@ -11,6 +11,7 @@
 //! - `swipe begin N` / `swipe update DX DY [MS]` / `swipe end [MS]` … タッチパッドのスワイプ（N 本指。時刻は開始からのミリ秒）
 //! - `corner X Y` … ポインタが (X, Y) へ動いたときのホットコーナーの判定
 //! - `shot` … アクティブな出力の今の絵を保存する（キーバインドを通さない。スクリーンショットの UI を開いたままでも撮れる）
+//! - `overview press|move|release X Y` … オーバービューでの左ボタンと窓のドラッグの経路
 //! - `dnd start` / `dnd move X Y` / `dnd end` … DnD の端スクロールの経路（ポインタは動かさず、位置だけ渡す。毎フレームの進みは通常どおり）
 //! - `hotkey hide` … 起動時に開くホットキーのオーバーレイを閉じる（実際の入力は、キー・ボタンなどで閉じる）
 //! - `unplug NAME` / `replug NAME` … 出力を外す／戻す（ホットプラグの経路を nested で試す。winit の分割した出力など）
@@ -212,6 +213,18 @@ impl Contrast {
             }
             (Some("shot"), None, None) => self.screenshot_pending = true,
             (Some("hotkey"), Some("hide"), None) => self.hotkey_overlay.open = false,
+            (Some("overview"), Some(kind), Some(x)) => {
+                let y = words.next().unwrap_or("");
+                if let (Ok(x), Ok(y)) = (x.parse::<f64>(), y.parse::<f64>()) {
+                    let pos = smithay::utils::Point::from((x, y));
+                    match kind {
+                        "press" => self.overview_press(pos),
+                        "move" => self.overview_drag_motion(pos),
+                        "release" => self.overview_release(pos),
+                        _ => {}
+                    }
+                }
+            }
             (Some("dnd"), Some(kind), x) => {
                 let y = words.next().unwrap_or("");
                 match (

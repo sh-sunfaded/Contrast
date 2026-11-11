@@ -316,6 +316,25 @@ impl Contrast {
         drop(layer_map);
         let view = self.core.view();
         let background = self.policy.background();
+        let dragging = self.gestures.overview_drag;
+        // ドラッグ中の窓は、ポインタについていく（縮めた見た目のまま。切り抜かず、一番前）。
+        if let Some(d) = dragging.filter(|d| d.moving)
+            && let Some(window) = self.shell.windows.get(&d.key).cloned()
+        {
+            let top_left = d.pos - d.grab;
+            let target: Point<i32, Physical> = (top_left - geo.loc.to_f64() + out_origin.to_f64())
+                .to_physical_precise_round(scale);
+            let loc: Point<i32, Physical> =
+                target - window.geometry().loc.to_physical_precise_round(scale);
+            for e in AsRenderElements::<GlesRenderer>::render_elements::<
+                WaylandSurfaceRenderElement<GlesRenderer>,
+            >(&window, renderer, loc, Scale::from(scale), 1.0)
+            {
+                out.push(SceneElement::DragSurface(
+                    RescaleRenderElement::from_element(e, target, Scale::from(zoom)),
+                ));
+            }
+        }
         for (ws, rect) in self.overview_workspaces(output) {
             // 出力の中の、このワークスペースの左上（物理）と、切り抜きの矩形。
             let ws_loc: Point<f64, Logical> = rect.loc - geo.loc.to_f64() + out_origin.to_f64();
@@ -351,6 +370,9 @@ impl Contrast {
                 .collect();
             ordered.sort();
             for (_, key) in ordered {
+                if dragging.is_some_and(|d| d.key == key && d.moving) {
+                    continue;
+                }
                 let (Some(window), Some(frame)) = (
                     self.shell.windows.get(&key).cloned(),
                     self.window_frame_in_output(output, key),
@@ -437,6 +459,105 @@ impl Contrast {
             Kind::Unspecified,
         )));
         Some(out)
+    }
+
+    /// 押した位置の窓と、窓（縮めた見た目）の左上からの位置。
+    fn overview_window_at(
+        &self,
+        pos: Point<f64, Logical>,
+    ) -> Option<(ExternalKey, Point<f64, Logical>)> {
+        let output = self.output_at(pos.x, pos.y)?;
+        let geo = self.space.output_geometry(&output)?;
+        let zoom = zoom_at(self.overview.value());
+        let (ws, rect) = self
+            .overview_workspaces(&output)
+            .into_iter()
+            .find(|(_, r)| r.contains(pos))?;
+        let inner = (pos - rect.loc).downscale(zoom) + geo.loc.to_f64();
+        let view = self.core.view();
+        let key = view
+            .workspace_windows_by_id(ws)
+            .unwrap_or(&[])
+            .iter()
+            .filter_map(|id| view.window_key(*id))
+            .find(|k| {
+                self.window_frame_in_output(&output, *k).is_some_and(|f| {
+                    f.contains(contrast_core::Point::new(
+                        inner.x.floor() as i32,
+                        inner.y.floor() as i32,
+                    ))
+                })
+            })?;
+        let f = self.window_frame_in_output(&output, key)?;
+        let shown_origin = rect.loc
+            + Point::<f64, Logical>::from((
+                f64::from(f.x()) - f64::from(geo.loc.x),
+                f64::from(f.y()) - f64::from(geo.loc.y),
+            ))
+            .upscale(zoom);
+        Some((key, pos - shown_origin))
+    }
+
+    /// オーバービューで左ボタンを押した: 窓の上なら、ドラッグかクリックかを決めるまで覚える。窓でなければ、すぐクリックとして扱う。
+    pub fn overview_press(&mut self, pos: Point<f64, Logical>) {
+        match self.overview_window_at(pos) {
+            Some((key, grab)) => {
+                self.gestures.overview_drag = Some(crate::gestures::OverviewDrag {
+                    key,
+                    press: pos,
+                    grab,
+                    pos,
+                    moving: false,
+                });
+            }
+            None => self.overview_click(pos),
+        }
+    }
+
+    /// オーバービューでのポインタの移動（ボタンを押している間）。
+    pub fn overview_drag_motion(&mut self, pos: Point<f64, Logical>) {
+        if let Some(d) = self.gestures.overview_drag.as_mut() {
+            d.pos = pos;
+            if !d.moving && crate::gestures::past_drag_threshold(d.press, pos) {
+                d.moving = true;
+                tracing::info!(key = ?d.key, "overview: window drag started");
+            }
+        }
+    }
+
+    /// オーバービューで左ボタンを離した: ドラッグでなければクリック。ドラッグなら、下のワークスペースへ窓を移す。
+    pub fn overview_release(&mut self, pos: Point<f64, Logical>) {
+        let Some(drag) = self.gestures.overview_drag.take() else {
+            return;
+        };
+        if !drag.moving {
+            self.overview_click(drag.press);
+            return;
+        }
+        let Some(output) = self.output_at(pos.x, pos.y) else {
+            return;
+        };
+        let target = self
+            .overview_workspaces(&output)
+            .into_iter()
+            .find(|(_, r)| r.contains(pos))
+            .map(|(ws, _)| ws);
+        let view = self.core.view();
+        let position = target.and_then(|ws| {
+            self.core_output(&output)
+                .and_then(|id| view.output_workspaces(id).iter().position(|w| *w == ws))
+        });
+        tracing::info!(key = ?drag.key, ?position, "overview: window dropped");
+        let Some(p) = position.and_then(|p| u8::try_from(p).ok()) else {
+            return;
+        };
+        if let Some(key) = self.key_of_output(&output) {
+            self.submit_command(contrast_core::Command::OutputFocusRequested(key));
+        }
+        self.submit_command(contrast_core::Command::WindowFocusRequested(drag.key));
+        self.core_action(contrast_core::Action::MoveToWorkspace(
+            contrast_core::WorkspaceIndex::new(p),
+        ));
     }
 
     /// オーバービューでのクリック: 窓ならその窓を、ワークスペースならそのワークスペースを選んで閉じる。どちらでもなければ何もしない。

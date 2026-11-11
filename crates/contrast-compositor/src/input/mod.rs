@@ -156,6 +156,7 @@ impl Contrast {
                 let pos = event.position_transformed(bounds.size) + bounds.loc.to_f64();
                 let serial = SERIAL_COUNTER.next_serial();
                 let pointer = self.seat.get_pointer().expect("seat has pointer");
+                self.overview_drag_motion(pos);
                 // スクリーンショットの UI が開いている間は、ポインタをクライアントに渡さず、選択に使う。
                 let under = if self.screenshot_ui.is_open() {
                     self.screenshot_ui_motion(pos);
@@ -226,8 +227,12 @@ impl Contrast {
                 // オーバービュー: 左クリックで窓・ワークスペースを選んで閉じる。クライアントには渡さない。
                 if self.overview.open && !self.screenshot_ui.is_open() {
                     const BTN_LEFT: u32 = 0x110;
-                    if event.button_code() == BTN_LEFT && state == ButtonState::Pressed {
-                        self.overview_click(pointer.current_location());
+                    if event.button_code() == BTN_LEFT {
+                        if state == ButtonState::Pressed {
+                            self.overview_press(pointer.current_location());
+                        } else {
+                            self.overview_release(pointer.current_location());
+                        }
                     }
                     return;
                 }
