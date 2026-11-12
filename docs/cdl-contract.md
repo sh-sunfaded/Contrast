@@ -4,9 +4,9 @@ Contrast が設定ファイル（CDL）に約束する内容。実装は `crates
 `crates/contrast-policy`（CDL を知らない設定の型とストア）。CDL の API は `cdl-host` の公開 API だけを使う。
 CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と `docs/DECISIONS.md`（E1〜E8）。
 
-**固定している CDL**: `https://github.com/sh-sunfaded/cdl.git` の `rev = 923136d2ca204ec57108edcd988a893f2941f771`（CDL の `main` の HEAD。
-以前の `bcff355` から更新。`crates/contrast-policy-cdl/Cargo.toml` と `Cargo.lock` が同じ rev を指す）。
-この rev の CDL に含まれる、Contrast に関わる変更は 6 節の「CDL の上限と診断（rev 923136d）」にまとめる。
+**固定している CDL**: `https://github.com/sh-sunfaded/cdl.git` の `rev = 0d252db2bc7d477f2e2bf1d85180dd20b0e09a74`（CDL の `main` の HEAD。
+以前の `923136d`（その前は `bcff355`）から更新。`crates/contrast-policy-cdl/Cargo.toml` と `Cargo.lock` が同じ rev を指す）。
+この rev の CDL に含まれる、Contrast に関わる変更は 6 節の末尾「rev 0d252db での変更」にまとめる。
 
 ## 1. スキーマ（モジュール `host:contrast`）
 
@@ -184,7 +184,7 @@ CDL 自身の診断（`E0001`〜）は、そのままのコードで `ConfigDiag
 `import "./x.cdl"` は、設定ファイルのあるディレクトリの外を拒否する（`canonicalize` の後で判定するので、symlink で出るものも拒否）。
 読む前にファイルのサイズを確認し、`Limits::max_source_bytes` を超えるものは読まない。
 
-## 6. CDL の上限と診断（rev 923136d）
+## 6. CDL の上限と診断（上限は rev 923136d から変わらない）
 
 Contrast は `cdl_host::Limits` の既定値（`Limits::default()`）をそのまま使う。上書きしない。
 
@@ -218,6 +218,45 @@ Contrast は `cdl_host::Limits` の既定値（`Limits::default()`）をその�
 
 これらは CDL の `E` の名前のまま出る（CT の番号は付けない）。設定ファイル（`config/`・`examples/`）は、
 この rev でも診断なしで読める（`impl_config.rs`・`impl_loader.rs` で確かめる）。
+
+### rev 0d252db での変更（923136d から。未検証）
+
+CDL の DECISIONS R1〜R4・U1〜U5 による。`Limits` の既定値は変わらない。
+
+**cdl-host の公開 API（Contrast の対応）** — 対応は `crates/contrast-policy-cdl/src/{convert,loader}.rs`。
+
+| 変更 | Contrast の対応 |
+| --- | --- |
+| `Program::root()` / `document()` が `Option`（関数の形のルートでは `None`） | 静的なルート（要素）だけを受け付ける。`None` は `CT003` の内部エラーにする（`Env` は宣言しない） |
+| `Node::name()` → `component()`、`element()` 廃止 → `span()` | 置き換え |
+| `Node::optional_prop::<T>` 廃止 → `prop::<Option<T>>` | 置き換え（意味は同じ: 無い・`undefined` は `None`） |
+| `Node::expect` → `expect_component` | 置き換え |
+| `Program::render`、`SchemaBuilder::env`、`ComponentDef::text_children`、`Node::key()`、`FromNode`、`Child` | 使わない（動作を変えない） |
+
+**言語（CDL 側）の変更。いずれも書ける範囲が広がる。Contrast の `.cdl` は書き直していない。**
+テキスト子（string を受け付けると宣言したコンポーネントだけ。Contrast のコンポーネントは宣言しないので、置けば `E3014`）、
+`c && <A />`、`key`（string のみ。number は `E3017`）、引数の分割代入（1 階層・既定値つき）、
+ルートの関数の形（`Env` を宣言しないホストでは `E4013`）。`key` は props ではない。同一性の規則に識別 prop が入ったが、
+Contrast は識別 prop の宣言を足さない（7 節）。
+
+**新しい診断コード**:
+
+| コード | 意味 |
+| --- | --- |
+| E1012 | JSX のテキスト子の `&`（文字参照は使えない） |
+| E3014 | テキスト子を受け付けないコンポーネントにテキストを置いた |
+| E3015 | 省略可能でない prop への既定値（引数の分割代入） |
+| E3016 | スロットに、型の違う要素を渡した |
+| E3017 | `key` が string でない |
+| E4011 | 同じ親の子の `key` の重複 |
+| E4012 | ルート関数の引数が `Env` 1 つでない |
+| E4013 | ホストが `Env` を宣言していないのに、ルートを関数の形で書いた |
+| E4014 | ホストが渡した `Env` の値が宣言した型に合わない |
+
+`E1009`（JSX のテキスト子）は欠番（出さない）。`E1007` は `key` を除く（`ref`・`on[A-Z]`・`use[A-Z0-9_]` は従来どおり）。
+`Program::render` と `evaluate` の誤りは `Vec<Diagnostic>`（Contrast は `load` だけを使うので影響なし）。
+
+この rev での設定ファイル（`config/`・`examples/`・tests の `.cdl`）の読み込みは、**評価していない（未検証）**。
 
 ## 7. 未実装
 
