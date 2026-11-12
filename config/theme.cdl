@@ -1,0 +1,34 @@
+"use cdl 1";
+
+// 色・長さ・幅などの定数（niri の layout の値）。値を変えるときはここだけを直す。
+
+/** 窓と窓の間、画面の端と窓の間（niri の layout.gaps 16）。 */
+export const GAP = px(16);
+
+/** 枠の太さ（niri の focus-ring の width 4）。 */
+export const BORDER_WIDTH = px(4);
+
+/** フォーカス窓の枠の色（niri の focus-ring の active-color）。 */
+export const FOCUS_COLOR = color("#7fc8ff");
+
+/** 背景色。niri の既定の layout.background-color（0.25 のグレー）。壁紙は swaybg が覆う。 */
+export const BACKGROUND = color("#404040");
+
+/** 新しい列の幅（niri の default-column-width の proportion 0.5）。 */
+export const DEFAULT_COLUMN_WIDTH = 0.5;
+
+/** 列幅のプリセット（niri の preset-column-widths の 1/3 1/2 2/3。switch-preset-column-width が使う）。 */
+export const PRESET_COLUMN_WIDTHS = "0.33333 0.5 0.66667";
+
+/** 窓のアニメーションの長さ（ミリ秒）。 */
+export const ANIMATION_MS = 150;
+
+/** `workspace` の番号の上限（niri の Mod+1〜9 に合わせる）。ワークスペースの数そのものは動的（窓のあるものと末尾の空 1 つ）。 */
+export const WORKSPACE_COUNT = 9;
+
+/** カーソルのテーマと大きさ（niri の cursor の xcursor-theme と xcursor-size）。 */
+export const CURSOR_THEME = "Cecilia";
+export const CURSOR_SIZE = 24;
+
+/** 幅・高さを増減する割合（パーセント。niri の set-column-width / set-window-height の ±10%）。 */
+export const RESIZE_STEP = 10;

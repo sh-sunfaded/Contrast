@@ -1,0 +1,41 @@
+"use cdl 1";
+import { Startup, Environment, Env } from "host:contrast";
+
+// 起動時に一度だけ実行するコマンド（niri の spawn-at-startup）と、子プロセスの環境変数（niri の environment）。
+
+/** 起動するコマンド。この順に実行する。リロードでは再実行しない。`ipc: "niri"` は、その子に NIRI_SOCKET（niri 互換の IPC）を渡す。 */
+const startupCommands: { command: string; ipc?: string }[] = [
+  { command: "fcitx5" },
+  {
+    command: "ironbar -c /home/user/.config/ironbar/niri-v8.toml -t /home/user/.config/ironbar/niri-v9.css",
+    ipc: "niri",
+  },
+  { command: "swaybg -i /home/user/Pictures/wallpaper/cece.jpg" },
+  { command: "mako" },
+  { command: "udiskie" },
+];
+
+export const startup = startupCommands.map((s) => (s.ipc === undefined ? <Startup command={s.command} /> : <Startup command={s.command} ipc={s.ipc} />));
+
+interface Variable {
+  name: string;
+  value: string;
+}
+
+/** spawn する子（Startup と Keybind の spawn）の環境変数。コンポジタ自身の環境は変えない。 */
+const variables: Variable[] = [
+  { name: "QT_IM_MODULE", value: "fcitx5" },
+  { name: "GTK_IM_MODULE", value: "fcitx5" },
+  { name: "SDL_IM_MODULE", value: "fcitx5" },
+  { name: "MOZ_ENABLE_WAYLAND", value: "1" },
+  // niri がセッションとして動くとき自分の環境に設定し、子が継承するもの（niri の main.rs）。
+  // xdg-desktop-portal がポータルの設定を選ぶのに XDG_CURRENT_DESKTOP を使う。tty のままだと XDG_SESSION_TYPE は tty。
+  { name: "XDG_CURRENT_DESKTOP", value: "niri" },
+  { name: "XDG_SESSION_TYPE", value: "wayland" },
+];
+
+export const environment = (
+  <Environment>
+    {variables.map((v) => <Env name={v.name} value={v.value} />)}
+  </Environment>
+);

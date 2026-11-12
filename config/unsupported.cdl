@@ -1,0 +1,15 @@
+"use cdl 1";
+
+// まだ変換できない niri の binds。元の KDL の行を、そのまま「//> 」で残してある（待っている機能ごと）。
+// 機能が入ったら、この行を keybinds.cdl に移す。変換した binds と合わせて、元の 111 個になる（docs/config-migration.md）。
+
+// 複数モニタの 16 個（focus-monitor-*・move-column-to-monitor-*）は keybinds.cdl に移した。
+
+// スクリーンショットの 3 個（Print・Ctrl+Print・Alt+Print）は keybinds.cdl に移した。
+
+// ホットキーのオーバーレイ（Mod+Shift+Slash）は keybinds.cdl に移した。niri の binds は、これで全部変換した。
+
+// ---- bind ではない設定 ----
+// screenshot-path は `appearance.cdl` の `Screenshot` に移した。
+// window-rule（wezterm の default-column-width {} は実質何もしない。keepassxc の block-out-from は無効化済み）、
+// output（無効）、border（無効）、animations（既定）は移さない。

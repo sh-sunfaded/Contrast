@@ -8,4 +8,6 @@ description = "Contrast の実行ファイル（nested プロトタイプ）"
 [dependencies]
 contrast-compositor = { path = "../contrast-compositor" }
 contrast-policy = { path = "../contrast-policy" }
+contrast-policy-cdl = { path = "../contrast-policy-cdl" }
+tracing = "=0.1.44"
 tracing-subscriber = { version = "=0.3.23", features = ["env-filter"] }

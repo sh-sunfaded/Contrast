@@ -1,0 +1,5 @@
+# cargo-mutants の設定。
+# core の実装テストと仕様テストは `invariants` feature が前提（付け忘れを検出するテストが、無いと失敗する）。
+# ミュータントを入れる前の無変更のツリーでも `cargo test` が通るよう、feature を全部付けて実行する。
+# （ビルドとテストの両方に効くので、`additional_cargo_args` ではなくこちらだけを指定する）
+additional_cargo_test_args = ["--all-features"]

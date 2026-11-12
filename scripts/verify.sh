@@ -22,11 +22,10 @@ need clippy cargo clippy --version
 need "x86_64-unknown-none の core/alloc" \
   test -d "$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-none"
 if (( full )); then
-  need cargo-kani cargo kani --version
   need cargo-mutants cargo mutants --version
 fi
 if (( missing )); then
-  echo "verify: 失敗: $step（上の道具を入れてから再実行。rust-toolchain.toml と docs/core-plan.md 5.4 を参照）" >&2
+  echo "verify: 失敗: $step（上の道具を入れてから再実行。rust-toolchain.toml）" >&2
   exit 1
 fi
 
@@ -37,7 +36,6 @@ step=layering; echo "== $step"; scripts/check-layering.sh
 
 if (( full )); then
   step="test (10000)"; echo "== $step"; PROPTEST_CASES=10000 cargo test -p contrast-core --all-features
-  step=kani;           echo "== $step"; cargo kani -p contrast-core
   step="mutants (diff)"; echo "== $step"
   diff_file="$(mktemp)"
   git diff main...HEAD > "$diff_file"

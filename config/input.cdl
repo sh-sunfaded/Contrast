@@ -1,0 +1,10 @@
+"use cdl 1";
+import { Input } from "host:contrast";
+
+// 入力デバイス（niri の input の touchpad: tap と natural-scroll）。
+// keyboard の xkb は空、mouse も空なので移さない。
+//
+// niri は touchpad の項目を毎回明示的に設定し、省略した dwt（タイピング中の無効化）は off にする。
+// Contrast の CDL の既定は on なので、niri に合わせて off と書く。
+
+export const input = <Input tapToClick={true} naturalScroll={true} disableWhileTyping={false} />;

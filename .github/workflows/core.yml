@@ -1,4 +1,4 @@
-# contrast-core の CI。手順は docs/core-plan.md「3. P0 足場チェックリスト」。
+# contrast-core の CI。
 name: core
 
 on:
@@ -15,16 +15,6 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v2
       - run: scripts/verify.sh
 
-  kani:
-    runs-on: ubuntu-latest
-    # ハーネス 0 件のときに cargo kani が失敗しないかを公式ドキュメントで確認できなかったため、
-    # P0 では失敗を許容する。仕様ハーネスが揃った時点で外す。
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v7
-      - uses: model-checking/kani-github-action@v1
-        with:
-          args: -p contrast-core
 
   mutants-coverage:
     # コードが空の P0 では意味がないので無効にしておく。P8（硬化と API 凍結）で有効にする。

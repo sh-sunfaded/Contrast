@@ -9,6 +9,14 @@ edition = "2024"
 members = [
     "crates/contrast-core",
     "crates/contrast-policy",
+    "crates/contrast-policy-cdl",
     "crates/contrast-compositor",
     "crates/contrast",
 ]
+
+# リンク時のメモリを減らす
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false

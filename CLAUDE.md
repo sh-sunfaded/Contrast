@@ -4,7 +4,6 @@
 Rust + Smithay の Wayland コンポジタ Contrast。
 現在の作業対象は `crates/contrast-core` だけ。他のクレートには触れない。
 - 仕様: `docs/core-spec.md`（「暫定決定」節を含めて正とする）
-- 手順とテスト方法: `docs/core-plan.md`
 - 仕様への疑問: `docs/questions.md`
 
 CDL（Contrast Document Language）は別リポジトリ。contrast-core は CDL を一切知らない。
@@ -13,7 +12,7 @@ CDL（Contrast Document Language）は別リポジトリ。contrast-core は CDL
 1. 次のパスは人間が書く仕様。読むだけで、編集・作成・削除しない。
    - `crates/contrast-core/tests/spec/`
    - `crates/contrast-core/src/verification/spec/`
-   - `CLAUDE.md`, `.claude/`, `docs/core-spec.md`, `docs/core-plan.md`, 各 `Cargo.toml`
+   - `CLAUDE.md`, `.claude/`, `docs/core-spec.md`, 各 `Cargo.toml`
    - `scripts/`, `.github/`, `rust-toolchain.toml`, `flake.nix`, 各 `clippy.toml` / `rustfmt.toml` / `deny.toml`
 2. 破壊的操作をしない: rm、ファイル削除、`git reset`、`git clean`、
    `git checkout`、`git restore`、`git push`、`git rebase`、`git stash drop`。
@@ -40,8 +39,7 @@ CDL（Contrast Document Language）は別リポジトリ。contrast-core は CDL
 
 ## コマンド
 - `scripts/verify.sh`          fmt / clippy / no_std ビルド / 層検査 / test（256 ケース）
-- `scripts/verify.sh --full`   上記 + test 10,000 ケース + Kani 全ハーネス + 差分ミュータント
-- `cargo kani -p contrast-core --harness <名前>`   ハーネス単体
+- `scripts/verify.sh --full`   上記 + test 10,000 ケース + 差分ミュータント
 - `cargo test -p contrast-core --test spec <名前>`  仕様テスト（tests/spec/main.rs が入口。名前でフィルタ）
 
 ## 書き方
@@ -53,8 +51,6 @@ CDL（Contrast Document Language）は別リポジトリ。contrast-core は CDL
 - エラーは `CoreError` の variant で表す。文字列エラーは使わない。
 - 自分で足すテストは `crates/contrast-core/tests/impl_<対象>.rs` か
   `src` 内の `#[cfg(test)]` に置く。
-- 自分で足す Kani ハーネスは `src/verification/extra/` に置く。
-  `kani::any()` の範囲は `kani::assume` で絞り、`#[kani::unwind(N)]` を明示する。
 
 ## 報告の形式
 1. 何を実装したか（ファイル単位）

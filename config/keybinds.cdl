@@ -1,0 +1,215 @@
+"use cdl 1";
+import { Keybind } from "host:contrast";
+import { RESIZE_STEP } from "./theme.cdl";
+
+// キーバインド（niri の binds）。`mod` は Contrast の modKey（実機の DRM は Super、nested は Alt）。
+// 変換できない binds は unsupported.cdl に残してある。
+//
+// 方向キーの二重定義（矢印と hjkl）、ワークスペースの 1〜9、Page_Up/Down と U/I は、データ 1 組から作る。
+
+/** 1 つのバインド。`workspace` は 1 始まり、`delta` はパーセント。 */
+interface Spec {
+  keys: string;
+  action: string;
+  command?: string;
+  workspace?: number;
+  delta?: number;
+  /** 続けて実行できる間隔（ミリ秒）。niri の cooldown-ms。 */
+  cooldown?: number;
+}
+
+const none: Spec[] = [];
+
+// ---- プログラムの起動（niri の spawn） ----
+
+interface Launch {
+  keys: string;
+  command: string;
+}
+
+const launches: Launch[] = [
+  // niri の config.kdl の順（ホットキーのオーバーレイの spawn の行は、この順に並ぶ）。
+  { keys: "mod+b", command: "firefox-nightly" },
+  // XWayland が要る（DISPLAY=:0）。Mod+Alt+J は、Mod が Alt のとき Mod+J と同じキーになるので、super+alt+j と書く。
+  {
+    keys: "super+alt+j",
+    command: "env DISPLAY=:0 /home/user/jetbrains-toolbox-3.8.1.88030/bin/jetbrains-toolbox",
+  },
+  // strat は Bedrock Linux のコマンドで、NixOS には無い（押すと spawn が失敗してログに出るだけ）。
+  // Mod+Alt+E は、Mod が Alt のとき Mod+E と同じキーになるので、super+alt+e と書く。
+  { keys: "mod+shift+d", command: "strat fedora /home/user/DiscordPTB/launch.sh" },
+  { keys: "super+alt+e", command: "strat fedora /home/user/eclipse/eclipse" },
+  { keys: "mod+t", command: "alacritty" },
+  { keys: "mod+d", command: "fuzzel" },
+  // swaylock は未インストール（ロックには ext-session-lock も要る）。
+  { keys: "super+alt+l", command: "swaylock" },
+  { keys: "ctrl+shift+space", command: "fcitx5-remote -t" },
+  { keys: "XF86AudioRaiseVolume", command: "wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.1+" },
+  { keys: "XF86AudioLowerVolume", command: "wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.1-" },
+  { keys: "XF86AudioMute", command: "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle" },
+  { keys: "XF86AudioMicMute", command: "wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle" },
+];
+
+function spawn(l: Launch): Spec {
+  return { keys: l.keys, action: "spawn", command: l.command };
+}
+
+// ---- 方向（フォーカスの移動と窓・列の移動。矢印と hjkl の 2 通り） ----
+
+interface Direction {
+  arrow: string;
+  vim: string;
+  focus: string;
+  move: string;
+}
+
+// 左右は列、上下は列の中の窓。
+const directions: Direction[] = [
+  { arrow: "Left", vim: "h", focus: "focus-left", move: "move-left" },
+  { arrow: "Right", vim: "l", focus: "focus-right", move: "move-right" },
+  { arrow: "Up", vim: "k", focus: "focus-up", move: "move-up" },
+  { arrow: "Down", vim: "j", focus: "focus-down", move: "move-down" },
+];
+
+function direction(d: Direction): Spec[] {
+  return [
+    { keys: `mod+${d.arrow}`, action: d.focus },
+    { keys: `mod+${d.vim}`, action: d.focus },
+    { keys: `mod+ctrl+${d.arrow}`, action: d.move },
+    { keys: `mod+ctrl+${d.vim}`, action: d.move },
+  ];
+}
+
+// ---- 複数モニタ（niri の focus-monitor-* と move-column-to-monitor-*） ----
+
+interface MonitorDirection {
+  arrow: string;
+  vim: string;
+  focus: string;
+  move: string;
+}
+
+const monitorDirections: MonitorDirection[] = [
+  { arrow: "Left", vim: "h", focus: "focus-monitor-left", move: "move-column-to-monitor-left" },
+  { arrow: "Right", vim: "l", focus: "focus-monitor-right", move: "move-column-to-monitor-right" },
+  { arrow: "Up", vim: "k", focus: "focus-monitor-up", move: "move-column-to-monitor-up" },
+  { arrow: "Down", vim: "j", focus: "focus-monitor-down", move: "move-column-to-monitor-down" },
+];
+
+function monitor(d: MonitorDirection): Spec[] {
+  return [
+    { keys: `mod+shift+${d.arrow}`, action: d.focus },
+    { keys: `mod+shift+${d.vim}`, action: d.focus },
+    { keys: `mod+shift+ctrl+${d.arrow}`, action: d.move },
+    { keys: `mod+shift+ctrl+${d.vim}`, action: d.move },
+  ];
+}
+
+// ---- ワークスペース ----
+
+interface Step {
+  page: string;
+  vim: string;
+  focus: string;
+  move: string;
+  /** ワークスペースの入れ替え（niri の move-workspace-down/up）。 */
+  reorder: string;
+}
+
+// 下 = 次、上 = 前。端で循環しない。
+const steps: Step[] = [
+  { page: "Page_Down", vim: "u", focus: "workspace-next", move: "move-column-to-workspace-next", reorder: "move-workspace-down" },
+  { page: "Page_Up", vim: "i", focus: "workspace-prev", move: "move-column-to-workspace-prev", reorder: "move-workspace-up" },
+];
+
+function step(s: Step): Spec[] {
+  return [
+    { keys: `mod+${s.page}`, action: s.focus },
+    { keys: `mod+${s.vim}`, action: s.focus },
+    { keys: `mod+ctrl+${s.page}`, action: s.move },
+    { keys: `mod+ctrl+${s.vim}`, action: s.move },
+    { keys: `mod+shift+${s.page}`, action: s.reorder },
+    { keys: `mod+shift+${s.vim}`, action: s.reorder },
+  ];
+}
+
+const numbers: number[] = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+
+function numbered(n: number): Spec[] {
+  return [
+    { keys: `mod+${n}`, action: "workspace", workspace: n },
+    { keys: `mod+ctrl+${n}`, action: "move-column-to-workspace", workspace: n },
+  ];
+}
+
+// ---- ホイール（niri の WheelScroll…。キー名 WheelScrollDown/Up/Left/Right） ----
+
+// 縦（Down/Up）はワークスペース、横（Right/Left）と Shift+縦は列。縦のワークスペースの切り替えには 150ms の間引きが付く。
+const wheels: Spec[] = [
+  { keys: "mod+WheelScrollDown", action: "workspace-next", cooldown: 150 },
+  { keys: "mod+WheelScrollUp", action: "workspace-prev", cooldown: 150 },
+  { keys: "mod+ctrl+WheelScrollDown", action: "move-column-to-workspace-next", cooldown: 150 },
+  { keys: "mod+ctrl+WheelScrollUp", action: "move-column-to-workspace-prev", cooldown: 150 },
+  { keys: "mod+WheelScrollRight", action: "focus-right" },
+  { keys: "mod+WheelScrollLeft", action: "focus-left" },
+  { keys: "mod+ctrl+WheelScrollRight", action: "move-right" },
+  { keys: "mod+ctrl+WheelScrollLeft", action: "move-left" },
+  { keys: "mod+shift+WheelScrollDown", action: "focus-right" },
+  { keys: "mod+shift+WheelScrollUp", action: "focus-left" },
+  { keys: "mod+ctrl+shift+WheelScrollDown", action: "move-right" },
+  { keys: "mod+ctrl+shift+WheelScrollUp", action: "move-left" },
+];
+
+// ---- そのほか（1 つずつ） ----
+
+const others: Spec[] = [
+  { keys: "mod+q", action: "close" },
+  { keys: "mod+Home", action: "focus-column-first" },
+  { keys: "mod+End", action: "focus-column-last" },
+  { keys: "mod+ctrl+Home", action: "move-column-first" },
+  { keys: "mod+ctrl+End", action: "move-column-last" },
+  { keys: "mod+Comma", action: "consume-window-into-column" },
+  { keys: "mod+Period", action: "expel-window-from-column" },
+  { keys: "mod+BracketLeft", action: "consume-or-expel-window-left" },
+  { keys: "mod+BracketRight", action: "consume-or-expel-window-right" },
+  { keys: "mod+r", action: "switch-preset-column-width" },
+  { keys: "mod+shift+r", action: "switch-preset-window-height" },
+  { keys: "mod+ctrl+r", action: "reset-window-height" },
+  { keys: "mod+f", action: "maximize-column" },
+  { keys: "mod+shift+f", action: "toggle-fullscreen" },
+  // niri の既定の Mod+V（作者の config.kdl の binds には無い）。examples/niri.cdl に合わせる。
+  { keys: "mod+v", action: "toggle-floating" },
+  { keys: "mod+c", action: "center-column" },
+  { keys: "mod+Minus", action: "adjust-column-width", delta: -RESIZE_STEP },
+  { keys: "mod+Equal", action: "adjust-column-width", delta: RESIZE_STEP },
+  { keys: "mod+shift+Minus", action: "adjust-window-height", delta: -RESIZE_STEP },
+  { keys: "mod+shift+Equal", action: "adjust-window-height", delta: RESIZE_STEP },
+  { keys: "mod+shift+e", action: "quit" },
+  { keys: "mod+shift+p", action: "power-off-monitors" },
+  { keys: "ctrl+Print", action: "screenshot-screen" },
+  { keys: "alt+Print", action: "screenshot-window" },
+  { keys: "Print", action: "screenshot" },
+  { keys: "mod+shift+Slash", action: "show-hotkey-overlay" },
+];
+
+// ---- すべてを 1 つにまとめて、要素にする ----
+
+const specs: Spec[] = none
+  .concat(launches.reduce((acc, l) => acc.concat([spawn(l)]), none))
+  .concat(directions.reduce((acc, d) => acc.concat(direction(d)), none))
+  .concat(monitorDirections.reduce((acc, d) => acc.concat(monitor(d)), none))
+  .concat(steps.reduce((acc, s) => acc.concat(step(s)), none))
+  .concat(numbers.reduce((acc, n) => acc.concat(numbered(n)), none))
+  .concat(wheels)
+  .concat(others);
+
+export const keybinds = specs.map((s) => (
+  <Keybind
+    keys={s.keys}
+    action={s.action}
+    command={s.command}
+    workspace={s.workspace}
+    delta={s.delta}
+    cooldown={s.cooldown}
+  />
+));

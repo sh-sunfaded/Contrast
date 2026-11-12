@@ -3,7 +3,28 @@ name = "contrast-policy"
 version = "0.1.0"
 edition = "2024"
 publish = false
-description = "Contrast のポリシー差し込み口（port）と静的ポリシー。CDL はあとから cdl_adapter で接続する"
+description = "Contrast のポリシー差し込み口（port）・設定の型（Settings）・設定ストア。CDL は知らない"
 
 [dependencies]
 contrast-core = { path = "../contrast-core" }
+tracing = "=0.1.44"
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+
+[lints.clippy]
+arithmetic_side_effects = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+unreachable = "deny"
+cast_possible_truncation = "deny"
+cast_possible_wrap = "deny"
+cast_sign_loss = "deny"
+disallowed_types = "deny"
+disallowed_methods = "deny"
+missing_docs_in_private_items = "deny"

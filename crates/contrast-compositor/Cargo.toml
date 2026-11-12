@@ -9,8 +9,21 @@ description = "Contrast の Smithay シェル（nested プロトタイプ: winit
 contrast-core = { path = "../contrast-core" }
 contrast-policy = { path = "../contrast-policy" }
 tracing = "=0.1.44"
+# niri 互換の IPC（ironbar の workspaces 用）の JSON。どちらも Cargo.lock に既にある版。
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+# タッチパッドの dwtp（トラックポイント操作中の無効化）を設定するための feature（libinput 1.21 以上）。smithay が使う版と同じ（Cargo.lock にある）。
+input = { version = "=0.9.1", default-features = false, features = ["libinput_1_21"] }
+# カーソルのテーマ（xcursor）の読み込み。winit が引く版と同じ（Cargo.lock に既にある）。
+xcursor = "=0.3.11"
+# SIGUSR1 でリロードするための signal source。smithay が使う calloop と同じ版の `signals` 機能だけを足す。
+calloop = { version = "=0.14.5", default-features = false, features = ["signals"] }
+# 文字の描画（ホットキーのオーバーレイ・スクリーンショットの UI の説明）。niri は pango を使うが、開発シェル（flake.nix）に pango が無いので、
+# 純 Rust のラスタライザを使う。フォントのファイルは fc-match で探す。
+fontdue = { version = "=0.9.3", default-features = false, features = ["std", "hashbrown"] }
 
 [dependencies.smithay]
 version = "=0.7.0"
 default-features = false
-features = ["backend_winit", "wayland_frontend", "desktop"]
+# backend_session_libseat / backend_udev / backend_drm: DRM バックエンド（列挙）。backend_gbm / backend_egl / renderer_gl: modeset と GLES 描画（フェーズ2）。
+features = ["backend_winit", "wayland_frontend", "desktop", "backend_session_libseat", "backend_udev", "backend_drm", "backend_gbm", "backend_egl", "renderer_gl", "backend_libinput"]

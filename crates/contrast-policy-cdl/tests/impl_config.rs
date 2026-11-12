@@ -1,0 +1,380 @@
+//! `config/`（niri の設定を CDL で再編した、作者の設定）のテスト: 診断ゼロで読めること、キーの重複がないこと、
+//! バインドの数、主要なバインド、変換しなかった binds の数（`unsupported.cdl`）。
+
+use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
+
+use contrast_policy::{Action, ConfigLoader, LoadOutcome, ModKey, Mods, Settings};
+use contrast_policy_cdl::CdlLoader;
+
+/// `keybinds.cdl` のバインドの数（`docs/config-migration.md`）。niri の binds 111 個と、niri の既定の `Mod+V` の 1 個。
+const CONVERTED: usize = 112;
+/// そのうち、作者の config.kdl に無いもの（niri の既定の `Mod+V`）。
+const NOT_IN_NIRI_CONFIG: usize = 1;
+/// 変換しなかったバインドの数（`unsupported.cdl` の `//>` の行）。
+const UNSUPPORTED: usize = 0;
+/// 元の niri の config.kdl の binds の数。
+const NIRI_BINDS: usize = 111;
+
+/// リポジトリの `config/` のパス。
+fn config_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../config")
+}
+
+/// `config/config.cdl` を `mod_key` を既定にして読む。診断があれば、その一覧をエラーにする。
+fn load(mod_key: ModKey) -> Result<Settings, String> {
+    let loader = CdlLoader::new().with_default_mod_key(mod_key);
+    match loader.load(&config_dir().join("config.cdl")) {
+        LoadOutcome::Loaded(c) => Ok(c.settings),
+        LoadOutcome::Failed(d) => Err(d
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("\n")),
+        LoadOutcome::Absent => Err("config/config.cdl が無い".to_owned()),
+    }
+}
+
+/// 修飾キーを `mod` に足した `Mods`。
+fn with(mod_key: ModKey, f: impl FnOnce(&mut Mods)) -> Mods {
+    let mut mods = mod_key.mods();
+    f(&mut mods);
+    mods
+}
+
+#[test]
+fn the_config_loads_without_diagnostics() -> Result<(), String> {
+    let s = load(ModKey::Super)?;
+    assert_eq!(s.workspaces, 9);
+    assert_eq!(s.layout.mode, contrast_core::LayoutMode::Scrolling);
+    assert_eq!(s.layout.gap, 16);
+    assert_eq!(s.layout.outer_gap, 16);
+    assert_eq!(s.layout.animation_ms, 150);
+    assert_eq!(s.layout.animation, contrast_policy::AnimationKind::Spring);
+    assert_eq!(s.layout.preset_column_widths.len(), 3);
+    assert_eq!(s.appearance.border_width, 4);
+    assert_eq!(s.appearance.radius, 0);
+    // niri はフォーカス外の窓に枠を描かず、タッチパッドの dwt は off。
+    assert!(s.appearance.border_color.is_none());
+    assert!(!s.input.disable_while_typing);
+    assert_eq!(s.cursor.theme.as_deref(), Some("Cecilia"));
+    assert_eq!(s.cursor.size, Some(24));
+    assert!(s.input.tap_to_click && s.input.natural_scroll);
+    assert!(!s.input.focus_follows_mouse);
+    assert_eq!(s.cursor.hide_after_inactive_ms, None);
+    Ok(())
+}
+
+#[test]
+fn startup_and_environment_are_those_of_niri() -> Result<(), String> {
+    let s = load(ModKey::Super)?;
+    // `ipc="niri"`（NIRI_SOCKET を渡す）のは ironbar だけ。
+    let ipc: Vec<Option<&str>> = s
+        .startup
+        .iter()
+        .filter(|c| c.niri_ipc)
+        .map(|c| c.command.split_whitespace().next())
+        .collect();
+    assert_eq!(ipc, [Some("ironbar")]);
+    let startup: Vec<&str> = s.startup.iter().map(|c| c.command.as_str()).collect();
+    assert_eq!(
+        startup,
+        [
+            "fcitx5",
+            "ironbar -c /home/user/.config/ironbar/niri-v8.toml -t /home/user/.config/ironbar/niri-v9.css",
+            "swaybg -i /home/user/Pictures/wallpaper/cece.jpg",
+            "mako",
+            "udiskie",
+        ]
+    );
+    let env: Vec<(&str, &str)> = s
+        .environment
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect();
+    assert_eq!(
+        env,
+        [
+            ("GTK_IM_MODULE", "fcitx5"),
+            ("MOZ_ENABLE_WAYLAND", "1"),
+            ("QT_IM_MODULE", "fcitx5"),
+            ("SDL_IM_MODULE", "fcitx5"),
+            ("XDG_CURRENT_DESKTOP", "niri"),
+            ("XDG_SESSION_TYPE", "wayland"),
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+fn the_config_uses_dynamic_workspaces_and_the_reorder_binds() -> Result<(), String> {
+    let s = load(ModKey::Super)?;
+    assert_eq!(s.workspace_mode, contrast_core::WorkspaceMode::Dynamic);
+    // `count` は `workspace` の番号の上限（Mod+1〜9）。
+    assert_eq!(s.workspaces, 9);
+    let m = ModKey::Super.mods();
+    let shift = with(ModKey::Super, |x| x.shift = true);
+    assert_eq!(
+        s.resolve_key(shift, "Page_Down"),
+        Some(Action::MoveWorkspaceDown)
+    );
+    assert_eq!(
+        s.resolve_key(shift, "Page_Up"),
+        Some(Action::MoveWorkspaceUp)
+    );
+    assert_eq!(s.resolve_key(shift, "u"), Some(Action::MoveWorkspaceDown));
+    assert_eq!(s.resolve_key(shift, "i"), Some(Action::MoveWorkspaceUp));
+    // 窓ではなく列ごとの移動（niri の move-column-to-workspace）。
+    let ctrl = with(ModKey::Super, |x| x.ctrl = true);
+    assert_eq!(
+        s.resolve_key(ctrl, "Page_Down"),
+        Some(Action::MoveColumnToWorkspaceNext)
+    );
+    let _ = m;
+    Ok(())
+}
+
+#[test]
+fn the_number_of_binds_and_the_keys_are_unique() -> Result<(), String> {
+    for mod_key in [ModKey::Super, ModKey::Alt] {
+        let s = load(mod_key)?;
+        assert_eq!(s.keybinds.len(), CONVERTED, "{mod_key:?}");
+        let mut seen = BTreeSet::new();
+        for b in &s.keybinds {
+            let m = b.key.mods;
+            let id = (
+                m.alt,
+                m.shift,
+                m.ctrl,
+                m.logo,
+                b.key.keysym.to_ascii_lowercase(),
+            );
+            assert!(seen.insert(id), "duplicate key {:?} ({mod_key:?})", b.key);
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn converted_plus_unsupported_is_the_number_of_niri_binds() -> Result<(), String> {
+    let text =
+        std::fs::read_to_string(config_dir().join("unsupported.cdl")).map_err(|e| e.to_string())?;
+    let unsupported = text.lines().filter(|l| l.starts_with("//> ")).count();
+    assert_eq!(unsupported, UNSUPPORTED);
+    assert_eq!(CONVERTED - NOT_IN_NIRI_CONFIG + unsupported, NIRI_BINDS);
+    Ok(())
+}
+
+#[test]
+fn the_main_binds_resolve_to_the_expected_actions() -> Result<(), String> {
+    let m = ModKey::Super;
+    let s = load(m)?;
+    let spawn = |c: &str| Some(Action::Spawn(c.to_owned()));
+    let mod_only = m.mods();
+    let ctrl = with(m, |x| x.ctrl = true);
+    let shift = with(m, |x| x.shift = true);
+
+    assert_eq!(s.resolve_key(mod_only, "q"), Some(Action::CloseFocused));
+    assert_eq!(
+        s.resolve_key(mod_only, "1"),
+        Some(Action::SwitchWorkspace(0))
+    );
+    assert_eq!(
+        s.resolve_key(mod_only, "9"),
+        Some(Action::SwitchWorkspace(8))
+    );
+    assert_eq!(
+        s.resolve_key(ctrl, "1"),
+        Some(Action::MoveColumnToWorkspace(0))
+    );
+    assert_eq!(
+        s.resolve_key(ctrl, "9"),
+        Some(Action::MoveColumnToWorkspace(8))
+    );
+    assert_eq!(s.resolve_key(mod_only, "t"), spawn("alacritty"));
+    assert_eq!(s.resolve_key(mod_only, "d"), spawn("fuzzel"));
+    assert_eq!(s.resolve_key(mod_only, "b"), spawn("firefox-nightly"));
+    // 矢印と hjkl は同じ操作（左右は列、上下は列の中の窓）。
+    for (arrow, vim, focus, move_) in [
+        ("Left", "h", Action::FocusPrev, Action::MoveLeft),
+        ("Right", "l", Action::FocusNext, Action::MoveRight),
+        ("Up", "k", Action::FocusUp, Action::MoveUp),
+        ("Down", "j", Action::FocusDown, Action::MoveDown),
+    ] {
+        assert_eq!(s.resolve_key(mod_only, arrow), Some(focus.clone()));
+        assert_eq!(s.resolve_key(mod_only, vim), Some(focus));
+        assert_eq!(s.resolve_key(ctrl, arrow), Some(move_.clone()));
+        assert_eq!(s.resolve_key(ctrl, vim), Some(move_));
+    }
+    // Page_Up/Down と U/I は同じ（下 = 次、上 = 前）。
+    for (page, vim, focus, move_) in [
+        (
+            "Page_Down",
+            "u",
+            Action::WorkspaceNext,
+            Action::MoveColumnToWorkspaceNext,
+        ),
+        (
+            "Page_Up",
+            "i",
+            Action::WorkspacePrev,
+            Action::MoveColumnToWorkspacePrev,
+        ),
+    ] {
+        assert_eq!(s.resolve_key(mod_only, page), Some(focus.clone()));
+        assert_eq!(s.resolve_key(mod_only, vim), Some(focus));
+        assert_eq!(s.resolve_key(ctrl, page), Some(move_.clone()));
+        assert_eq!(s.resolve_key(ctrl, vim), Some(move_));
+    }
+    assert_eq!(
+        s.resolve_key(mod_only, "Home"),
+        Some(Action::FocusColumnFirst)
+    );
+    assert_eq!(
+        s.resolve_key(mod_only, "End"),
+        Some(Action::FocusColumnLast)
+    );
+    assert_eq!(s.resolve_key(ctrl, "Home"), Some(Action::MoveColumnFirst));
+    assert_eq!(s.resolve_key(ctrl, "End"), Some(Action::MoveColumnLast));
+    assert_eq!(
+        s.resolve_key(mod_only, "Comma"),
+        Some(Action::ConsumeWindowIntoColumn)
+    );
+    assert_eq!(
+        s.resolve_key(mod_only, "Period"),
+        Some(Action::ExpelWindowFromColumn)
+    );
+    assert_eq!(
+        s.resolve_key(mod_only, "r"),
+        Some(Action::SwitchPresetColumnWidth)
+    );
+    assert_eq!(
+        s.resolve_key(shift, "r"),
+        Some(Action::SwitchPresetWindowHeight)
+    );
+    assert_eq!(s.resolve_key(ctrl, "r"), Some(Action::ResetWindowHeight));
+    assert_eq!(s.resolve_key(mod_only, "f"), Some(Action::MaximizeColumn));
+    assert_eq!(s.resolve_key(shift, "f"), Some(Action::ToggleFullscreen));
+    assert_eq!(s.resolve_key(mod_only, "c"), Some(Action::CenterColumn));
+    assert_eq!(
+        s.resolve_key(mod_only, "Minus"),
+        Some(Action::AdjustColumnWidth(-10))
+    );
+    assert_eq!(
+        s.resolve_key(mod_only, "Equal"),
+        Some(Action::AdjustColumnWidth(10))
+    );
+    assert_eq!(
+        s.resolve_key(shift, "Minus"),
+        Some(Action::AdjustWindowHeight(-10))
+    );
+    assert_eq!(
+        s.resolve_key(shift, "Equal"),
+        Some(Action::AdjustWindowHeight(10))
+    );
+    assert_eq!(s.resolve_key(shift, "e"), Some(Action::Quit));
+    // 音量などと日本語入力の切り替え。
+    assert_eq!(
+        s.resolve_key(Mods::default(), "XF86AudioMute"),
+        spawn("wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle")
+    );
+    assert_eq!(
+        s.resolve_key(
+            Mods {
+                ctrl: true,
+                shift: true,
+                ..Mods::default()
+            },
+            "space"
+        ),
+        spawn("fcitx5-remote -t")
+    );
+    assert_eq!(
+        s.resolve_key(
+            Mods {
+                logo: true,
+                alt: true,
+                ..Mods::default()
+            },
+            "j"
+        ),
+        spawn("env DISPLAY=:0 /home/user/jetbrains-toolbox-3.8.1.88030/bin/jetbrains-toolbox")
+    );
+    // swaylock も niri と同じキー（Super+Alt+L）に spawn を割り当てる（未インストールなら spawn が失敗するだけ）。
+    assert_eq!(
+        s.resolve_key(
+            Mods {
+                logo: true,
+                alt: true,
+                ..Mods::default()
+            },
+            "l"
+        ),
+        spawn("swaylock")
+    );
+    // 変換しなかったキーは何もしない（例: スクリーンショットの範囲選択）。モニタは変換した。
+    assert_eq!(
+        s.resolve_key(shift, "Left"),
+        Some(Action::FocusMonitor(contrast_core::Direction::Left))
+    );
+    assert_eq!(
+        s.resolve_key(Mods::default(), "Print"),
+        Some(Action::Screenshot)
+    );
+    // consume-or-expel は変換した。
+    assert_eq!(
+        s.resolve_key(mod_only, "BracketLeft"),
+        Some(Action::ConsumeOrExpelWindowLeft)
+    );
+    Ok(())
+}
+
+#[test]
+fn the_monitor_binds_resolve_to_the_monitor_actions() -> Result<(), String> {
+    use contrast_core::Direction;
+    let s = load(ModKey::Super)?;
+    let shift = with(ModKey::Super, |m| m.shift = true);
+    let shift_ctrl = with(ModKey::Super, |m| {
+        m.shift = true;
+        m.ctrl = true;
+    });
+    for (arrow, vim, d) in [
+        ("Left", "h", Direction::Left),
+        ("Right", "l", Direction::Right),
+        ("Up", "k", Direction::Up),
+        ("Down", "j", Direction::Down),
+    ] {
+        assert_eq!(s.resolve_key(shift, arrow), Some(Action::FocusMonitor(d)));
+        assert_eq!(s.resolve_key(shift, vim), Some(Action::FocusMonitor(d)));
+        assert_eq!(
+            s.resolve_key(shift_ctrl, arrow),
+            Some(Action::MoveColumnToMonitor(d))
+        );
+        assert_eq!(
+            s.resolve_key(shift_ctrl, vim),
+            Some(Action::MoveColumnToMonitor(d))
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn wezterm_lets_the_window_choose_its_column_width() -> Result<(), String> {
+    let loader = CdlLoader::new().with_default_mod_key(ModKey::Super);
+    let LoadOutcome::Loaded(c) = loader.load(&config_dir().join("config.cdl")) else {
+        return Err("config/ が読めない".to_owned());
+    };
+    let mut wez = contrast_core::WindowMeta::default();
+    wez.app_id = Some("org.wezfurlong.wezterm".to_owned());
+    let (p, d) = c.place(&wez, Some(0));
+    assert_eq!(d, None);
+    assert_eq!(
+        p.column_width,
+        Some(contrast_policy::PlacementWidth::Window)
+    );
+    assert_eq!(p.state, contrast_core::WindowState::Tiled);
+    let mut other = contrast_core::WindowMeta::default();
+    other.app_id = Some("alacritty".to_owned());
+    assert_eq!(c.place(&other, Some(0)).0.column_width, None);
+    Ok(())
+}

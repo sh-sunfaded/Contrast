@@ -2,7 +2,9 @@
 
 use smithay::{
     delegate_xdg_shell,
-    desktop::{PopupKind, PopupManager, Window, find_popup_root_surface, get_popup_toplevel_coords},
+    desktop::{
+        PopupKind, PopupManager, Window, find_popup_root_surface, get_popup_toplevel_coords,
+    },
     reexports::wayland_server::protocol::{wl_seat, wl_surface::WlSurface},
     utils::Serial,
     wayland::shell::xdg::{
@@ -18,11 +20,11 @@ impl XdgShellHandler for Contrast {
     }
 
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
-        self.add_window(Window::new_wayland_window(surface));
+        self.window_created(Window::new_wayland_window(surface));
     }
 
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
-        self.remove_window(surface.wl_surface());
+        self.window_unmapped(surface.wl_surface());
     }
 
     fn new_popup(&mut self, surface: PopupSurface, _positioner: PositionerState) {
@@ -30,7 +32,12 @@ impl XdgShellHandler for Contrast {
         let _ = self.popups.track_popup(PopupKind::Xdg(surface));
     }
 
-    fn reposition_request(&mut self, surface: PopupSurface, positioner: PositionerState, token: u32) {
+    fn reposition_request(
+        &mut self,
+        surface: PopupSurface,
+        positioner: PositionerState,
+        token: u32,
+    ) {
         surface.with_pending_state(|state| {
             state.geometry = positioner.get_geometry();
             state.positioner = positioner;
@@ -44,10 +51,11 @@ impl XdgShellHandler for Contrast {
 
 delegate_xdg_shell!(Contrast);
 
-/// commit 時の処理: 初回 configure の送信とポップアップの追跡。
+/// commit 時の処理: 保留中の窓の map、初回 configure の送信、ポップアップの追跡。
 pub fn handle_commit(state: &mut Contrast, surface: &WlSurface) {
-    if let Some(index) = state.index_of_surface(surface) {
-        let window = state.windows[index].window.clone();
+    // 最初の commit なら core に WindowMapped を送る。Configure の大きさは初回 configure に乗る。
+    state.map_pending(surface);
+    if let Some(window) = state.window_of_surface(surface) {
         window.on_commit();
         let toplevel = window.toplevel().expect("wayland toplevel");
         if !toplevel.is_initial_configure_sent() {
@@ -73,17 +81,22 @@ impl Contrast {
         let Ok(root) = find_popup_root_surface(&PopupKind::Xdg(popup.clone())) else {
             return;
         };
-        let Some(index) = self.index_of_surface(&root) else {
+        let Some(window) = self.window_of_surface(&root) else {
             return;
         };
-        let window = &self.windows[index].window;
-        let Some(output) = self.space.outputs().next() else {
+        // 窓を表示している出力（なければアクティブな出力）の中に収める。
+        let output = self
+            .key_of_surface(&root)
+            .and_then(|k| self.core.view().window_id(k))
+            .and_then(|id| self.output_of_window(id))
+            .or_else(|| self.active_output());
+        let Some(output) = output else {
             return;
         };
-        let Some(output_geo) = self.space.output_geometry(output) else {
+        let Some(output_geo) = self.space.output_geometry(&output) else {
             return;
         };
-        let Some(window_geo) = self.space.element_geometry(window) else {
+        let Some(window_geo) = self.space.element_geometry(&window) else {
             return;
         };
         let mut target = output_geo;

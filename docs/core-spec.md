@@ -58,14 +58,14 @@ contrast (bin) ──┬──> contrast-policy-cdl ──> cdl（別リポジ�
 ### ID と対応表（P2 で確定）
 
 - `IdKind` トレイト（`from_raw` / `raw`）を 3 つの ID 型（OutputId / WindowId / WorkspaceId）が実装する。
-- `IdGen<T>::new()` は raw = 1 から払い出す。`starting_at(n)` はテストと Kani 用。
+- `IdGen<T>::new()` は raw = 1 から払い出す。`starting_at(n)` はテスト用。
   現在値が `u64::MAX` のとき `Err(IdExhausted)`（以後も同じ）。
 - `KeyMap<T>` は key と id の双方向表。`insert` は key か id の重複で `Err(DuplicateKey)`、
   `remove_by_key` は未登録で `Err(UnknownKey)`。Err のとき表は変わらない。
 
 ## 4. 不変条件
 
-`check_invariants()` が I1〜I6 を検査し、テストと Kani の両方から呼ぶ。I7・I8 は状態機械テストで確認する。
+`check_invariants()` が I1〜I6 を検査し、テストから呼ぶ。I7・I8 は状態機械テストで確認する。
 
 - **I1** 窓はちょうど 1 つのワークスペースに属する。
 - **I2** ワークスペースの窓順序列に重複がなく、列中の ID はすべて存在する窓を指す。
@@ -87,9 +87,9 @@ impl<P: Policy, L: Layout> Core<P, L> {
     pub fn new(config: CoreConfig, policy: P, layout: L) -> Self;
     pub fn apply(&mut self, cmd: Command) -> Result<Applied, CoreError>;
     pub fn view(&self) -> StateView<'_>; // 読み取り専用
-    #[cfg(any(test, kani, feature = "invariants"))]
+    #[cfg(any(test, feature = "invariants"))]
     pub fn check_invariants(&self) -> Result<(), InvariantViolation>;
-    #[cfg(any(test, kani, feature = "invariants"))]
+    #[cfg(any(test, feature = "invariants"))]
     pub fn snapshot(&self) -> StateSnapshot; // PartialEq + Debug。I7 の比較用
 }
 
@@ -205,7 +205,6 @@ Configure は「表示中ワークスペースにあり、矩形か状態が変�
   `expect_used`、`panic`、`indexing_slicing`、`missing_docs_in_private_items` を deny。
 - テストコードでは `clippy.toml` で `allow-unwrap-in-tests` と `allow-expect-in-tests` を true にする。
 - 公開型はすべて `#[non_exhaustive]`（構造体は必要に応じてコンストラクタを用意）、公開項目はすべて doc コメント必須。
-- Kani が要求する nightly でもビルドできるよう、新しすぎる言語機能は使わない。
 
 ## 9. モジュール構成
 
@@ -225,9 +224,112 @@ crates/contrast-core/src/
 ├── policy/           Policy trait（mod.rs）と DefaultPolicy
 ├── application/      Core, Command, Action, Effect
 │   └── handlers/     1ファイル1ユースケース
-├── verification/     Kani ハーネス（spec/ は人間、extra/ は実装者）
 ├── invariant.rs      check_invariants, InvariantViolation
 └── error.rs          CoreError, LayoutError
 ```
 
 層の依存方向は `scripts/check-layering.sh` が CI で検査する。
+
+## 10. P3 で確定した挙動（tests/spec/spec_core_*.rs が前提にする）
+
+暫定決定 D1〜D15 を引き継ぎ、実装が決めていた点を仕様にする。違う意図があれば、この節とテストを一緒に直す。
+
+- **D16 Command**: `WindowFocusRequested(ExternalKey)` を Command に加える。表示中のワークスペースの窓ならフォーカスを移す。非表示の窓は状態不変で Ok。未登録は `UnknownKey`。
+- **D17 窓が多すぎるとき**: Tiled 窓の数が作業領域の幅（px）を超えると `Layout(AreaTooSmall)`。WindowMapped、OutputChanged（縮小）、ToggleFloating、MoveToWorkspace、SwitchWorkspace、OutputAdded のどれでも同じ。Err のとき状態は変わらない（OutputChanged が失敗したら、出力の矩形は古いまま）。シェルは Err をログに出して続行する。
+- **D18 窓の削除とフォーカス**: フォーカス窓の WindowUnmapped は、同じワークスペースの順序列で右隣へ、末尾なら左隣へ、窓がなければ None にする（Floating・Fullscreen も対象）。ほかの窓の削除でフォーカスは変わらない。
+- **D19 ワークスペースへの復帰**: 表示に戻った窓の矩形と状態が前回の Configure と同じなら、Configure は出さない（ShowWorkspace・SetFocus・Damage だけ）。シェルは、窓の最後の設定を保持する。
+- **D20 浮動矩形（D8 を改める）**: 前回の浮動矩形が作業領域と交差していればそのまま保つ。なければ `requested_size`（なければ作業領域の半分）を作業領域に収まるよう縮め、中央に置く。
+- **D21 OutputAdded**: フォーカスを与えない。
+- **D22 Action の端**: 次はすべて状態不変で Ok（Effect なし）。Fullscreen の窓への ToggleFloating、表示中のワークスペースへの SwitchWorkspace、出力 0 台での SwitchWorkspace、現在のワークスペースへの MoveToWorkspace、Floating・Fullscreen の窓への MoveWindow、端での MoveWindow、候補のない FocusDirection。MoveWindow の前後は Tiled の窓だけを数える（Left・Up が前、Right・Down が後）。MoveToWorkspace は、インデックスの範囲、次にフォーカスの有無の順に検査する。
+- **D23 WindowMetaChanged**: `meta` を差し替えるだけで、再配置・状態の変更・Effect はない。配置の判断は map のときだけ行う。
+- **D24 出力の削除**: 窓は残り、表示されていたワークスペースは未表示になる。削除された出力への ShowWorkspace・Damage は出さない。同じキーの再追加は新しい OutputId になり、最小インデックスの未表示ワークスペースを表示する。
+- **D25 FocusDirection の候補**: フォーカス窓以外の表示中の全窓（Floating・Fullscreen・他の出力の窓を含む）。フォーカス窓に矩形がなければ状態不変で Ok。
+- **D26 不変条件 I9**: 同じワークスペースの Fullscreen の窓は高々 1 枚。`check_invariants` で検査する。
+- **D27 I7・I8 の確認**: 任意の Command 列に対するプロパティテスト（`spec_core_properties.rs`）で確認する。確認項目は、毎ステップ I1〜I6 と I9、Err なら状態不変（I7）、同じ列を新しい Core に流すと結果と状態が一致（I8）、Effect の順序、Configure と SetFocus が適用後の状態と一致すること、SetFocus は変わったときだけ出ること。
+- **D28 公開 API**: `StateView`・`WindowView`・`InvariantViolation`・`StateSnapshot` は現状の形で確定する。`Point` は公開フィールドと `new` だけを持つ（`x()`・`y()` は作らない）。「公開型は `#[non_exhaustive]`」の対象は、Command・Action・Effect・Placement・WindowMeta などのデータ型で、Core・StateView・IdGen・KeyMap などの振る舞いの型は対象外。`domain` は `crate::error` を use してよい。
+- **D29 Damage（D15 の確認）**: フォーカスだけが変わったときも、その出力に Damage を出す。
+
+## 11. 作業領域の余白（Insets。D4 を改める）
+
+layer-shell のバーなどが確保する領域を、出力の作業領域から除く。余白が 0 のときは、D4（作業領域 = 出力の論理矩形）と同じ。
+
+- **D30 Insets**: `Insets { top, right, bottom, left }`（i32、すべて 0 以上）。フィールドは非公開で、`Insets::new(top, right, bottom, left) -> Option<Insets>`（負の値があれば None）、`top()` `right()` `bottom()` `left()`、`Default`（すべて 0）を持つ。
+- **D31 Command**: 出力ごとに insets を持つ。OutputAdded の時点では 0。`Command::OutputInsetsChanged { key: ExternalKey, insets: Insets }` で置き換える。未登録のキーは `UnknownKey`。同じ値なら、状態不変で Ok（Effect なし）。
+- **D32 作業領域**: 出力の論理矩形から insets を引いた矩形。幅または高さが 1 未満になるときは `Layout(AreaTooSmall)` で、状態は変わらない。これは OutputInsetsChanged と、insets を持つ出力への OutputChanged の両方で検査する。窓が 1 枚もなくても検査する。
+- **D33 使う場所**: Tiled の窓の配置、Floating の窓の配置（D8・D20）、不変条件 I5 は、作業領域を使う。Fullscreen の窓は insets を無視して、出力の論理矩形全体を使う（D9 のまま）。
+- **D34 再配置**: insets が変わると、窓を並べ直す。Effect は通常の規則（矩形が変わった窓の Configure、Damage）に従う。
+
+## 12. スクロール列レイアウト（N3a。niri に合わせる）
+
+`LayoutMode::Scrolling` は、niri のように、列が横に並び、ビューが横にスクロールするレイアウト。既定は `Equal`（既存の等分。これまでの仕様のまま）。窓の高さの操作・`center-column`・ビューのアニメーションは N3b 以降（D48）。
+
+- **D35 設定**: `CoreConfig` に `with_layout(LayoutMode)`（`LayoutMode::{Equal, Scrolling}`、既定 `Equal`）、`with_default_column_width(Ratio)`（既定 1/2）、`with_preset_column_widths(Vec<Ratio>)`（既定 1/3・1/2・2/3。空なら既定のまま）を足す。`Ratio::new(num, den) -> Option<Ratio>`（`1 <= num <= den`）と `num()` `den()`、`ColumnWidth::{Proportion(Ratio), Fixed(i32)}`（`ColumnWidth::fixed(px) -> Option<ColumnWidth>`、px は 1 以上）を持つ。`Scrolling` のとき、`Layout` 型（`Columns` など）は使わない。
+- **D36 構造**: `Scrolling` のワークスペースは、列の並び（左から右）を持つ。列は、Tiled の窓の並び（上から下）、幅、「最後にフォーカスした窓」を持つ。Floating・Fullscreen の窓は列に属さない。
+- **D37 幅**: `Proportion(r)` の列の幅は、作業領域の幅 × r（切り捨て、1 以上）。`Fixed(px)` は px。新しい列の幅は `default_column_width`。作業領域より広い列を許す。
+- **D38 配置**: 列は、作業領域の x = 0 から隙間なく、左から右へ並ぶ。窓の矩形は `(作業領域.x + 列の x − view_x, 作業領域.y + 上の窓の高さの合計, 列の幅, 窓の高さ)`。列の中の窓の高さは等分（余りは上から 1 px ずつ）。ビューの外にある窓にも矩形を持ち、Configure を出す。
+- **D39 ビュー**: ワークスペースごとに `view_x`（0 以上の整数）を持ち、ワークスペースを切り替えても保つ。フォーカス列が見える最小のスクロールにする: 列の左端 < `view_x` なら列の左端へ、列の右端 > `view_x` + 作業領域の幅 なら（右端 − 作業領域の幅）へ。列の幅が作業領域の幅以上なら、列の左端を合わせる。最後に、`view_x` を `0` 以上、`max(0, 総幅 − 作業領域の幅)` 以下に収める。列の追加・削除・移動・幅の変更・フォーカスの移動のたびに適用する。
+- **D40 窓の追加**: Tiled の窓は、対象のワークスペースの、最後にフォーカスされた列の右隣に、新しい列として入る（列がなければ先頭）。フォーカスは新しい窓に移る（D7）。
+- **D41 窓の削除**: 列の最後の窓なら、列も削除する。フォーカス窓の削除後のフォーカスは、列に窓が残るなら下の窓（なければ上）、列ごと消えたなら右の列（なければ左）の「最後にフォーカスした窓」。他の窓の削除では、フォーカスは変わらない。
+- **D42 操作**: `Scrolling` では、`FocusDirection(Left/Right)` は隣の列の「最後にフォーカスした窓」へ、`FocusDirection(Up/Down)` は列の中の上下の窓へ移す。`MoveWindow(Left/Right)` はフォーカス列を隣の列と入れ替え、`MoveWindow(Up/Down)` は列の中で上下の窓と入れ替える。どれも、端では状態不変で Ok（Effect なし）。新しい Action `FocusColumnFirst`・`FocusColumnLast`・`MoveColumnToFirst`・`MoveColumnToLast` も、すでにその位置なら状態不変で Ok。フォーカスは、移した窓・列についていく。
+- **D43 積み**: `ConsumeWindowIntoColumn` は、右隣の列の先頭の窓を、フォーカス列の最下段へ移す（右隣が空になれば削除する。右隣がなければ、状態不変で Ok）。`ExpelWindowFromColumn` は、フォーカス窓を、元の列の右隣の新しい列（既定の幅）へ出す（列に窓が 1 枚だけなら、状態不変で Ok）。どちらも、フォーカスは窓についていく。
+- **D44 幅の操作**: `SetColumnWidth(w)` はフォーカス列の幅を `w` にする。`SwitchPresetColumnWidth` は、フォーカス列の現在の px 幅より広い最初のプリセットへ、なければ先頭のプリセットへ変える。`MaximizeColumn` は幅を `Proportion(1/1)` にし、すでに最大化されていれば、直前の幅に戻す。
+- **D45 Equal**: `Scrolling` 専用の Action（`FocusColumnFirst`・`FocusColumnLast`・`MoveColumnToFirst`・`MoveColumnToLast`・`ConsumeWindowIntoColumn`・`ExpelWindowFromColumn`・`SwitchPresetColumnWidth`・`MaximizeColumn`・`SetColumnWidth`）は、`Equal` では、状態不変で Ok（Effect なし）。
+- **D46 Floating・Fullscreen**: `Scrolling` でも、Floating（D8・D20）と Fullscreen（D9）は、列に属さない。Tiled に戻るときは、フォーカス列の右隣の新しい列として入る。
+- **D47 不変条件**: I5 は `Scrolling` では「同じワークスペースの Tiled の窓の矩形は重ならず、縦は作業領域の範囲に収まる（横はビューの外に出てよい）」に改める。I10: `Scrolling` の各 Tiled の窓は、ちょうど 1 つの列に属し、空の列はなく、列の幅は 1 以上。I11: フォーカスが Tiled の窓にあるとき、その列は D39 の条件を満たす。
+- **D48 N3a に含めないもの**: 窓の高さの操作（preset・reset・set）、`center-column`、ビューのアニメーション、`Scrolling` での `OutputChanged` による列幅の再計算の細部（`Proportion` の列は、新しい作業領域の幅で再計算する）。
+
+## 13. 検証方針
+
+- **守る主張は厳格 crate に限る**: `contrast-core` と `contrast-policy`（smithay に依存しない crate）が、パニックしない・決定的・`unsafe` なし、を守る。`smithay` に依存する crate（`contrast-compositor`・`contrast`）と、CDL との接続（`contrast-policy-cdl`）は、FFI や Smithay との境界を含むので、厳格 lint の対象外とする。
+- **手段**: lint（`unsafe_code` の forbid、clippy の deny、`disallowed-types` / `disallowed-methods`）、設計（`HashMap` / `HashSet` を使わない、時刻・環境に触れない）、proptest（既存の `tests/spec`）。Kani と cargo-fuzz は使わない。
+- **実行**: 日常は、変更した厳格 crate だけを `-p` で `clippy` と `test` にかける。区切り（マージの前）で、ワークスペース全体を検査する。
+- **実機 TTY の確認**は、区切りで 1 回にまとめる。確認項目は少なくする。
+
+## 14. 窓の高さと center-column（N3b。12 節の続き）
+
+12 節（`Scrolling`）に、列の中の窓の高さと、列のセンタリングを足す。配分の規則は、niri の動作の完全な再現ではなく、決定的で単純な暫定の規則（使って合わなければ、ここを直す）。
+
+- **D49 型と設定**: `WindowHeight::{Auto, Proportion(Ratio), Fixed(i32)}`（`WindowHeight::fixed(px) -> Option<WindowHeight>`、px は 1 以上）。`CoreConfig::with_preset_window_heights(Vec<Ratio>)`（既定 1/3・1/2・2/3。空なら既定のまま）。窓は高さを持つ（既定 `Auto`）。
+- **D50 配分**: 列の窓を上から順に、列の高さ H（作業領域の高さ）を配る。Auto が 1 つもなければ、一番下の窓を Auto とみなす。`Proportion(r)` の要求は `H × r`（切り捨て、1 以上）、`Fixed(px)` は px。Auto でない窓は、残りの高さから「まだ高さを決めていない他の窓の数 × 1 px」を引いた値を上限に、要求の高さを取る。Auto の窓は、残りを等分する（余りは上から 1 px ずつ）。どの窓も高さは 1 以上で、合計は H になる（窓の数が H 以下のとき）。
+- **D51 新しい Action**: `SetWindowHeight(WindowHeight)`（フォーカス窓の高さを設定。`Auto` はリセットと同じ）、`SwitchPresetWindowHeight`（フォーカス窓の現在の px の高さより高い最初のプリセットへ。なければ先頭へ）、`ResetWindowHeight`（`Auto` に戻す）、`CenterColumn`。
+- **D52 窓の移動と高さ**: 窓が別の列へ移る（Consume・Expel など）とき、その窓の高さは `Auto` に戻る。同じ列の中での入れ替えでは、高さは窓についていく。
+- **D53 CenterColumn**: フォーカス列の中心を作業領域の中心に合わせる `view_x` にする（`列の x + 列の幅 / 2 − 作業領域の幅 / 2`）。D39 のクランプ（0 以上、`max(0, 総幅 − 作業領域の幅)` 以下）を適用する。結果が今の `view_x` と同じなら、状態不変で Ok。ほかの操作では、D39 の最小のスクロールのまま。
+- **D54 Equal**: 上の 4 つの Action は、`Equal` では、状態不変で Ok（Effect なし）。
+- **D55 不変条件**: I10 に「列の中の窓の高さの合計は、作業領域の高さに等しい」を足す（窓の数が高さ以下のとき）。
+- **D56 N3b に含めないもの**: `center-focused-column` の設定（always・on-overflow）、複数窓の高さの比の保存（niri の auto の重み）。
+
+## 15. consume-or-expel-window-left/right（P9。niri-parity。14 節の続き）
+
+作者の `~/.config/niri/config.kdl` の `Mod+BracketLeft`／`Mod+BracketRight`（`consume-or-expel-window-left`／`-right`）に合わせる。
+niri のソース（`src/layout/scrolling.rs` の `consume_or_expel_window_left`・`consume_or_expel_window_right`、`add_tile_to_column`、`remove_tile_by_idx`）で確かめた動作。
+
+- **D57 新しい Action**: `ConsumeOrExpelWindowLeft`・`ConsumeOrExpelWindowRight`。`Action` は `#[non_exhaustive]` なので、variant の追加は公開 API の破壊ではない。
+- **D58 動作（左）**: `Scrolling` で、フォーカス窓（Tiled。列に属する）の列を `c`、列の窓の数を `n` とする。
+  - `n == 1` のとき: `c` が先頭の列（0）なら、状態不変で `Ok`。そうでなければ、窓を左隣の列 `c − 1` の**最下段**へ移す。元の列は空になるので削除する。
+  - `n >= 2` のとき: 窓を元の列から外し、元の列の**左隣**（インデックス `c`、元の列は `c + 1` になる）の新しい列へ出す。新しい列の幅は**元の列の幅**（niri は取り出した窓の列の幅を保つ）。
+  - どちらも、フォーカスは窓についていく（窓がフォーカス窓だったので、移った先でもフォーカス窓）。窓の高さは `Auto` に戻る（D52）。
+  - 新しい列の幅は、元の列が最大化中（D44）なら、最大化の状態（最大化前の幅 `restore_width`）も保つ（niri は取り出した窓の列の `is_full_width` を保つ）。窓を隣の列へ入れるとき、隣の列の幅・最大化の状態は変わらない。
+- **D59 動作（右）**: 左右を入れ替えたもの。`n == 1` のとき、`c` が最後の列なら状態不変で `Ok`、そうでなければ右隣の列 `c + 1` の最下段へ移し、元の列を削除する。`n >= 2` のとき、元の列の**右隣**（インデックス `c + 1`）の新しい列へ、元の列の幅で出す。
+- **D60 範囲外**: フォーカス窓が Floating・Fullscreen（列に属さない）のとき、フォーカスが None のとき（`NoFocusedWindow`）は、既存の列の操作（`ExpelWindowFromColumn` など）と同じ扱いにする。`Equal` では、状態不変で `Ok`（Effect なし。D45 と同じ）。
+- **D61 既存の D43 との違い（記録）**: niri の `expel-window-from-column` は、フォーカス窓ではなく**最下段**の窓を、列の幅を保って出し、フォーカスは動かない。Contrast の `ExpelWindowFromColumn`（D43）は、フォーカス窓を既定の幅の新しい列へ出し、フォーカスはついていく。D43 は `tests/spec` の前提なので変えない。この違いは `docs/` の差分表に残す。
+
+## 16. 動的なワークスペース（P10。niri-dynws。15 節の続き）
+
+作者の niri の、動的なワークスペース（窓のあるものと末尾の空 1 つ）と、それに連なる `move-column-to-workspace`・`move-workspace-down/up` に合わせる。
+根拠は niri のソース `src/layout/monitor.rs`（`add_tile`・`add_column`・`clean_up_workspaces`・`switch_workspace`・`move_column_to_workspace`・`move_workspace_down/up`）と `src/ipc/server.rs`（`ipc_refresh_workspaces`）。調査は `.cc-logs/report-niri-dynws-status.md`。
+出力 1 枚を前提にする（niri はモニタごとにワークスペースの列を持つが、Contrast の core はワークスペースを全出力で共有する（D1）。複数の出力は今回の範囲外）。
+
+- **D62 方式の設定**: `WorkspaceMode::{Fixed, Dynamic}`（`#[non_exhaustive]`、既定 `Fixed`）と `CoreConfig::with_workspace_mode`。`Fixed` は D1 のとおり（個数固定。ここまでの動作・仕様テストはすべて変わらない）。`Dynamic` のとき `workspace_count` は無視され、空のワークスペース 1 個から始まる。`StateView::workspace_count()` は、いまの個数を返す。
+- **D63 id と位置**: ワークスペースは `id`（`WorkspaceId`。作ったとき 1 から順に払い出す通し番号。削除しても再利用しない。位置が変わっても変わらない）と、位置（`WorkspaceIndex`。0 始まりで、`Workspace.index` と `Window.workspace`・`Output.shown` は常に位置と一致する）を持つ。`Fixed` の id は従来どおり位置 + 1。`StateView::workspace_id(index) -> Option<WorkspaceId>` を足す。
+- **D64 末尾の空（`Dynamic`）**: 末尾のワークスペースは、常に空（窓がない）。窓がワークスペースに入って、それが末尾なら、すべての命令の最後に、新しい空のワークスペースを末尾に足す（niri の `add_workspace_bottom`）。これは窓の追加（`WindowMapped`）、`MoveToWorkspace`、`MoveColumnToWorkspace` など、窓が末尾に入るすべての場合に当たる。
+- **D65 整理（`Dynamic`）**: 「整理」は、末尾以外で、窓がなく、どの出力も表示していないワークスペースを削除する（位置を詰める。表示中のワークスペースの位置は、同じワークスペースを指すように直す）。niri は切り替えが終わったときに行う。Contrast は、次の命令の**最後**で、**表示中のワークスペースが変わったとき**だけ行う: `SwitchWorkspace`（実際に切り替わったとき）、`MoveColumnToWorkspace`、`MoveToWorkspace`（窓。niri の `move_to_workspace` の末尾の整理）、`MoveWorkspaceDown/Up`。窓を閉じる（`WindowUnmapped`）では行わない（空になったワークスペースは、表示中のあいだ残り、離れたあとの次の整理で消える）。
+- **D66 切り替え（`Dynamic`）**: `SwitchWorkspace(index)` は、`index` が範囲外のとき、末尾のワークスペースに丸める（niri は `min(idx, len − 1)`）。`Fixed` は従来どおり `WorkspaceIndexOutOfRange`。`MoveToWorkspace(index)` も、`Dynamic` では末尾に丸める。
+- **D67 `MoveColumnToWorkspace(WorkspaceIndex)`**: 新しい `Action`。フォーカス窓の**列ごと**を、ワークスペース `t` へ移す。`t` は、`Dynamic` では `min(index, 個数 − 1)`、`Fixed` では範囲外なら `WorkspaceIndexOutOfRange`。
+  - `Scrolling` で、フォーカス窓が Tiled（列に属する）のとき: 列の全部の窓を `t` へ移す。列は、幅・窓ごとの高さ・最大化の状態を保ったまま、`t` の「最後にフォーカスした列」の右隣（`t` に窓がなければ先頭）に入る。フォーカス窓は変わらず、表示中のワークスペースが `t` に切り替わる（niri の `focus` の既定 true）。`t` が今のワークスペースなら状態不変で `Ok`。
+  - フォーカス窓が Floating・Fullscreen（列に属さない）のとき: その窓だけを `t` へ移し、同様に `t` に切り替える。
+  - `Equal` では状態不変で `Ok`（D45 と同じ）。フォーカスが None なら `NoFocusedWindow`。
+  - 元のワークスペースが空になれば、D65 の整理で消える（`Dynamic`）。
+- **D68 `MoveWorkspaceDown`・`MoveWorkspaceUp`（`Dynamic` のみ）**: 新しい `Action`。フォーカス出力が表示しているワークスペース（位置 `a`）を、1 つ下（`a + 1`）／上（`a − 1`）のワークスペースと入れ替える。下が無い（`a` が末尾）／上が無い（`a == 0`）なら状態不変で `Ok`。表示は入れ替えたワークスペースについていく。入れ替えのあと、D64 の末尾の空の補充、D65 の整理を行う（niri の順序と同じ）。`Fixed` では状態不変で `Ok`。
+- **D69 IPC に必要な読み取り**: ワークスペースの id・位置・個数は `StateView` から読める。ワークスペースが増減しても、`ShowWorkspace` の Effect は、**ワークスペースの id** が変わった出力にだけ出す（位置の比較ではない。位置は増減でずれる）。
+- **D70 不変条件（`Dynamic`）**: I12: 個数は 1 以上で、末尾のワークスペースは空、`Workspace.index` は位置と一致し、id は互いに異なる。既存の I1〜I11 は、そのまま成り立つ。
+- **D71 niri との差（記録）**: niri は切り替えのアニメーションが終わるまで、離れた空のワークスペースを残す。Contrast の core にはアニメーションが無いので、D65 の整理は命令の直後に行う。IPC の `WorkspacesChanged` は、その分だけ早く出る。

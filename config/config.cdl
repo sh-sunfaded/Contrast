@@ -1,0 +1,40 @@
+"use cdl 1";
+import { Contrast } from "host:contrast";
+import type { Policy, WindowInfo, Placement } from "host:contrast";
+import { appearance, layout, cursor, screenshot, workspaces } from "./appearance.cdl";
+import { input } from "./input.cdl";
+import { startup, environment } from "./startup.cdl";
+import { keybinds } from "./keybinds.cdl";
+
+// niri の設定（~/.config/niri/config.kdl）を、CDL で再編した Contrast の設定。入口。
+// ~/.config/contrast/ にコピーして使う（CONTRAST_CONFIG で別の場所も指せる）。
+//
+// theme.cdl       色・長さ・幅などの定数
+// appearance.cdl  見た目・レイアウト・カーソル・ワークスペースの数
+// input.cdl       入力デバイス
+// startup.cdl     起動時のコマンドと環境変数
+// keybinds.cdl    キーバインド
+// unsupported.cdl まだ変換できない niri の設定（コメントだけ）
+
+// 窓ルール（niri の window-rule）。wezterm は default-column-width {}（列の幅を窓に決めさせる）。
+// 他の窓は既定の配置（ダイアログは浮動、それ以外はタイル）。
+export const policy = {
+  windowOpen: (w: WindowInfo): Placement =>
+    w.appId === "org.wezfurlong.wezterm"
+      ? { floating: w.isDialog, columnWidth: "window" }
+      : { floating: w.isDialog },
+} satisfies Policy;
+
+export default (
+  <Contrast>
+    {appearance}
+    {layout}
+    {cursor}
+    {screenshot}
+    {workspaces}
+    {input}
+    {startup}
+    {environment}
+    {keybinds}
+  </Contrast>
+);

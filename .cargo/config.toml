@@ -1,0 +1,6 @@
+# 手元の ~/RustroverProjects/cdl を使う（リポジトリには入れない。.gitignore 済み）。
+# 有効にすると Cargo.lock の cdl-* が path 扱いに変わることがあるので、その状態の Cargo.lock はコミットしない。
+# 既定は無効（origin/main と同じコミットを git 依存で取れるため。未検証: 有効にしたときの Cargo.lock の変化）。
+# 使うときは次の 2 行のコメントを外す。
+#[patch."https://github.com/sh-sunfaded/cdl.git"]
+#cdl-host = { path = "/home/user/RustroverProjects/cdl/crates/cdl-host" }

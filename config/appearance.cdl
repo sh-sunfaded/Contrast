@@ -1,0 +1,39 @@
+"use cdl 1";
+import { Appearance, Layout, Cursor, Screenshot, Workspaces } from "host:contrast";
+import {
+  GAP, BORDER_WIDTH, FOCUS_COLOR, BACKGROUND, DEFAULT_COLUMN_WIDTH,
+  PRESET_COLUMN_WIDTHS, ANIMATION_MS, WORKSPACE_COUNT, CURSOR_THEME, CURSOR_SIZE,
+} from "./theme.cdl";
+
+// 見た目と窓の並べ方（niri の layout、focus-ring、cursor）。niri の border は無効なので移さない。
+// focus-ring の inactive-color は「非アクティブなモニタ」のリングの色で、フォーカス外の窓には何も描かないので、borderColor は書かない。
+
+export const appearance = (
+  <Appearance
+    borderWidth={BORDER_WIDTH}
+    focusColor={FOCUS_COLOR}
+    background={BACKGROUND}
+  />
+);
+
+/** スクロールする列のレイアウト（niri と同じ）。 */
+export const layout = (
+  <Layout
+    mode="scrolling"
+    gap={GAP}
+    outerGap={GAP}
+    defaultColumnWidth={DEFAULT_COLUMN_WIDTH}
+    presetColumnWidths={PRESET_COLUMN_WIDTHS}
+    animation="spring"
+    animationMs={ANIMATION_MS}
+  />
+);
+
+export const cursor = <Cursor theme={CURSOR_THEME} size={CURSOR_SIZE} />;
+
+/** niri の screenshot-path。`~` と strftime の %Y などを展開する。空文字列なら保存しない。 */
+export const screenshot = (
+  <Screenshot path="~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png" />
+);
+
+export const workspaces = <Workspaces count={WORKSPACE_COUNT} mode="dynamic" />;

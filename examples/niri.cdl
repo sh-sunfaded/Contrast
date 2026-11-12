@@ -1,0 +1,201 @@
+// niri（~/.config/niri/config.kdl の binds）に合わせたキー割り当て。
+// niri のスクロール型レイアウトの再現ではなく、キーを揃えるのが目的。
+//
+// modKey は書かない。優先順位は、ここに書いた modKey > 環境変数 CONTRAST_MOD_KEY=alt|super >
+// バックエンドの既定（実機の DRM は super、nested の winit は alt）。
+// niri の Mod は、実機の TTY では Super。
+//
+// 対応しない niri の操作（モニタ・列の幅/高さ・列への出し入れ・マウスホイール・スクリーンショットなど）は書かない。
+// Mod+Alt+… の 3 つは Mod が Alt のとき Mod+… と同じキーになってしまうので、`super+alt+…` と書く（niri の Mod=Super と同じ）。
+// スクロール列レイアウト（Layout mode="scrolling"）: 列が横に並び、Up/Down/J/K は列の中の上下の窓を動く。
+"use cdl 1";
+import {
+  Contrast, Appearance, Layout, Cursor, Screenshot, Input, Workspaces, Startup, Environment, Env, Keybind,
+} from "host:contrast";
+
+export default (
+  <Contrast>
+    {/* niri の layout.gaps 16 / focus-ring（width 4、active #7fc8ff、inactive #505050）に合わせる。
+        niri の config には geometry-corner-radius と shadow が無いので、角丸 0・影なし。
+        使うなら radius={px(12)} shadowBlur={px(30)} shadowOffsetY={px(5)} shadowColor={color("#00000070")} を足す。 */}
+    <Appearance borderWidth={px(4)} focusColor={color("#7fc8ff")}
+      background={color("#404040")} radius={px(0)} />
+    {/* niri の layout { gaps 16; default-column-width { proportion 0.5; } preset-column-widths { 1/3 1/2 2/3 } } */}
+    <Layout gap={px(16)} outerGap={px(16)} mode="scrolling" defaultColumnWidth={0.5}
+      presetColumnWidths="0.33333 0.5 0.66667" animation="spring" animationMs={150} />
+    {/* niri の cursor { xcursor-theme "Cecilia"; xcursor-size 24 } */}
+    <Cursor theme="Cecilia" size={24} />
+    {/* niri の input { touchpad { tap; natural-scroll } }。niri は省略した dwt を off にする */}
+    <Input tapToClick={true} naturalScroll={true} disableWhileTyping={false} />
+    {/* niri の動的なワークスペース（窓のあるものと末尾の空 1 つ）。count は `workspace` の番号の上限 */}
+    <Workspaces count={9} mode="dynamic" />
+
+    {/* niri の spawn-at-startup（5 つ）。コンポジタが Wayland のソケットを公開したあとに、この順で一度だけ起動する
+        （リロードでは再実行しない）。コマンドは空白で区切る（引用符は使えない）。失敗してもほかを続ける。 */}
+    <Startup command="fcitx5" />
+    <Startup command="ironbar -c /home/user/.config/ironbar/niri-v8.toml -t /home/user/.config/ironbar/niri-v9.css" ipc="niri" />
+    <Startup command="swaybg -i /home/user/Pictures/wallpaper/cece.jpg" />
+    <Startup command="mako" />
+    <Startup command="udiskie" />
+
+    {/* niri の environment（4 つ）。spawn する子（Startup と Keybind の spawn）の環境変数に足す。
+        コンポジタ自身の環境は変えない。WAYLAND_DISPLAY は常にコンポジタのソケットになる。 */}
+    <Environment>
+      <Env name="QT_IM_MODULE" value="fcitx5" />
+      <Env name="GTK_IM_MODULE" value="fcitx5" />
+      <Env name="SDL_IM_MODULE" value="fcitx5" />
+      <Env name="MOZ_ENABLE_WAYLAND" value="1" />
+      <Env name="XDG_CURRENT_DESKTOP" value="niri" />
+      <Env name="XDG_SESSION_TYPE" value="wayland" />
+    </Environment>
+
+    {/* プログラムの起動（niri の spawn / spawn-sh のコマンドそのまま） */}
+    <Keybind keys="mod+t" action="spawn" command="alacritty" />
+    <Keybind keys="mod+d" action="spawn" command="fuzzel" />
+    <Keybind keys="mod+b" action="spawn" command="firefox-nightly" />
+    <Keybind keys="super+alt+j" action="spawn" command="env DISPLAY=:0 /home/user/jetbrains-toolbox-3.8.1.88030/bin/jetbrains-toolbox" />
+    <Keybind keys="mod+shift+d" action="spawn" command="strat fedora /home/user/DiscordPTB/launch.sh" />
+    <Keybind keys="super+alt+e" action="spawn" command="strat fedora /home/user/eclipse/eclipse" />
+    <Keybind keys="super+alt+l" action="spawn" command="swaylock" />
+    <Keybind keys="ctrl+shift+space" action="spawn" command="fcitx5-remote -t" />
+    <Keybind keys="XF86AudioRaiseVolume" action="spawn" command="wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.1+" />
+    <Keybind keys="XF86AudioLowerVolume" action="spawn" command="wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.1-" />
+    <Keybind keys="XF86AudioMute" action="spawn" command="wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle" />
+    <Keybind keys="XF86AudioMicMute" action="spawn" command="wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle" />
+
+    {/* 窓を閉じる・終了 */}
+    <Keybind keys="mod+q" action="close" />
+    <Keybind keys="mod+shift+e" action="quit" />
+    <Keybind keys="mod+shift+p" action="power-off-monitors" />
+    <Keybind keys="ctrl+Print" action="screenshot-screen" />
+    <Keybind keys="alt+Print" action="screenshot-window" />
+    <Keybind keys="Print" action="screenshot" />
+    <Keybind keys="mod+shift+Slash" action="show-hotkey-overlay" />
+    <Screenshot path="~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png" />
+
+    {/* フォーカス移動（niri と同じ。Left/Right/H/L は列、Up/Down/K/J は列の中の窓） */}
+    <Keybind keys="mod+Left" action="focus-left" />
+    <Keybind keys="mod+Right" action="focus-right" />
+    <Keybind keys="mod+h" action="focus-left" />
+    <Keybind keys="mod+l" action="focus-right" />
+    <Keybind keys="mod+Up" action="focus-up" />
+    <Keybind keys="mod+Down" action="focus-down" />
+    <Keybind keys="mod+k" action="focus-up" />
+    <Keybind keys="mod+j" action="focus-down" />
+
+    {/* 窓の移動（Left/Right/H/L は列を入れ替え、Up/Down/K/J は列の中で入れ替え） */}
+    <Keybind keys="mod+ctrl+Left" action="move-left" />
+    <Keybind keys="mod+ctrl+Right" action="move-right" />
+    <Keybind keys="mod+ctrl+h" action="move-left" />
+    <Keybind keys="mod+ctrl+l" action="move-right" />
+    <Keybind keys="mod+ctrl+Up" action="move-up" />
+    <Keybind keys="mod+ctrl+Down" action="move-down" />
+    <Keybind keys="mod+ctrl+k" action="move-up" />
+    <Keybind keys="mod+ctrl+j" action="move-down" />
+
+    {/* ワークスペースの切り替え（focus-workspace-down/up は次/前。端で循環しない） */}
+    <Keybind keys="mod+Page_Down" action="workspace-next" />
+    <Keybind keys="mod+Page_Up" action="workspace-prev" />
+    <Keybind keys="mod+u" action="workspace-next" />
+    <Keybind keys="mod+i" action="workspace-prev" />
+    <Keybind keys="mod+1" action="workspace" workspace={1} />
+    <Keybind keys="mod+2" action="workspace" workspace={2} />
+    <Keybind keys="mod+3" action="workspace" workspace={3} />
+    <Keybind keys="mod+4" action="workspace" workspace={4} />
+    <Keybind keys="mod+5" action="workspace" workspace={5} />
+    <Keybind keys="mod+6" action="workspace" workspace={6} />
+    <Keybind keys="mod+7" action="workspace" workspace={7} />
+    <Keybind keys="mod+8" action="workspace" workspace={8} />
+    <Keybind keys="mod+9" action="workspace" workspace={9} />
+
+    {/* 複数モニタ（focus-monitor-* / move-column-to-monitor-*） */}
+    <Keybind keys="mod+shift+Left" action="focus-monitor-left" />
+    <Keybind keys="mod+shift+h" action="focus-monitor-left" />
+    <Keybind keys="mod+shift+ctrl+Left" action="move-column-to-monitor-left" />
+    <Keybind keys="mod+shift+ctrl+h" action="move-column-to-monitor-left" />
+    <Keybind keys="mod+shift+Right" action="focus-monitor-right" />
+    <Keybind keys="mod+shift+l" action="focus-monitor-right" />
+    <Keybind keys="mod+shift+ctrl+Right" action="move-column-to-monitor-right" />
+    <Keybind keys="mod+shift+ctrl+l" action="move-column-to-monitor-right" />
+    <Keybind keys="mod+shift+Up" action="focus-monitor-up" />
+    <Keybind keys="mod+shift+k" action="focus-monitor-up" />
+    <Keybind keys="mod+shift+ctrl+Up" action="move-column-to-monitor-up" />
+    <Keybind keys="mod+shift+ctrl+k" action="move-column-to-monitor-up" />
+    <Keybind keys="mod+shift+Down" action="focus-monitor-down" />
+    <Keybind keys="mod+shift+j" action="focus-monitor-down" />
+    <Keybind keys="mod+shift+ctrl+Down" action="move-column-to-monitor-down" />
+    <Keybind keys="mod+shift+ctrl+j" action="move-column-to-monitor-down" />
+
+    {/* ワークスペースの入れ替え（move-workspace-down/up） */}
+    <Keybind keys="mod+shift+Page_Down" action="move-workspace-down" />
+    <Keybind keys="mod+shift+Page_Up" action="move-workspace-up" />
+    <Keybind keys="mod+shift+u" action="move-workspace-down" />
+    <Keybind keys="mod+shift+i" action="move-workspace-up" />
+
+    {/* 列ごと別のワークスペースへ（move-column-to-workspace-*） */}
+    <Keybind keys="mod+ctrl+Page_Down" action="move-column-to-workspace-next" />
+    <Keybind keys="mod+ctrl+Page_Up" action="move-column-to-workspace-prev" />
+    <Keybind keys="mod+ctrl+u" action="move-column-to-workspace-next" />
+    <Keybind keys="mod+ctrl+i" action="move-column-to-workspace-prev" />
+    <Keybind keys="mod+ctrl+1" action="move-column-to-workspace" workspace={1} />
+    <Keybind keys="mod+ctrl+2" action="move-column-to-workspace" workspace={2} />
+    <Keybind keys="mod+ctrl+3" action="move-column-to-workspace" workspace={3} />
+    <Keybind keys="mod+ctrl+4" action="move-column-to-workspace" workspace={4} />
+    <Keybind keys="mod+ctrl+5" action="move-column-to-workspace" workspace={5} />
+    <Keybind keys="mod+ctrl+6" action="move-column-to-workspace" workspace={6} />
+    <Keybind keys="mod+ctrl+7" action="move-column-to-workspace" workspace={7} />
+    <Keybind keys="mod+ctrl+8" action="move-column-to-workspace" workspace={8} />
+    <Keybind keys="mod+ctrl+9" action="move-column-to-workspace" workspace={9} />
+
+    {/* 全画面（fullscreen-window）。フローティングの切り替えは niri の既定の Mod+V */}
+    <Keybind keys="mod+shift+f" action="toggle-fullscreen" />
+    <Keybind keys="mod+v" action="toggle-floating" />
+
+    {/* マウスのホイール（niri の WheelScroll…）。縦のワークスペースの切り替えは 150ms に 1 回まで（niri の cooldown-ms=150） */}
+    <Keybind keys="mod+WheelScrollDown" action="workspace-next" cooldown={150} />
+    <Keybind keys="mod+WheelScrollUp" action="workspace-prev" cooldown={150} />
+    <Keybind keys="mod+ctrl+WheelScrollDown" action="move-column-to-workspace-next" cooldown={150} />
+    <Keybind keys="mod+ctrl+WheelScrollUp" action="move-column-to-workspace-prev" cooldown={150} />
+    <Keybind keys="mod+WheelScrollRight" action="focus-right" />
+    <Keybind keys="mod+WheelScrollLeft" action="focus-left" />
+    <Keybind keys="mod+ctrl+WheelScrollRight" action="move-right" />
+    <Keybind keys="mod+ctrl+WheelScrollLeft" action="move-left" />
+    <Keybind keys="mod+shift+WheelScrollDown" action="focus-right" />
+    <Keybind keys="mod+shift+WheelScrollUp" action="focus-left" />
+    <Keybind keys="mod+ctrl+shift+WheelScrollDown" action="move-right" />
+    <Keybind keys="mod+ctrl+shift+WheelScrollUp" action="move-left" />
+
+    {/* 列の操作（niri と同じキー） */}
+    <Keybind keys="mod+Home" action="focus-column-first" />
+    <Keybind keys="mod+End" action="focus-column-last" />
+    <Keybind keys="mod+ctrl+Home" action="move-column-first" />
+    <Keybind keys="mod+ctrl+End" action="move-column-last" />
+    <Keybind keys="mod+Comma" action="consume-window-into-column" />
+    <Keybind keys="mod+Period" action="expel-window-from-column" />
+    <Keybind keys="mod+BracketLeft" action="consume-or-expel-window-left" />
+    <Keybind keys="mod+BracketRight" action="consume-or-expel-window-right" />
+    <Keybind keys="mod+r" action="switch-preset-column-width" />
+    <Keybind keys="mod+f" action="maximize-column" />
+    <Keybind keys="mod+Minus" action="adjust-column-width" delta={-10} />
+    <Keybind keys="mod+Equal" action="adjust-column-width" delta={10} />
+
+    {/* 窓の高さと列のセンタリング（niri の switch-preset-window-height / reset-window-height / center-column と、
+        set-window-height "∓10%"。列に窓が複数あるときに効く。プリセットは niri の既定どおり 1/3・1/2・2/3） */}
+    <Keybind keys="mod+shift+r" action="switch-preset-window-height" />
+    <Keybind keys="mod+ctrl+r" action="reset-window-height" />
+    <Keybind keys="mod+c" action="center-column" />
+    <Keybind keys="mod+shift+Minus" action="adjust-window-height" delta={-10} />
+    <Keybind keys="mod+shift+Equal" action="adjust-window-height" delta={10} />
+
+    {/* ---- まだ実現できないもの（docs/niri-parity.md） ----
+        N3b の残り（consume-or-expel）待ち:
+          Mod+BracketLeft / Mod+BracketRight    consume-or-expel-window-left / right
+        N5 待ち:
+          Mod+ホイール系、Print 系（screenshot）、Mod+Shift+Slash（hotkey overlay）、Mod+Shift+P（power-off-monitors）、overview
+        アニメーション: 窓の移動・大きさ・ワークスペース切替の補間は Layout.animationMs（niri の animations は既定のまま有効）。
+          窓の開閉（出ていく窓・開く窓）の補間は未対応
+        niri の config では使っていないので書かない（CDL では使える）:
+          Input focusFollowsMouse（focus-follows-mouse）、Cursor hideAfterInactiveMs（cursor.hide-after-inactive-ms）、
+          windowOpen フックの Placement.fullscreen（open-fullscreen） */}
+  </Contrast>
+);

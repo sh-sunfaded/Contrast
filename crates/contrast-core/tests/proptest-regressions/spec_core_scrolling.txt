@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc e040ad189b4cfd166746e558f228d1da914a34237cd3a6e05d8c38d3e42feea8 # shrinks to ops = [WindowMapped { key: ExternalKey(12), meta: WindowMeta { app_id: None, title: None, is_dialog: false, requested_size: None } }, WindowMapped { key: ExternalKey(13), meta: WindowMeta { app_id: None, title: None, is_dialog: false, requested_size: None } }, WindowMapped { key: ExternalKey(11), meta: WindowMeta { app_id: None, title: None, is_dialog: false, requested_size: None } }]

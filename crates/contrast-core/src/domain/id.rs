@@ -124,7 +124,7 @@ impl<T: IdKind> IdGen<T> {
         Self::starting_at(1)
     }
 
-    /// 次に払い出す raw 値を `next_raw` にした払い出し器を作る（テストと Kani 用）。
+    /// 次に払い出す raw 値を `next_raw` にした払い出し器を作る（テスト用）。
     #[must_use]
     pub const fn starting_at(next_raw: u64) -> Self {
         Self {
@@ -221,8 +221,14 @@ impl<T: IdKind> KeyMap<T> {
         self.by_id.get(&id).copied()
     }
 
+    /// 試験用: 逆引きだけを書き換えて、2 つの表を食い違わせる（I6 の検出を確かめるため）。
+    #[cfg(test)]
+    pub(crate) fn corrupt_reverse(&mut self, id: T, key: ExternalKey) {
+        self.by_id.insert(id, key);
+    }
+
     /// 2 つの表の要素数が等しく、全 (k, v) で逆引きが (v, k) に戻るなら true（I6 の検査用）。
-    #[cfg(any(test, kani, feature = "invariants"))]
+    #[cfg(any(test, feature = "invariants"))]
     #[must_use]
     pub fn is_bijective(&self) -> bool {
         self.by_key.len() == self.by_id.len()
@@ -236,5 +242,39 @@ impl<T: IdKind> KeyMap<T> {
 impl<T: IdKind> Default for KeyMap<T> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod keymap_tests {
+    use super::*;
+
+    /// `is_bijective` は、要素数が合い、全部の逆引きが戻るときだけ true。
+    #[test]
+    fn is_bijective_needs_equal_lengths_and_matching_reverse_entries() {
+        let mut map: KeyMap<WindowId> = KeyMap::new();
+        assert!(map.is_bijective());
+        assert!(
+            map.insert(ExternalKey::new(1), WindowId::from_raw(10))
+                .is_ok()
+        );
+        assert!(
+            map.insert(ExternalKey::new(2), WindowId::from_raw(20))
+                .is_ok()
+        );
+        assert!(map.is_bijective());
+
+        // 要素数が違う（逆引きだけ余分）。
+        let mut longer = map.clone();
+        longer
+            .by_id
+            .insert(WindowId::from_raw(30), ExternalKey::new(3));
+        assert!(!longer.is_bijective());
+
+        // 要素数は同じだが、逆引きが戻らない。
+        let mut crossed = map.clone();
+        crossed.corrupt_reverse(WindowId::from_raw(10), ExternalKey::new(2));
+        assert_eq!(crossed.by_key.len(), crossed.by_id.len());
+        assert!(!crossed.is_bijective());
     }
 }

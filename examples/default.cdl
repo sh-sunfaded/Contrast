@@ -1,0 +1,21 @@
+// Contrast の組み込みの既定値（Settings::builtin()）と同じ内容の設定。
+// テストで「これを読んだ結果 == Settings::builtin()」を確かめている。
+"use cdl 1";
+import { Contrast, Appearance, Workspaces, Input, Keybind } from "host:contrast";
+
+export default (
+  <Contrast>
+    <Appearance borderWidth={px(3)} focusColor={color("#66a6ff")} background={color("#1f2433")} />
+    <Workspaces count={4} />
+    <Input tapToClick={true} naturalScroll={false} accelSpeed={0} disableWhileTyping={true} />
+    <Keybind keys="mod+Return" action="spawn" command="foot" />
+    <Keybind keys="mod+q" action="close" />
+    <Keybind keys="mod+Left" action="focus-left" />
+    <Keybind keys="mod+Right" action="focus-right" />
+    <Keybind keys="mod+1" action="workspace" workspace={1} />
+    <Keybind keys="mod+2" action="workspace" workspace={2} />
+    <Keybind keys="mod+3" action="workspace" workspace={3} />
+    <Keybind keys="mod+4" action="workspace" workspace={4} />
+    <Keybind keys="mod+shift+q" action="quit" />
+  </Contrast>
+);

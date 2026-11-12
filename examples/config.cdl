@@ -1,0 +1,48 @@
+// Contrast の設定例。~/.config/contrast/config.cdl に置くか、CONTRAST_CONFIG でパスを指す。
+// 設定の書き方は docs/cdl-contract.md。
+"use cdl 1";
+import { Contrast, Appearance, Workspaces, Keybind } from "host:contrast";
+import type { Policy, WindowInfo, Placement } from "host:contrast";
+
+// 窓ルール: 新しい窓が開くときに呼ばれる。ワークスペース番号は 1 始まり。
+export const policy = {
+  windowOpen: (w: WindowInfo): Placement => {
+    switch (w.appId) {
+      case "firefox":
+        return { workspace: 2, floating: false };
+      case "pavucontrol":
+        return { floating: true };
+      default:
+        return { workspace: w.workspace, floating: w.isDialog };
+    }
+  },
+} satisfies Policy;
+
+export default (
+  <Contrast modKey="alt">
+    <Appearance
+      borderWidth={px(4)}
+      focusColor={color("#89b4fa")}
+      borderColor={color("#45475a")}
+      background={color("#1e1e2e")}
+    />
+    <Workspaces count={6} />
+    <Keybind keys="mod+Return" action="spawn" command="foot" />
+    <Keybind keys="mod+d" action="spawn" command="fuzzel" />
+    <Keybind keys="mod+q" action="close" />
+    <Keybind keys="mod+Left" action="focus-left" />
+    <Keybind keys="mod+Right" action="focus-right" />
+    <Keybind keys="mod+shift+Left" action="move-left" />
+    <Keybind keys="mod+shift+Right" action="move-right" />
+    <Keybind keys="mod+1" action="workspace" workspace={1} />
+    <Keybind keys="mod+2" action="workspace" workspace={2} />
+    <Keybind keys="mod+3" action="workspace" workspace={3} />
+    <Keybind keys="mod+shift+1" action="move-to-workspace" workspace={1} />
+    <Keybind keys="mod+shift+2" action="move-to-workspace" workspace={2} />
+    <Keybind keys="mod+shift+3" action="move-to-workspace" workspace={3} />
+    <Keybind keys="mod+f" action="toggle-fullscreen" />
+    <Keybind keys="mod+space" action="toggle-floating" />
+    <Keybind keys="mod+shift+r" action="reload-config" />
+    <Keybind keys="mod+shift+q" action="quit" />
+  </Contrast>
+);

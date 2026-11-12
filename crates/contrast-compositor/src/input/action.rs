@@ -1,4 +1,6 @@
 //! 意味操作 `Action` の実行。
+//!
+//! 未使用（どこからも `mod` されていない）。input/bindings.rs と shell.rs に置き換えた。削除は人間が判断する。
 
 use contrast_policy::Action;
 
@@ -10,9 +12,11 @@ impl Contrast {
         match action {
             Action::Spawn(program) => self.spawn(&program),
             Action::CloseFocused => {
+                // フォーカス窓が無ければ何もしない。窓が実際に閉じたときの並べ直しと
+                // フォーカス移動は toplevel_destroyed → `remove_window` が行う。
                 if let Some(index) = self.focused_index() {
                     let m = &self.windows[index];
-                    tracing::info!(window = m.id, "close requested");
+                    tracing::info!("close focused window={}", m.id);
                     m.window.toplevel().expect("wayland toplevel").send_close();
                 }
             }

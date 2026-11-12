@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 8ae6319e26c05958c9e43fb4e2a55cf127326a3a966e6396b7d8c942d620f85f # shrinks to ops = [FocusColumn(false)]
+cc 2ebf3c5dec6fc75d7a927d7e27e39680d33aa5aaa155011ed6635c9cf39f46c1 # shrinks to ops = [Open, Open, Open, Close(0), Close(0), Add(0), Add(1), MoveColumnToWorkspace(1), Remove(0), Close(0), MoveWorkspace(false), Open, Add(0)]
