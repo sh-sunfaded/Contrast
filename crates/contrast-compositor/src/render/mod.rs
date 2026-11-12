@@ -445,6 +445,17 @@ pub fn finish_frame(state: &mut Contrast, outputs: &[Output]) {
         );
     }
 
+    // レイヤー面（fuzzel・バー・壁紙など）にも、出力ごとに frame コールバックを送る。送らないと、最初のフレームのあとの
+    // 再描画を frame コールバック待ちにするクライアント（fuzzel の一覧など）が、更新されないまま止まる。
+    for output in outputs {
+        let layers: Vec<LayerSurface> = layer_map_for_output(output).layers().cloned().collect();
+        for layer in layers {
+            layer.send_frame(output, elapsed, Some(Duration::ZERO), |_, _| {
+                Some(output.clone())
+            });
+        }
+    }
+
     state.space.refresh();
     state.popups.cleanup();
     for output in outputs {
