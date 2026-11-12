@@ -259,13 +259,24 @@ impl Contrast {
 
     /// 出力 `output` のフォーカス外の表示中の窓のタイル（全画面は除く）。フォーカス外の枠を描くのに使う。
     pub fn unfocused_tiles(&self, output: &Output) -> Vec<Rect> {
+        self.unfocused_tiles_with_ids(output)
+            .into_iter()
+            .map(|(_, tile)| tile)
+            .collect()
+    }
+
+    /// `unfocused_tiles` に、窓の id をつけたもの（枠を、窓の重なりの順に描くのに使う）。
+    pub fn unfocused_tiles_with_ids(&self, output: &Output) -> Vec<(WindowId, Rect)> {
         let focus = self.core.view().focus();
         self.windows_on(output)
             .iter()
             .filter(|w| Some(w.id) != focus && w.state != WindowState::Fullscreen)
             .filter_map(|w| {
                 w.rect.map(|tile| {
-                    self.displayed_frame(w.id, self.frame_of(tile, w.state, Some(output)))
+                    (
+                        w.id,
+                        self.displayed_frame(w.id, self.frame_of(tile, w.state, Some(output))),
+                    )
                 })
             })
             .collect()

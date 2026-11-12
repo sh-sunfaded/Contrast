@@ -184,14 +184,15 @@ pub fn scene_elements(
     }
     // 入力メソッドのポップアップ（候補ウィンドウ）は、カーソルの次に前面（枠・窓・レイヤー面より前）。
     elements.extend(state.ime_popup_elements(renderer, scale, origin));
-    match shaders.as_ref().filter(|_| radius > 0) {
-        Some(sh) => elements.extend(ring_elements(state, sh, radius, output, origin)),
-        None => elements.extend(
-            border_elements(state, output, origin)
+    // 枠は、窓ごとに、その窓の直前（その窓自身より前、上にある窓より後ろ）に置く。重なった窓の上に枠がはみ出さないように。
+    let mut borders: Vec<(contrast_core::WindowId, SceneElement)> =
+        match shaders.as_ref().filter(|_| radius > 0) {
+            Some(sh) => ring_elements(state, sh, radius, output, origin),
+            None => border_elements(state, output, origin)
                 .into_iter()
-                .map(SceneElement::Solid),
-        ),
-    }
+                .map(|(id, e)| (id, SceneElement::Solid(e)))
+                .collect(),
+        };
     // レイヤー面の位置は出力の中の座標なので、描画先の原点からの出力のずれを足す。
     let output_offset = geo.loc - origin;
 
@@ -244,45 +245,57 @@ pub fn scene_elements(
     let replaced: Vec<contrast_core::ExternalKey> = opening.iter().map(|(k, _)| *k).collect();
     elements.extend(opening.into_iter().map(|(_, e)| SceneElement::Anim(e)));
     // この出力に表示中の窓だけを、上に描かれるものから（Space の重なりの順）。
-    let on_output: Vec<smithay::desktop::Window> = {
+    let on_output: Vec<(smithay::desktop::Window, contrast_core::WindowId)> = {
         let ids: Vec<contrast_core::WindowId> =
             state.windows_on(output).iter().map(|w| w.id).collect();
         let view = state.core.view();
         ids.iter()
-            .filter_map(|id| view.window_key(*id))
-            .filter(|k| !replaced.contains(k))
-            .filter_map(|k| state.shell.windows.get(&k).cloned())
+            .filter_map(|id| Some((*id, view.window_key(*id)?)))
+            .filter(|(_, k)| !replaced.contains(k))
+            .filter_map(|(id, k)| Some((state.shell.windows.get(&k).cloned()?, id)))
             .collect()
     };
-    let window_elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = state
+    let windows_start = elements.len();
+    let ordered: Vec<(smithay::desktop::Window, contrast_core::WindowId)> = state
         .space
         .elements()
         .rev()
-        .filter(|w| on_output.contains(w))
-        .filter_map(|w| {
-            let loc = state.space.element_location(w)? - w.geometry().loc - origin;
-            Some(AsRenderElements::<GlesRenderer>::render_elements::<
-                WaylandSurfaceRenderElement<GlesRenderer>,
-            >(
-                w,
-                renderer,
-                loc.to_physical_precise_round(scale),
-                Scale::from(scale),
-                1.0,
-            ))
-        })
-        .flatten()
+        .filter_map(|w| on_output.iter().find(|(o, _)| o == w).cloned())
         .collect();
-    for e in window_elements {
-        elements.push(match round {
-            Some(sh) => SceneElement::Rounded(RoundedSurface::new(
-                e,
-                sh.rounded.clone(),
-                radius as f32 * scale as f32,
-            )),
-            None => SceneElement::Surface(e),
-        });
+    for (w, id) in ordered {
+        let Some(location) = state.space.element_location(&w) else {
+            continue;
+        };
+        let loc = location - w.geometry().loc - origin;
+        let surfaces = AsRenderElements::<GlesRenderer>::render_elements::<
+            WaylandSurfaceRenderElement<GlesRenderer>,
+        >(
+            &w,
+            renderer,
+            loc.to_physical_precise_round(scale),
+            Scale::from(scale),
+            1.0,
+        );
+        // この窓の枠（この窓自身より前、上にある窓より後ろ）。
+        let (mine, rest): (Vec<_>, Vec<_>) = borders.into_iter().partition(|(bid, _)| *bid == id);
+        borders = rest;
+        elements.extend(mine.into_iter().map(|(_, e)| e));
+        for e in surfaces {
+            elements.push(match round {
+                Some(sh) => SceneElement::Rounded(RoundedSurface::new(
+                    e,
+                    sh.rounded.clone(),
+                    radius as f32 * scale as f32,
+                )),
+                None => SceneElement::Surface(e),
+            });
+        }
     }
+    // 窓の要素を持たない窓（開く途中で絵に置き換えたもの）の枠は、従来どおり窓より前。
+    elements.splice(
+        windows_start..windows_start,
+        borders.into_iter().map(|(_, e)| e),
+    );
 
     if let Some(sh) = shaders.as_ref() {
         elements.extend(shadow_elements(
@@ -498,7 +511,7 @@ fn ring_elements(
     radius: i32,
     output: &Output,
     origin: Point<i32, Logical>,
-) -> Vec<SceneElement> {
+) -> Vec<(contrast_core::WindowId, SceneElement)> {
     let b = state.policy.border_width();
     if b <= 0 {
         return Vec::new();
@@ -525,20 +538,26 @@ fn ring_elements(
     };
     let mut out = Vec::new();
     // 枠は窓（フレーム）の外側に描く（niri のフォーカスリングと同じ）。
-    if let Some(frame) = state.focused_tile(output) {
+    if let (Some(frame), Some(id)) = (state.focused_tile(output), state.core.view().focus()) {
         let alpha = state.focused_open_look().map_or(1.0, |(a, _)| a);
-        out.push(ring(
-            crate::geometry::outset(frame, b),
-            b,
-            state.policy.focus_border_color(),
-            alpha,
+        out.push((
+            id,
+            ring(
+                crate::geometry::outset(frame, b),
+                b,
+                state.policy.focus_border_color(),
+                alpha,
+            ),
         ));
     }
     if let Some(color) = state.policy.unfocused_border_color() {
         let thin = unfocused_width(b, state.policy.appearance().inactive_border_width);
         if thin > 0 {
-            for frame in state.unfocused_tiles(output) {
-                out.push(ring(crate::geometry::outset(frame, thin), thin, color, 1.0));
+            for (id, frame) in state.unfocused_tiles_with_ids(output) {
+                out.push((
+                    id,
+                    ring(crate::geometry::outset(frame, thin), thin, color, 1.0),
+                ));
             }
         }
     }
@@ -604,23 +623,24 @@ fn border_elements(
     state: &mut Contrast,
     output: &Output,
     origin: Point<i32, Logical>,
-) -> Vec<SolidColorRenderElement> {
+) -> Vec<(contrast_core::WindowId, SolidColorRenderElement)> {
     let scale = output.current_scale().fractional_scale();
     let b = state.policy.border_width();
-    let mut bands: Vec<(Band, [f32; 4], f32)> = Vec::new();
+    let mut bands: Vec<(Band, [f32; 4], f32, contrast_core::WindowId)> = Vec::new();
+    let focus_id = state.core.view().focus();
     let focused_alpha = state.focused_open_look().map_or(1.0, |(a, _)| a);
     // 枠は窓（フレーム）の外側に描く。
-    if let Some(tile) = state.focused_tile(output)
+    if let (Some(tile), Some(id)) = (state.focused_tile(output), focus_id)
         && let Some(es) = edges(crate::geometry::outset(tile, b), b)
     {
         let color = state.policy.focus_border_color();
-        bands.extend(es.into_iter().map(|e| (e, color, focused_alpha)));
+        bands.extend(es.into_iter().map(|e| (e, color, focused_alpha, id)));
     }
     if let Some(color) = state.policy.unfocused_border_color() {
-        for tile in state.unfocused_tiles(output) {
+        for (id, tile) in state.unfocused_tiles_with_ids(output) {
             let thin = unfocused_width(b, state.policy.appearance().inactive_border_width);
             if let Some(es) = edges(crate::geometry::outset(tile, thin), thin) {
-                bands.extend(es.into_iter().map(|e| (e, color, 1.0)));
+                bands.extend(es.into_iter().map(|e| (e, color, 1.0, id)));
             }
         }
     }
@@ -632,17 +652,20 @@ fn border_elements(
         .border_buffers
         .iter_mut()
         .zip(bands)
-        .map(|(buffer, ((ex, ey, ew, eh), color, alpha))| {
+        .map(|(buffer, ((ex, ey, ew, eh), color, alpha, id))| {
             buffer.update((ew, eh), color);
-            SolidColorRenderElement::from_buffer(
-                buffer,
-                (
-                    (f64::from(ex - origin.x) * scale).round() as i32,
-                    (f64::from(ey - origin.y) * scale).round() as i32,
+            (
+                id,
+                SolidColorRenderElement::from_buffer(
+                    buffer,
+                    (
+                        (f64::from(ex - origin.x) * scale).round() as i32,
+                        (f64::from(ey - origin.y) * scale).round() as i32,
+                    ),
+                    scale,
+                    alpha,
+                    Kind::Unspecified,
                 ),
-                scale,
-                alpha,
-                Kind::Unspecified,
             )
         })
         .collect()
