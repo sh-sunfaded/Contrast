@@ -31,7 +31,7 @@ struct Ctx<'a> {
 impl Ctx<'_> {
     /// `node` の位置に診断を足す。
     fn error(&mut self, node: Node<'_>, code: &str, message: impl Into<String>) {
-        let span = &node.element().span;
+        let span = node.span();
         self.diags.push(at(span, code, message, self.sources));
     }
 
@@ -48,7 +48,7 @@ impl Ctx<'_> {
 
     /// 省略できる prop を読む。型が違えば診断を足して `None`。
     fn optional<T: cdl_host::FromValue>(&mut self, node: Node<'_>, key: &str) -> Option<T> {
-        match node.optional_prop(key) {
+        match node.prop::<Option<T>>(key) {
             Ok(v) => v,
             Err(d) => {
                 self.diags.push(convert(&d, self.sources));
@@ -100,7 +100,7 @@ pub(crate) fn to_settings(
     let mut settings = Settings::builtin();
     settings.keybinds.clear();
 
-    if let Err(d) = root.expect("Contrast") {
+    if let Err(d) = root.expect_component("Contrast") {
         return Err(vec![convert(&d, sources)]);
     }
     settings.mod_key = read_mod_key(&mut cx, root, default_mod_key);
@@ -109,7 +109,7 @@ pub(crate) fn to_settings(
     let mut keybind_nodes = Vec::new();
     let mut data_control_nodes = Vec::new();
     for child in root.children() {
-        match child.name() {
+        match child.component() {
             "Appearance" => read_appearance(&mut cx, child, &mut settings),
             "Workspaces" => read_workspaces(&mut cx, child, &mut settings),
             "Layout" => read_layout(&mut cx, child, &mut settings),
@@ -163,7 +163,7 @@ pub(crate) fn to_settings(
 
 /// 要素の行・列（求められなければ 0:0）。
 fn position(cx: &Ctx<'_>, node: Node<'_>) -> (u32, u32) {
-    let span = &node.element().span;
+    let span = node.span();
     cx.sources
         .get(&span.file)
         .and_then(|text| crate::diag::line_column(text, span.start))
@@ -172,7 +172,7 @@ fn position(cx: &Ctx<'_>, node: Node<'_>) -> (u32, u32) {
 
 /// 文字列 prop の値（診断のメッセージ用。無ければ空）。
 fn prop_text(node: Node<'_>, key: &str) -> String {
-    node.optional_prop::<String>(key)
+    node.prop::<Option<String>>(key)
         .ok()
         .flatten()
         .unwrap_or_default()
@@ -488,13 +488,13 @@ fn read_data_control_clients(cx: &mut Ctx<'_>, nodes: &[Node<'_>], settings: &mu
 /// `Environment` を読む。子は `Env`（`name` と `value`）。名前の重複・空の名前・`=` や NUL を含む名前は CT003。
 fn read_environment(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
     for env in node.children() {
-        if env.name() != "Env" {
+        if env.component() != "Env" {
             cx.error(
                 env,
                 codes::TREE_MISMATCH,
                 format!(
                     "`<Environment>` の子は `<Env>` だけ（`<{}>` は置けない）",
-                    env.name()
+                    env.component()
                 ),
             );
             continue;

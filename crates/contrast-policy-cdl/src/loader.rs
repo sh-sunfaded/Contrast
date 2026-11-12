@@ -97,7 +97,14 @@ pub(crate) fn load_config(
         Err(diags) => return Err(convert_all(&diags, &recording.into_sources())),
     };
     let sources = recording.into_sources();
-    let settings = to_settings(program.root(), &sources, default_mod_key)?;
+    // Contrast の設定は静的な形のルート（要素）だけ。関数の形（`Env` を取る）は使わない。
+    let Some(root) = program.root() else {
+        return Err(vec![internal(
+            codes::TREE_MISMATCH,
+            "ルートが関数の形になっている（Contrast の設定は要素で書く）".to_owned(),
+        )]);
+    };
+    let settings = to_settings(root, &sources, default_mod_key)?;
     let hook = CdlPolicy::new(Rc::new(program), sources);
     Ok(Config::new(settings, Some(Box::new(hook))))
 }
