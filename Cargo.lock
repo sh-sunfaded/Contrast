@@ -267,8 +267,8 @@ dependencies = [
 
 [[package]]
 name = "cdl-diag"
-version = "0.0.0"
-source = "git+https://github.com/sh-sunfaded/cdl.git?rev=923136d2ca204ec57108edcd988a893f2941f771#923136d2ca204ec57108edcd988a893f2941f771"
+version = "0.1.0"
+source = "git+https://github.com/sh-sunfaded/cdl.git?rev=0d252db2bc7d477f2e2bf1d85180dd20b0e09a74#0d252db2bc7d477f2e2bf1d85180dd20b0e09a74"
 dependencies = [
  "serde",
  "serde_json",
@@ -276,8 +276,8 @@ dependencies = [
 
 [[package]]
 name = "cdl-eval"
-version = "0.0.0"
-source = "git+https://github.com/sh-sunfaded/cdl.git?rev=923136d2ca204ec57108edcd988a893f2941f771#923136d2ca204ec57108edcd988a893f2941f771"
+version = "0.1.0"
+source = "git+https://github.com/sh-sunfaded/cdl.git?rev=0d252db2bc7d477f2e2bf1d85180dd20b0e09a74#0d252db2bc7d477f2e2bf1d85180dd20b0e09a74"
 dependencies = [
  "cdl-diag",
  "cdl-sema",
@@ -285,8 +285,8 @@ dependencies = [
 
 [[package]]
 name = "cdl-host"
-version = "0.0.0"
-source = "git+https://github.com/sh-sunfaded/cdl.git?rev=923136d2ca204ec57108edcd988a893f2941f771#923136d2ca204ec57108edcd988a893f2941f771"
+version = "0.1.0"
+source = "git+https://github.com/sh-sunfaded/cdl.git?rev=0d252db2bc7d477f2e2bf1d85180dd20b0e09a74#0d252db2bc7d477f2e2bf1d85180dd20b0e09a74"
 dependencies = [
  "cdl-diag",
  "cdl-eval",
@@ -294,8 +294,8 @@ dependencies = [
 
 [[package]]
 name = "cdl-sema"
-version = "0.0.0"
-source = "git+https://github.com/sh-sunfaded/cdl.git?rev=923136d2ca204ec57108edcd988a893f2941f771#923136d2ca204ec57108edcd988a893f2941f771"
+version = "0.1.0"
+source = "git+https://github.com/sh-sunfaded/cdl.git?rev=0d252db2bc7d477f2e2bf1d85180dd20b0e09a74#0d252db2bc7d477f2e2bf1d85180dd20b0e09a74"
 dependencies = [
  "cdl-diag",
  "cdl-syntax",
@@ -303,8 +303,8 @@ dependencies = [
 
 [[package]]
 name = "cdl-syntax"
-version = "0.0.0"
-source = "git+https://github.com/sh-sunfaded/cdl.git?rev=923136d2ca204ec57108edcd988a893f2941f771#923136d2ca204ec57108edcd988a893f2941f771"
+version = "0.1.0"
+source = "git+https://github.com/sh-sunfaded/cdl.git?rev=0d252db2bc7d477f2e2bf1d85180dd20b0e09a74#0d252db2bc7d477f2e2bf1d85180dd20b0e09a74"
 dependencies = [
  "cdl-diag",
  "oxc_allocator",
