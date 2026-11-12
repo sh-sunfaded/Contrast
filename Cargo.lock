@@ -268,7 +268,7 @@ dependencies = [
 [[package]]
 name = "cdl-diag"
 version = "0.0.0"
-source = "git+https://github.com/KennedySilverDollar/cdl.git?rev=bcff355ff88ecb91013becf212c1617d3db13fec#bcff355ff88ecb91013becf212c1617d3db13fec"
+source = "git+https://github.com/sh-sunfaded/cdl.git?rev=923136d2ca204ec57108edcd988a893f2941f771#923136d2ca204ec57108edcd988a893f2941f771"
 dependencies = [
  "serde",
  "serde_json",
@@ -277,7 +277,7 @@ dependencies = [
 [[package]]
 name = "cdl-eval"
 version = "0.0.0"
-source = "git+https://github.com/KennedySilverDollar/cdl.git?rev=bcff355ff88ecb91013becf212c1617d3db13fec#bcff355ff88ecb91013becf212c1617d3db13fec"
+source = "git+https://github.com/sh-sunfaded/cdl.git?rev=923136d2ca204ec57108edcd988a893f2941f771#923136d2ca204ec57108edcd988a893f2941f771"
 dependencies = [
  "cdl-diag",
  "cdl-sema",
@@ -286,7 +286,7 @@ dependencies = [
 [[package]]
 name = "cdl-host"
 version = "0.0.0"
-source = "git+https://github.com/KennedySilverDollar/cdl.git?rev=bcff355ff88ecb91013becf212c1617d3db13fec#bcff355ff88ecb91013becf212c1617d3db13fec"
+source = "git+https://github.com/sh-sunfaded/cdl.git?rev=923136d2ca204ec57108edcd988a893f2941f771#923136d2ca204ec57108edcd988a893f2941f771"
 dependencies = [
  "cdl-diag",
  "cdl-eval",
@@ -295,7 +295,7 @@ dependencies = [
 [[package]]
 name = "cdl-sema"
 version = "0.0.0"
-source = "git+https://github.com/KennedySilverDollar/cdl.git?rev=bcff355ff88ecb91013becf212c1617d3db13fec#bcff355ff88ecb91013becf212c1617d3db13fec"
+source = "git+https://github.com/sh-sunfaded/cdl.git?rev=923136d2ca204ec57108edcd988a893f2941f771#923136d2ca204ec57108edcd988a893f2941f771"
 dependencies = [
  "cdl-diag",
  "cdl-syntax",
@@ -304,7 +304,7 @@ dependencies = [
 [[package]]
 name = "cdl-syntax"
 version = "0.0.0"
-source = "git+https://github.com/KennedySilverDollar/cdl.git?rev=bcff355ff88ecb91013becf212c1617d3db13fec#bcff355ff88ecb91013becf212c1617d3db13fec"
+source = "git+https://github.com/sh-sunfaded/cdl.git?rev=923136d2ca204ec57108edcd988a893f2941f771#923136d2ca204ec57108edcd988a893f2941f771"
 dependencies = [
  "cdl-diag",
  "oxc_allocator",

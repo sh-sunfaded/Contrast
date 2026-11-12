@@ -4,6 +4,10 @@ Contrast が設定ファイル（CDL）に約束する内容。実装は `crates
 `crates/contrast-policy`（CDL を知らない設定の型とストア）。CDL の API は `cdl-host` の公開 API だけを使う。
 CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と `docs/DECISIONS.md`（E1〜E8）。
 
+**固定している CDL**: `https://github.com/sh-sunfaded/cdl.git` の `rev = 923136d2ca204ec57108edcd988a893f2941f771`（CDL の `main` の HEAD。
+以前の `bcff355` から更新。`crates/contrast-policy-cdl/Cargo.toml` と `Cargo.lock` が同じ rev を指す）。
+この rev の CDL に含まれる、Contrast に関わる変更は 6 節の「CDL の上限と診断（rev 923136d）」にまとめる。
+
 ## 1. スキーマ（モジュール `host:contrast`）
 
 実装済みの機能だけを置く。ルート要素は `Contrast`。
@@ -156,7 +160,7 @@ interface Policy     { windowOpen?: (w: WindowInfo) => Placement }
 
 | コード | 意味 |
 | --- | --- |
-| CT001 | エントリの設定ファイルの状態を調べられない・パスを正準化できない（読めない・UTF-8 でない・サイズ超過は CDL の `E2001` で出る） |
+| CT001 | エントリの設定ファイルの状態を調べられない・パスを正準化できない（読めない・UTF-8 でない・サイズ超過は CDL の `E5001` で出る） |
 | CT002 | 値木が期待と食い違う（未知の要素・ルートが違う。スキーマとの不一致で、通常は起きない） |
 | CT003 | prop の値が不正（`modKey` が alt/super でない、`borderWidth` が負または非整数、`Startup` の `command` が空、`Env` の名前が不正・重複、`hideAfterInactiveMs` が範囲外、など） |
 | CT010 | `Workspaces.count` が 1〜32 の整数でない |
@@ -180,7 +184,42 @@ CDL 自身の診断（`E0001`〜）は、そのままのコードで `ConfigDiag
 `import "./x.cdl"` は、設定ファイルのあるディレクトリの外を拒否する（`canonicalize` の後で判定するので、symlink で出るものも拒否）。
 読む前にファイルのサイズを確認し、`Limits::max_source_bytes` を超えるものは読まない。
 
-## 6. 未実装
+## 6. CDL の上限と診断（rev 923136d）
+
+Contrast は `cdl_host::Limits` の既定値（`Limits::default()`）をそのまま使う。上書きしない。
+
+| `Limits` のフィールド | 既定値 | 超過したときの診断 |
+| --- | --- | --- |
+| `max_source_bytes` | 1 MiB（1,048,576） | `E5001` |
+| `max_nesting`（構文の入れ子） | 64（rev bcff355 では 128） | `E1008` |
+| `max_modules`（読み込むファイル数。エントリを含む） | 256（新規） | `E5013` |
+| `max_steps`（評価ステップ） | 1,000,000 | `E5002` |
+| `max_call_depth`（呼び出しの深さ） | 64 | `E5003` |
+| `max_eval_depth`（式と要素の再帰の深さ。呼び出しをまたぐ） | 128（新規） | `E5012` |
+| `max_string_bytes`（1 文字列の長さ） | 64 KiB | `E5004` |
+| `max_collection_len`（1 配列・マップの要素数） | 65,536 | `E5005` |
+| `max_nodes`（値木のノード数） | 1,000,000 | `E5006` |
+| `max_value_depth`（値木の深さ。要素・配列・オブジェクトを 1 段） | 64（新規） | `E5011` |
+| `max_hook_steps`（フック 1 回の評価ステップ） | 10,000 | `E5002` |
+
+- 型の大きさ（深さ 128・ノード数 4,096、別名の連鎖も深さ 128。ホストは上書きできない）の超過は `E3013`。
+- 文字列を作るとき、256 バイトごとに 1 ステップを使う。値木の深さの検査は、たどった値 1 つにつき 1 ステップを使う。
+- E4008（変換の失敗）のメッセージには、値そのものではなく値の種類（`number`・`string`・`配列` など）を入れる。
+  Contrast の診断は CDL の診断を `ConfigDiagnostic` に写すので、メッセージの文言は新しい版で変わる。
+
+### CDL の上限・検査で新しく出る診断（rev 923136d）
+
+| コード | 意味 |
+| --- | --- |
+| E3013 | 型が大きすぎる（深さ・ノード数・参照の深さの上限） |
+| E5011 | 値木の深さの上限超過 |
+| E5012 | 評価の再帰の深さの上限超過 |
+| E5013 | 読み込むファイル数の上限超過（上限を超えた import の位置で出て、そのファイルは開かない） |
+
+これらは CDL の `E` の名前のまま出る（CT の番号は付けない）。設定ファイル（`config/`・`examples/`）は、
+この rev でも診断なしで読める（`impl_config.rs`・`impl_loader.rs` で確かめる）。
+
+## 7. 未実装
 
 - 識別 prop（意味が不明なので実装しない）。
 - ファイル監視、画面上の診断表示。窓の開閉（出ていく窓・開く窓）のアニメーションと、出ていく窓の補間。

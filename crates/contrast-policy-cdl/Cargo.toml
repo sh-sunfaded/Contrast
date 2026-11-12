@@ -10,7 +10,7 @@ contrast-core = { path = "../contrast-core" }
 contrast-policy = { path = "../contrast-policy" }
 # origin/main のコミットで固定する（CI が再現できるように）。手元の ~/RustroverProjects/cdl への差し替えは
 # リポジトリに入れない .cargo/config.toml の [patch] で行う。
-cdl-host = { git = "https://github.com/KennedySilverDollar/cdl.git", rev = "bcff355ff88ecb91013becf212c1617d3db13fec" }
+cdl-host = { git = "https://github.com/sh-sunfaded/cdl.git", rev = "923136d2ca204ec57108edcd988a893f2941f771" }
 
 [dev-dependencies]
 proptest = "1.12.0"
