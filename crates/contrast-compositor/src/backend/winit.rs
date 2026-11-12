@@ -27,6 +27,20 @@ const REFRESH: i32 = 60_000;
 /// 窓を分ける数の上限。
 const MAX_SPLIT: usize = 4;
 
+/// `CONTRAST_WINIT_SCALE` の値から、出力の拡大率（1〜4）。不正・未指定は 1。窓を分けたとき（`CONTRAST_WINIT_OUTPUTS`）は使わない。
+/// 実機の高 DPI の出力の描画を、nested で確かめるための検証用（niri には無い）。
+fn parse_scale(value: Option<&str>) -> f64 {
+    value
+        .and_then(|v| v.trim().parse::<f64>().ok())
+        .filter(|s| s.is_finite() && (1.0..=4.0).contains(s))
+        .map_or(1.0, |s| (s * 120.0).round() / 120.0)
+}
+
+/// 物理 px の大きさ `physical` を、拡大率 `scale` の論理の大きさにする（四捨五入）。
+fn logical_extent(physical: i32, scale: f64) -> i32 {
+    (f64::from(physical) / scale).round() as i32
+}
+
 /// `CONTRAST_WINIT_OUTPUTS` の値から、出力の数（1〜4）。不正・未指定は 1。
 fn split_count(value: Option<&str>) -> usize {
     value
@@ -78,6 +92,11 @@ pub fn init_winit(
 
     let count = split_count(std::env::var("CONTRAST_WINIT_OUTPUTS").ok().as_deref());
     let split = count > 1;
+    let scale = if split {
+        1.0
+    } else {
+        parse_scale(std::env::var("CONTRAST_WINIT_SCALE").ok().as_deref())
+    };
     let mut outputs: Vec<Output> = Vec::new();
     for (i, (x, w)) in split_columns(size.w, count).into_iter().enumerate() {
         let name = if split {
@@ -105,10 +124,17 @@ pub fn init_winit(
         } else {
             Transform::Flipped180
         };
-        output.change_current_state(Some(mode), Some(transform), None, Some((x, 0).into()));
+        let fractional = (scale != 1.0).then_some(smithay::output::Scale::Fractional(scale));
+        output.change_current_state(Some(mode), Some(transform), fractional, Some((x, 0).into()));
         output.set_preferred(mode);
         state.space.map_output(&output, (x, 0));
-        let rect = Rect::new(x, 0, w, size.h).ok_or("winit window size is not positive")?;
+        let rect = Rect::new(
+            x,
+            0,
+            logical_extent(w, scale),
+            logical_extent(size.h, scale),
+        )
+        .ok_or("winit window size is not positive")?;
         state.output_added(&output, rect);
         tracing::info!(name, x, size = ?mode.size, "output created");
         outputs.push(output);
@@ -140,7 +166,7 @@ pub fn init_winit(
                         let changed = map.arrange();
                         tracing::info!(output = output.name(), changed, zone = ?map.non_exclusive_zone(), "layers re-arranged");
                     }
-                    match Rect::new(x, 0, w, size.h) {
+                    match Rect::new(x, 0, logical_extent(w, scale), logical_extent(size.h, scale)) {
                         Some(rect) => {
                             state.output_changed(output, rect);
                             state.sync_output_insets(output);
@@ -290,5 +316,28 @@ mod tests {
         assert_eq!(split_columns(1001, 2), [(0, 500), (500, 501)]);
         let cols = split_columns(999, 3);
         assert_eq!(cols, [(0, 333), (333, 333), (666, 333)]);
+    }
+}
+
+#[cfg(test)]
+mod scale_tests {
+    use super::*;
+
+    #[test]
+    fn the_nested_scale_is_one_to_four_rounded_to_the_protocol_step() {
+        assert_eq!(parse_scale(None), 1.0);
+        assert_eq!(parse_scale(Some("2")), 2.0);
+        assert_eq!(parse_scale(Some(" 1.5 ")), 1.5);
+        assert_eq!(parse_scale(Some("0.5")), 1.0);
+        assert_eq!(parse_scale(Some("9")), 1.0);
+        assert_eq!(parse_scale(Some("x")), 1.0);
+        assert!((parse_scale(Some("1.3333")) - 160.0 / 120.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn a_logical_extent_is_the_physical_one_over_the_scale() {
+        assert_eq!(logical_extent(928, 2.0), 464);
+        assert_eq!(logical_extent(1076, 1.5), 717);
+        assert_eq!(logical_extent(928, 1.0), 928);
     }
 }

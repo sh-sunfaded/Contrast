@@ -85,7 +85,18 @@ pub struct ThemeCursor {
 pub struct CursorTheme {
     name: String,
     size: u32,
-    cache: BTreeMap<String, Option<ThemeCursor>>,
+    /// 名前と拡大率（1/120 刻みの整数）ごとの絵。
+    cache: BTreeMap<(String, u32), Option<ThemeCursor>>,
+}
+
+/// 拡大率 `scale` の出力に使う画像の大きさ（物理 px）。niri と同じく、テーマの大きさに拡大率を掛ける。
+pub fn scaled_size(size: u32, scale: f64) -> u32 {
+    (f64::from(size) * scale.max(1.0)).round() as u32
+}
+
+/// 拡大率を、キャッシュの鍵（1/120 刻み）にする。
+fn scale_key(scale: f64) -> u32 {
+    (scale.max(1.0) * 120.0).round() as u32
 }
 
 impl CursorTheme {
@@ -107,23 +118,30 @@ impl CursorTheme {
         }
     }
 
-    /// カーソル `icon`（xcursor の名前）を返す。テーマに無ければ `default`、それも無ければ `None`。
-    fn get(&mut self, icon: &str) -> Option<&ThemeCursor> {
-        let key = if self.load(icon) { icon } else { "default" };
-        self.load(key);
-        self.cache.get(key).and_then(Option::as_ref)
+    /// 拡大率 `scale` の出力に描くカーソル `icon`（xcursor の名前）を返す。テーマに無ければ `default`、それも無ければ `None`。
+    fn get(&mut self, icon: &str, scale: f64) -> Option<&ThemeCursor> {
+        let key = if self.load(icon, scale) {
+            icon
+        } else {
+            "default"
+        };
+        self.load(key, scale);
+        self.cache
+            .get(&(key.to_owned(), scale_key(scale)))
+            .and_then(Option::as_ref)
     }
 
-    /// `icon` を（まだなら）読む。読めたかを返す。
-    fn load(&mut self, icon: &str) -> bool {
-        if !self.cache.contains_key(icon) {
-            let cursor = load_cursor(&self.name, icon, self.size);
+    /// `icon` を（まだなら）拡大率 `scale` の大きさで読む。読めたかを返す。
+    fn load(&mut self, icon: &str, scale: f64) -> bool {
+        let key = (icon.to_owned(), scale_key(scale));
+        if !self.cache.contains_key(&key) {
+            let cursor = load_cursor(&self.name, icon, scaled_size(self.size, scale));
             if cursor.is_none() {
                 tracing::debug!(theme = %self.name, icon, "cursor: not found in the theme");
             }
-            self.cache.insert(icon.to_owned(), cursor);
+            self.cache.insert(key.clone(), cursor);
         }
-        self.cache.get(icon).is_some_and(Option::is_some)
+        self.cache.get(&key).is_some_and(Option::is_some)
     }
 }
 
@@ -197,7 +215,7 @@ pub fn cursor_elements(
                 (pos - hotspot.to_f64()).to_physical_precise_round(scale);
             render_elements_from_surface_tree(renderer, surface, at, scale, 1.0, Kind::Cursor)
         }
-        CursorImageStatus::Named(icon) => match theme.get(icon.name()) {
+        CursorImageStatus::Named(icon) => match theme.get(icon.name(), scale) {
             Some(cursor) => {
                 let (hx, hy) = cursor.hotspot();
                 // 画像は物理 px のまま（テーマの大きさ）。位置だけ拡大率を掛ける。
@@ -330,10 +348,21 @@ mod tests {
     }
 
     #[test]
+    fn the_cursor_image_size_follows_the_output_scale() {
+        assert_eq!(scaled_size(24, 1.0), 24);
+        assert_eq!(scaled_size(24, 2.0), 48);
+        assert_eq!(scaled_size(24, 1.25), 30);
+        // 1 未満は 1 として扱う。
+        assert_eq!(scaled_size(24, 0.5), 24);
+        assert_ne!(scale_key(1.0), scale_key(1.25));
+        assert_eq!(scale_key(1.0), scale_key(0.5));
+    }
+
+    #[test]
     fn missing_theme_gives_no_cursor() {
         assert!(load_cursor("contrast-no-such-theme-xyz", "default", 24).is_none());
         let mut theme = CursorTheme::new("contrast-no-such-theme-xyz".to_owned(), 24);
-        assert!(theme.get("default").is_none());
-        assert!(theme.get("text").is_none());
+        assert!(theme.get("default", 1.0).is_none());
+        assert!(theme.get("text", 1.0).is_none());
     }
 }

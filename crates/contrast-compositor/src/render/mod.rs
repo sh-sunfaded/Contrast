@@ -125,6 +125,9 @@ pub fn cropped_output_elements(
         .collect())
 }
 
+/// 位置（出力の中の論理座標）つきのレイヤー面。
+type PlacedLayer = (Point<i32, Logical>, LayerSurface);
+
 /// 出力 1 枚分の要素を前から順に集める。`cursor` があれば最前面。
 /// `origin` は描画先の左上の、全体の論理座標（出力ごとの描画先なら出力の位置）。窓はこの出力に表示中のものだけ。
 pub fn scene_elements(
@@ -192,33 +195,38 @@ pub fn scene_elements(
     // レイヤー面の位置は出力の中の座標なので、描画先の原点からの出力のずれを足す。
     let output_offset = geo.loc - origin;
 
-    let layer_map = layer_map_for_output(output);
-    let (lower, upper): (Vec<&LayerSurface>, Vec<&LayerSurface>) = layer_map
-        .layers()
-        .rev()
-        .partition(|s| matches!(s.layer(), Layer::Background | Layer::Bottom));
-    let layer_elements = |renderer: &mut GlesRenderer, layers: Vec<&LayerSurface>| {
-        let mut out = Vec::new();
-        for surface in layers {
-            let Some(loc) = layer_map.layer_geometry(surface).map(|g| g.loc) else {
-                continue;
-            };
-            out.extend(
-                AsRenderElements::<GlesRenderer>::render_elements::<
-                    WaylandSurfaceRenderElement<GlesRenderer>,
-                >(
-                    surface,
-                    renderer,
-                    (loc + output_offset).to_physical_precise_round(scale),
-                    Scale::from(scale),
-                    1.0,
-                )
-                .into_iter()
-                .map(SceneElement::Surface),
-            );
-        }
-        out
+    // レイヤー面の位置を先に取り出して、ロックをすぐ放す（`layer_map_for_output` は Mutex。持ったまま `work_area` などを
+    // 呼ぶと同じロックを取り直してデッドロックする。影の描画の `frame_of` → `work_area` がそうだった）。
+    let (lower, upper): (Vec<PlacedLayer>, Vec<PlacedLayer>) = {
+        let layer_map = layer_map_for_output(output);
+        let all: Vec<PlacedLayer> = layer_map
+            .layers()
+            .rev()
+            .filter_map(|s| Some((layer_map.layer_geometry(s)?.loc, s.clone())))
+            .collect();
+        all.into_iter()
+            .partition(|(_, s)| matches!(s.layer(), Layer::Background | Layer::Bottom))
     };
+    let layer_elements =
+        |renderer: &mut GlesRenderer, layers: Vec<(Point<i32, Logical>, LayerSurface)>| {
+            let mut out = Vec::new();
+            for (loc, surface) in layers {
+                out.extend(
+                    AsRenderElements::<GlesRenderer>::render_elements::<
+                        WaylandSurfaceRenderElement<GlesRenderer>,
+                    >(
+                        &surface,
+                        renderer,
+                        (loc + output_offset).to_physical_precise_round(scale),
+                        Scale::from(scale),
+                        1.0,
+                    )
+                    .into_iter()
+                    .map(SceneElement::Surface),
+                );
+            }
+            out
+        };
     elements.extend(layer_elements(renderer, upper));
 
     // 窓。角丸のときは、全画面の窓があるあいだは切り抜かない。
@@ -267,9 +275,11 @@ pub fn scene_elements(
         .collect();
     for e in window_elements {
         elements.push(match round {
-            Some(sh) => {
-                SceneElement::Rounded(RoundedSurface::new(e, sh.rounded.clone(), radius as f32))
-            }
+            Some(sh) => SceneElement::Rounded(RoundedSurface::new(
+                e,
+                sh.rounded.clone(),
+                radius as f32 * scale as f32,
+            )),
             None => SceneElement::Surface(e),
         });
     }
@@ -495,6 +505,7 @@ fn ring_elements(
             alpha,
             vec![
                 Uniform::new("color", premultiplied(color)),
+                // `PixelShaderElement` の `size` は論理 px なので、半径・太さも論理 px のまま渡す（実測で確認）。
                 Uniform::new("radius", radius as f32),
                 Uniform::new("thickness", thickness as f32),
             ],
