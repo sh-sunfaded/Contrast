@@ -264,3 +264,27 @@ fn neighbor_output(state: &State, direction: Direction) -> Option<OutputId> {
     }
     best.map(|(_, id)| id)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::check_index;
+    use crate::domain::id::WorkspaceIndex;
+    use crate::domain::state::State;
+    use crate::error::CoreError;
+
+    /// `check_index`: 個数未満なら通り、個数ちょうど以上は範囲外。
+    #[test]
+    fn check_index_accepts_only_indexes_below_the_count() {
+        let state = State::new(3);
+        assert_eq!(check_index(&state, WorkspaceIndex::new(0)), Ok(()));
+        assert_eq!(check_index(&state, WorkspaceIndex::new(2)), Ok(()));
+        assert_eq!(
+            check_index(&state, WorkspaceIndex::new(3)),
+            Err(CoreError::WorkspaceIndexOutOfRange)
+        );
+        assert_eq!(
+            check_index(&state, WorkspaceIndex::new(255)),
+            Err(CoreError::WorkspaceIndexOutOfRange)
+        );
+    }
+}

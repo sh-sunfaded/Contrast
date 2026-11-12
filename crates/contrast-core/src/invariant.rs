@@ -946,4 +946,248 @@ mod tests {
         }
         assert!(super::check_i12(&state).is_err());
     }
+
+    /// I10: 表示されていないワークスペースの列に、順序列にない窓がある（列は空でなく、幅も正しく、
+    /// 順序列の窓はない）。列の窓の総数だけが Tiled の窓の数と食い違う。
+    /// 表示中でないので、後段の高さの合計の検査には掛からない（総数の検査だけが見つける）。
+    #[test]
+    fn detects_i10_when_only_the_total_of_column_windows_differs() -> Result<(), &'static str> {
+        let mut state = scrolling_valid().ok_or("setup")?;
+        let hidden = state.workspace_mut(WorkspaceId::from_raw(2)).ok_or("ws")?;
+        hidden.columns.push(Column::single(
+            WindowId::from_raw(99),
+            ColumnWidth::Proportion(Ratio::FULL),
+        ));
+        assert_eq!(
+            super::check_i10(&state),
+            Err(InvariantViolation::I10(WorkspaceIndex::new(1)))
+        );
+        Ok(())
+    }
+
+    /// `Dynamic` で出力が 1 つ、ワークスペースが 2 つ（持ち主の無い列が先、出力 1 の列が後）の State。
+    /// I13 を満たす（持ち主なしの列は、持ち主の検査だけを破るために使う）。
+    fn dynamic_with_output() -> Option<State> {
+        let mut state = State::new(2);
+        state.layout.workspaces = crate::domain::column::WorkspaceMode::Dynamic;
+        let oid = OutputId::from_raw(1);
+        let shown = WorkspaceId::from_raw(2);
+        state.workspace_mut(shown)?.output = Some(oid);
+        state.workspace_mut(WorkspaceId::from_raw(1))?.output = Some(oid);
+        state.outputs.insert(
+            oid,
+            Output {
+                id: oid,
+                name: OutputName::new("test"),
+                geometry: area()?,
+                shown,
+                insets: Insets::default(),
+            },
+        );
+        state.active_output = Some(oid);
+        Some(state)
+    }
+
+    /// I13: 出力が 0 台で、アクティブな出力だけが残っている。
+    #[test]
+    fn i13_rejects_an_active_output_when_there_are_no_outputs() {
+        let mut state = State::new(1);
+        state.layout.workspaces = crate::domain::column::WorkspaceMode::Dynamic;
+        assert_eq!(super::check_i13(&state), Ok(()));
+        state.active_output = Some(OutputId::from_raw(1));
+        assert_eq!(super::check_i13(&state), Err(InvariantViolation::I13));
+    }
+
+    /// I13: 出力が 0 台で、列の持ち主だけが残っている。
+    #[test]
+    fn i13_rejects_an_owner_when_there_are_no_outputs() {
+        let mut state = State::new(1);
+        state.layout.workspaces = crate::domain::column::WorkspaceMode::Dynamic;
+        if let Some(ws) = state.workspaces.first_mut() {
+            ws.output = Some(OutputId::from_raw(1));
+        }
+        assert_eq!(super::check_i13(&state), Err(InvariantViolation::I13));
+    }
+
+    /// I13: 健全な `Dynamic` の State は通り、`Fixed` では何も見ない。
+    #[test]
+    fn i13_accepts_a_consistent_dynamic_state() -> Result<(), &'static str> {
+        let mut state = dynamic_with_output().ok_or("setup")?;
+        assert_eq!(super::check_i13(&state), Ok(()));
+        state.layout.workspaces = crate::domain::column::WorkspaceMode::Fixed;
+        state.active_output = None;
+        assert_eq!(super::check_i13(&state), Ok(()));
+        Ok(())
+    }
+
+    /// I13: 持ち主の無い列があるだけで（表示・並び・アクティブな出力・フォーカスは正しい）、違反になる。
+    #[test]
+    fn i13_rejects_a_workspace_without_an_owner() -> Result<(), &'static str> {
+        let mut state = dynamic_with_output().ok_or("setup")?;
+        // 持ち主なし（`None`）は並びの先頭に置いたままにして、並びの検査は通す。
+        state
+            .workspace_mut(WorkspaceId::from_raw(1))
+            .ok_or("ws")?
+            .output = None;
+        assert_eq!(super::check_i13(&state), Err(InvariantViolation::I13));
+        Ok(())
+    }
+
+    /// 表示中のワークスペースの持ち主が、その出力でない（ほかは正しい）。
+    #[test]
+    fn i13_rejects_a_shown_workspace_owned_by_another_output() -> Result<(), &'static str> {
+        let mut state = dynamic_with_output().ok_or("setup")?;
+        let other = OutputId::from_raw(2);
+        state.outputs.insert(
+            other,
+            Output {
+                id: other,
+                name: OutputName::new("other"),
+                geometry: area().ok_or("area")?,
+                shown: WorkspaceId::from_raw(1),
+                insets: Insets::default(),
+            },
+        );
+        // ワークスペース 1 の持ち主は出力 1 のままなので、出力 2 の表示は持ち主と合わない。
+        assert_eq!(super::check_i13(&state), Err(InvariantViolation::I13));
+        Ok(())
+    }
+
+    /// 並びが持ち主の順でない（ほかは正しい）。
+    #[test]
+    fn i13_rejects_a_wrong_order() -> Result<(), &'static str> {
+        let mut state = dynamic_with_output().ok_or("setup")?;
+        let other = OutputId::from_raw(2);
+        state.outputs.insert(
+            other,
+            Output {
+                id: other,
+                name: OutputName::new("other"),
+                geometry: area().ok_or("area")?,
+                shown: WorkspaceId::from_raw(3),
+                insets: Insets::default(),
+            },
+        );
+        let mut third = crate::domain::workspace::Workspace::new(WorkspaceId::from_raw(3));
+        third.output = Some(other);
+        // 出力 2 の列を、出力 1 の列の前に置く（並びが降順になる）。
+        state.workspaces.insert(0, third);
+        assert_eq!(super::check_i13(&state), Err(InvariantViolation::I13));
+        Ok(())
+    }
+
+    /// アクティブな出力が無い（ほかは正しい）。
+    #[test]
+    fn i13_rejects_a_missing_active_output() -> Result<(), &'static str> {
+        let mut state = dynamic_with_output().ok_or("setup")?;
+        state.active_output = None;
+        assert_eq!(super::check_i13(&state), Err(InvariantViolation::I13));
+        Ok(())
+    }
+
+    /// フォーカスが、アクティブな出力の表示中のワークスペースにない（ほかは正しい）。
+    #[test]
+    fn i13_rejects_a_focus_outside_the_shown_workspace() -> Result<(), &'static str> {
+        let mut state = dynamic_with_output().ok_or("setup")?;
+        // 窓 1 は、表示中でない（ワークスペース 1 の）窓。
+        let id = WindowId::from_raw(1);
+        let w = Window::new(
+            id,
+            WindowMeta::default(),
+            WindowState::Floating,
+            WorkspaceId::from_raw(1),
+        );
+        state.windows.insert(id, w);
+        state.focus = Some(id);
+        assert_eq!(super::check_i13(&state), Err(InvariantViolation::I13));
+        // 表示中のワークスペースの窓なら通る。
+        if let Some(w) = state.windows.get_mut(&id) {
+            w.workspace = WorkspaceId::from_raw(2);
+        }
+        assert_eq!(super::check_i13(&state), Ok(()));
+        Ok(())
+    }
+
+    /// ジェスチャー。
+    fn gesture() -> Option<crate::domain::workspace::ViewGesture> {
+        Some(crate::domain::workspace::ViewGesture {
+            start_view: 0,
+            offset: 0,
+            dnd: false,
+        })
+    }
+
+    /// 出力 1・2 がワークスペース 1・2 を表示し、どちらにも列がある State（ジェスチャーなし）。
+    fn two_shown_with_columns() -> Option<State> {
+        let mut state = State::new(2);
+        for raw in 1..=2u64 {
+            let oid = OutputId::from_raw(raw);
+            state.outputs.insert(
+                oid,
+                Output {
+                    id: oid,
+                    name: OutputName::new("test"),
+                    geometry: area()?,
+                    shown: WorkspaceId::from_raw(raw),
+                    insets: Insets::default(),
+                },
+            );
+            state
+                .workspace_mut(WorkspaceId::from_raw(raw))?
+                .columns
+                .push(Column::single(
+                    WindowId::from_raw(raw),
+                    ColumnWidth::Proportion(Ratio::FULL),
+                ));
+        }
+        Some(state)
+    }
+
+    /// I14: ジェスチャーが 0 個・1 個（表示中で列がある）なら通る。
+    #[test]
+    fn i14_accepts_at_most_one_valid_gesture() -> Result<(), &'static str> {
+        let mut state = two_shown_with_columns().ok_or("setup")?;
+        assert_eq!(super::check_i14(&state), Ok(()));
+        state
+            .workspace_mut(WorkspaceId::from_raw(1))
+            .ok_or("ws")?
+            .gesture = gesture();
+        assert_eq!(super::check_i14(&state), Ok(()));
+        Ok(())
+    }
+
+    /// I14: ジェスチャーが 2 個ある（それぞれは表示中で列がある）。
+    #[test]
+    fn i14_rejects_two_gestures() -> Result<(), &'static str> {
+        let mut state = two_shown_with_columns().ok_or("setup")?;
+        for ws in &mut state.workspaces {
+            ws.gesture = gesture();
+        }
+        assert_eq!(super::check_i14(&state), Err(InvariantViolation::I14));
+        Ok(())
+    }
+
+    /// I14: ジェスチャーが 1 個で、列が無い（表示中）。
+    #[test]
+    fn i14_rejects_a_gesture_on_a_workspace_without_columns() -> Result<(), &'static str> {
+        let mut state = two_shown_with_columns().ok_or("setup")?;
+        let ws = state.workspace_mut(WorkspaceId::from_raw(1)).ok_or("ws")?;
+        ws.columns.clear();
+        ws.gesture = gesture();
+        assert_eq!(super::check_i14(&state), Err(InvariantViolation::I14));
+        Ok(())
+    }
+
+    /// I14: ジェスチャーが 1 個で、列はあるが表示されていない。
+    #[test]
+    fn i14_rejects_a_gesture_on_a_hidden_workspace() -> Result<(), &'static str> {
+        let mut state = two_shown_with_columns().ok_or("setup")?;
+        state.outputs.remove(&OutputId::from_raw(1));
+        state
+            .workspace_mut(WorkspaceId::from_raw(1))
+            .ok_or("ws")?
+            .gesture = gesture();
+        assert_eq!(super::check_i14(&state), Err(InvariantViolation::I14));
+        Ok(())
+    }
 }

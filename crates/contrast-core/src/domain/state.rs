@@ -352,3 +352,53 @@ impl State {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::State;
+    use crate::domain::column::WorkspaceMode;
+    use crate::domain::geometry::Rect;
+    use crate::domain::id::{IdKind, OutputId, WorkspaceId};
+    use crate::domain::insets::Insets;
+    use crate::domain::output::{Output, OutputName};
+
+    /// 出力 1・2 が、ワークスペース 1・2 を表示する State。
+    fn two_outputs() -> Option<State> {
+        let mut state = State::new(2);
+        for raw in 1..=2u64 {
+            let id = OutputId::from_raw(raw);
+            state.outputs.insert(
+                id,
+                Output {
+                    id,
+                    name: OutputName::new("test"),
+                    geometry: Rect::new(0, 0, 100, 100)?,
+                    shown: WorkspaceId::from_raw(raw),
+                    insets: Insets::default(),
+                },
+            );
+        }
+        Some(state)
+    }
+
+    /// `Fixed` では、アクティブな出力があっても使わない（フォーカス窓がなければ ID 最小の出力。D5）。
+    #[test]
+    fn fixed_ignores_the_active_output() -> Result<(), &'static str> {
+        let mut state = two_outputs().ok_or("setup")?;
+        state.active_output = Some(OutputId::from_raw(2));
+        assert_eq!(state.focused_output(), Some(OutputId::from_raw(1)));
+        Ok(())
+    }
+
+    /// `Dynamic` では、存在するアクティブな出力を使い、存在しないものは使わない（D75）。
+    #[test]
+    fn dynamic_uses_the_active_output_only_while_it_exists() -> Result<(), &'static str> {
+        let mut state = two_outputs().ok_or("setup")?;
+        state.layout.workspaces = WorkspaceMode::Dynamic;
+        state.active_output = Some(OutputId::from_raw(2));
+        assert_eq!(state.focused_output(), Some(OutputId::from_raw(2)));
+        state.active_output = Some(OutputId::from_raw(9));
+        assert_eq!(state.focused_output(), Some(OutputId::from_raw(1)));
+        Ok(())
+    }
+}

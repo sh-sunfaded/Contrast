@@ -815,4 +815,39 @@ mod tests {
         let again: Vec<_> = ws.columns.iter().flat_map(|c| c.windows.clone()).collect();
         assert_eq!(again, order);
     }
+
+    /// D50: 窓の数が高さより多いとき、窓がないとき、高さが 1 未満のときは配れない。
+    #[test]
+    fn distribute_heights_refuses_when_the_windows_do_not_fit() {
+        assert_eq!(distribute_heights(1, &[WindowHeight::Auto; 2]), None);
+        assert_eq!(distribute_heights(2, &[WindowHeight::Auto; 3]), None);
+        assert_eq!(distribute_heights(0, &[WindowHeight::Auto]), None);
+        assert_eq!(distribute_heights(-5, &[WindowHeight::Auto]), None);
+        assert_eq!(distribute_heights(10, &[]), None);
+        // 窓の数が高さちょうどなら、1 px ずつ。
+        assert_eq!(
+            distribute_heights(2, &[WindowHeight::Auto; 2]),
+            Some(vec![1, 1])
+        );
+    }
+
+    /// D88: 目標から等しい距離の点が複数あるときは、位置の小さいほうに止まる（最初の点を残す）。
+    #[test]
+    fn snap_view_keeps_the_first_of_equally_near_points() {
+        // 点は 0（列 0）・100（列 1）・200（列 2）。目標 50 は 0 と 100 のちょうど中間。
+        assert_eq!(
+            snap_view(&[100, 100, 100], &[0, 100, 200], 100, 0, 50),
+            Some((0, 0))
+        );
+    }
+
+    /// D88: 左へ戻る吸着では、吸着した位置に左端がある列まで、フォーカスする列が戻る。
+    #[test]
+    fn snap_view_moving_left_includes_a_column_starting_at_the_snap() {
+        // 点は 0（列 0）と 100（列 2。右端を合わせる）。目標 100 に吸着し、列 1 も左端が 100。
+        assert_eq!(
+            snap_view(&[100, 100, 100], &[0, 100, 200], 200, 500, 100),
+            Some((100, 1))
+        );
+    }
 }
