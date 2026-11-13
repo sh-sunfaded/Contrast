@@ -50,7 +50,8 @@ float rrect(vec2 p, vec2 half_size, float radius) {
 }
 "#;
 
-/// 窓の内容を角丸で切り抜くテクスチャシェーダ。Smithay の既定のテクスチャシェーダに角丸のマスクを足したもの。
+/// 窓の内容を角丸で切り抜き、`dim` 倍に暗くするテクスチャシェーダ。Smithay の既定のテクスチャシェーダに、
+/// 減光（プリマルチプライドの RGB に `dim` を掛ける。A は触らない）と角丸のマスク（`radius > 0` のときだけ）を足したもの。
 /// `v_coords` は要素の画像の全体（0〜1）として扱う。
 fn rounded_texture_source() -> String {
     format!(
@@ -73,6 +74,7 @@ uniform float alpha;
 varying vec2 v_coords;
 uniform vec2 elem_size;
 uniform float radius;
+uniform float dim;
 
 #if defined(DEBUG_FLAGS)
 uniform float tint;
@@ -87,9 +89,13 @@ void main() {{
     color = color * alpha;
 #endif
 
-    vec2 p = (v_coords - vec2(0.5)) * elem_size;
-    float d = rrect(p, elem_size * 0.5, radius);
-    color = color * clamp(0.5 - d, 0.0, 1.0);
+    color = vec4(color.rgb * dim, color.a);
+
+    if (radius > 0.0) {{
+        vec2 p = (v_coords - vec2(0.5)) * elem_size;
+        float d = rrect(p, elem_size * 0.5, radius);
+        color = color * clamp(0.5 - d, 0.0, 1.0);
+    }}
 
 #if defined(DEBUG_FLAGS)
     if (tint == 1.0)
@@ -159,7 +165,7 @@ void main() {{
 /// コンパイル済みのシェーダ一式。
 #[derive(Clone)]
 pub struct Shaders {
-    /// 窓の内容を角丸で切り抜く。
+    /// 窓の内容を角丸で切り抜き、減光する（uniform: `elem_size`・`radius`・`dim`）。
     pub rounded: GlesTexProgram,
     /// 枠の輪。
     pub ring: GlesPixelProgram,
@@ -174,6 +180,7 @@ impl Shaders {
             &[
                 UniformName::new("elem_size", UniformType::_2f),
                 UniformName::new("radius", UniformType::_1f),
+                UniformName::new("dim", UniformType::_1f),
             ],
         )?;
         let ring = renderer.compile_custom_pixel_shader(
@@ -521,6 +528,7 @@ pub(crate) mod offscreen {
                     &[
                         Uniform::new("elem_size", (48.0_f32, 48.0_f32)),
                         Uniform::new("radius", radius),
+                        Uniform::new("dim", 1.0_f32),
                     ],
                 )
                 .map_err(|e| e.to_string())

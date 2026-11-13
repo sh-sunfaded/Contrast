@@ -101,6 +101,9 @@ struct Snapshot {
     scale: f64,
     /// 枠の帯（物理 px。左上は窓の描画の原点からのずれ）と色。閉じる窓の絵にだけ含める（niri はタイル全体を縮める）。
     bands: Vec<(Rectangle<i32, Physical>, [f32; 4])>,
+    /// この窓の最後のフレームの減光の乗数（1 で減光なし）。開閉の絵は、画面で見えていたとおりに描く（一瞬明るくならない）。
+    /// `screenshot-window` はこの値を使わない（`render::dim::snapshot_dim`）。
+    dim: f32,
 }
 
 /// テクスチャに描いた窓。
@@ -327,6 +330,8 @@ impl Contrast {
             })
             .collect();
         let mut last = BTreeMap::new();
+        let focus_id = view.focus();
+        let unfocused_dim = self.policy.unfocused_dim();
         for (key, window, output, w_id) in visible {
             let Some(location) = self.space.element_location(&window) else {
                 continue;
@@ -350,6 +355,12 @@ impl Contrast {
                         .collect()
                 })
                 .unwrap_or_default();
+            let dim = crate::render::dim::window_dim(
+                focus_id == Some(w_id),
+                view.window(w_id)
+                    .is_some_and(|w| w.state == contrast_core::WindowState::Fullscreen),
+                unfocused_dim,
+            );
             let geo = window.geometry();
             let center = location + Point::from((geo.size.w / 2, geo.size.h / 2));
             if self.window_anims.seen.insert(key) && enabled {
@@ -365,6 +376,7 @@ impl Contrast {
                     output,
                     scale,
                     bands,
+                    dim,
                 },
             );
         }
@@ -408,13 +420,11 @@ impl Contrast {
             return;
         };
         let size = snapshot.bbox.size;
-        let rgba = match crate::render::offscreen::render_to_rgba(
-            renderer,
-            size,
-            snapshot.scale,
-            &snapshot.elements,
-            [0.0, 0.0, 0.0, 0.0],
-        ) {
+        let dim = crate::render::dim::snapshot_dim(
+            crate::render::dim::SnapshotPurpose::ScreenshotWindow,
+            snapshot.dim,
+        );
+        let rgba = match render_snapshot_rgba(renderer, snapshot, dim) {
             Ok(rgba) => rgba,
             Err(e) => {
                 tracing::warn!("screenshot-window: {e}");
@@ -428,15 +438,63 @@ impl Contrast {
     }
 }
 
-/// 窓の絵をテクスチャに描く（枠は含めない）。失敗したら警告して `None`。
+/// 窓の絵を、乗数 `dim`（1 で減光なし）を掛けて、テクスチャに描く。シェーダが使えなければ減光しない。
+fn render_snapshot_texture(
+    renderer: &mut GlesRenderer,
+    s: &Snapshot,
+    dim: f32,
+) -> Result<GlesTexture, String> {
+    let clear = [0.0, 0.0, 0.0, 0.0];
+    if crate::render::dim::is_dimming(dim)
+        && let Some(sh) = crate::render::look::Shaders::get(renderer)
+    {
+        let styled: Vec<_> = s
+            .elements
+            .iter()
+            .map(|e| crate::render::StyledSurface::new(e, sh.rounded.clone(), 0.0, dim))
+            .collect();
+        return crate::render::offscreen::render_to_texture(
+            renderer,
+            s.bbox.size,
+            s.scale,
+            &styled,
+            clear,
+        );
+    }
+    crate::render::offscreen::render_to_texture(renderer, s.bbox.size, s.scale, &s.elements, clear)
+}
+
+/// 窓の絵を、乗数 `dim` を掛けて、RGBA に描く。`screenshot-window` は `dim = 1`（`snapshot_dim`）で呼ぶ。
+fn render_snapshot_rgba(
+    renderer: &mut GlesRenderer,
+    s: &Snapshot,
+    dim: f32,
+) -> Result<Vec<u8>, String> {
+    let clear = [0.0, 0.0, 0.0, 0.0];
+    if crate::render::dim::is_dimming(dim)
+        && let Some(sh) = crate::render::look::Shaders::get(renderer)
+    {
+        let styled: Vec<_> = s
+            .elements
+            .iter()
+            .map(|e| crate::render::StyledSurface::new(e, sh.rounded.clone(), 0.0, dim))
+            .collect();
+        return crate::render::offscreen::render_to_rgba(
+            renderer,
+            s.bbox.size,
+            s.scale,
+            &styled,
+            clear,
+        );
+    }
+    crate::render::offscreen::render_to_rgba(renderer, s.bbox.size, s.scale, &s.elements, clear)
+}
+
+/// 窓の絵をテクスチャに描く（枠は含めない）。開閉の絵は、画面で見えていた乗数のまま描く。失敗したら警告して `None`。
 fn draw(renderer: &mut GlesRenderer, s: &Snapshot, with_bands: bool) -> Option<Drawn> {
-    match crate::render::offscreen::render_to_texture(
-        renderer,
-        s.bbox.size,
-        s.scale,
-        &s.elements,
-        [0.0, 0.0, 0.0, 0.0],
-    ) {
+    let dim =
+        crate::render::dim::snapshot_dim(crate::render::dim::SnapshotPurpose::Animation, s.dim);
+    match render_snapshot_texture(renderer, s, dim) {
         Ok(texture) => Some(Drawn {
             texture,
             bbox: s.bbox,
