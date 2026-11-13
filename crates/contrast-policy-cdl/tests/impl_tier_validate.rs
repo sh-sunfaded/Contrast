@@ -2,7 +2,7 @@
 //!
 //! `contrast-policy` には proptest が無い（依存を足せない）ので、proptest が使えるこのクレートに置く。
 //! オラクルは `validate_tiers` の実装とは別に書いた述語: `0 < l <= 1`、狭義の単調減少、
-//! `F - max(N) > max(N) - min(N)`、`Tier` はちょうど 1 つ、`name` は空でなく重ならない。
+//! `F - max(N) > max(N) - min(N)`、`Tier` は 0 個か 1 個（DU-20）、`name` は空でなく重ならない。
 //! 生成器は有限・NaN・無限・負・0・1 超・重複・非単調と、0.05 刻みの値（境界を含む）と一様乱数を混ぜる。
 
 use contrast_policy::{TierSpec, codes, validate_tiers};
@@ -48,7 +48,7 @@ fn oracle(focus: &TierSpec, rest: &[TierSpec]) -> Vec<&'static str> {
     if !all_valid {
         out.push(codes::TIER_BAD_L);
     }
-    if rest.len() != 1 {
+    if rest.len() > 1 {
         out.push(codes::TIER_COUNT);
     }
     let mut seen: Vec<&str> = Vec::new();
@@ -104,6 +104,10 @@ proptest! {
             let tiers = validate_tiers(&focus, &rest).map_err(|e| TestCaseError::fail(format!("{e:?}")))?;
             prop_assert_eq!(tiers.focus.l, focus.l);
             prop_assert_eq!(tiers.rest.len(), rest.len());
+            if rest.is_empty() {
+                // `Tier` が 0 個は減光なし（DU-20）。
+                prop_assert_eq!(tiers.unfocused_dim(), 1.0);
+            }
         }
     }
 }

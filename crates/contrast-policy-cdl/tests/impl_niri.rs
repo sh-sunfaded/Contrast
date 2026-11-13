@@ -256,6 +256,9 @@ fn niri_example_carries_the_niri_look() -> Result<(), String> {
     // niri の focus-ring の inactive-color はフォーカス外の窓には描かれないので、Tier に ringColor は無い。
     assert!(s.appearance.tiers.focus_ring().is_some());
     assert!(s.appearance.tiers.unfocused_ring().is_none());
+    // niri には減光がないので、`Tier` を置かない（DU-20）。
+    assert!(s.appearance.tiers.rest.is_empty());
+    assert!((s.appearance.tiers.unfocused_dim() - 1.0).abs() < f32::EPSILON);
     assert!(!s.input.disable_while_typing);
     assert_eq!(s.cursor.theme.as_deref(), Some("Cecilia"));
     assert_eq!(s.cursor.size, Some(24));

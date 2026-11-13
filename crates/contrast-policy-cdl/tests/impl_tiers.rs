@@ -72,6 +72,18 @@ fn a_focus_tier_and_one_tier_are_read() -> Result<(), String> {
 }
 
 #[test]
+fn no_tier_means_no_dimming() -> Result<(), String> {
+    // `Tier` が 0 個は通る（DU-20）。減光なし（乗数 1.0）、フォーカス外の枠もない。
+    let body = "    <Tiers>\n      <FocusTier l={1} />\n    </Tiers>";
+    let s = load("no_tier", body)?.map_err(|d| format!("{d:?}"))?;
+    let t = &s.appearance.tiers;
+    assert!(t.rest.is_empty());
+    assert!((t.unfocused_dim() - 1.0).abs() < f32::EPSILON);
+    assert_eq!(t.unfocused_ring(), None);
+    Ok(())
+}
+
+#[test]
 fn two_tiers_are_ct064_at_the_tiers_element() -> Result<(), String> {
     // DU-12 は満たす 2 個（差 0.5 > 幅 0.05）: CT064 だけ。
     let body = "    <Tiers>\n      <FocusTier l={1} />\n      <Tier l={0.5} />\n      <Tier l={0.45} />\n    </Tiers>";
