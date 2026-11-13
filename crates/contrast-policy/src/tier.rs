@@ -1,14 +1,14 @@
 //! 注意の段階（Tier）の値と検査。CDL を知らない純粋な部分。
 //!
-//! - `Tiers`: フォーカス段階 1 つと、フォーカス外の段階（この版では 1 つ）。
+//! - `Tiers`: フォーカス段階 1 つと、フォーカス外の段階（0 個または 1 個。0 個は減光なし。DU-20）。
 //! - `validate_tiers`: INV-A1（DU-9・DU-12）の検査。`0 < l <= 1`、`F > n_1 > …`（狭義の単調減少）、
-//!   `F - max(N) > max(N) - min(N)`（狭義。差は OKLCH の L の差）。
+//!   `F - max(N) > max(N) - min(N)`（狭義。差は OKLCH の L の差）。フォーカス外の段階が 0 個のときは自明に成り立つ。
 //! - `dim_factor`: 窓の画素に掛ける乗数。**仮置き**: 中立のグレーでだけ正確な近似で、目標値ではない。
 //!   `l` は「窓の画素を何倍に暗くするか」の指標で、周囲（壁紙・隣の窓）に対する知覚コントラストの保証ではない（DU-18・DU-19）。
 
 use crate::codes;
 
-/// フォーカス外の段階の個数の上限（DU-15: この版では 1 つ）。
+/// フォーカス外の段階の個数の上限（DU-15・DU-20: 0 個または 1 個）。
 pub const MAX_REST_TIERS: usize = 1;
 
 /// 組み込みの、フォーカス外の段階の `l`（仮置き。DU-18）。
@@ -28,7 +28,7 @@ pub struct Tier {
 pub struct Tiers {
     /// フォーカス段階（最も明るい）。
     pub focus: Tier,
-    /// フォーカス外の段階（明るい順。この版では 1 つ）。
+    /// フォーカス外の段階（明るい順。0 個または 1 個。0 個は減光なし）。
     pub rest: Vec<Tier>,
 }
 
@@ -113,7 +113,7 @@ pub enum TierError {
         /// フォーカス外の `l` の最小。
         min_rest: f32,
     },
-    /// `Tier` の個数が合わない: この版は 1 つだけ（CT064）。
+    /// `Tier` の個数が多すぎる: この版は 0 個または 1 個（CT064。DU-20）。
     RestCount {
         /// 書かれた個数。
         count: usize,
@@ -166,7 +166,7 @@ impl TierError {
                 "フォーカス段階との差（F={focus}、フォーカス外の最大={max_rest}）が、フォーカス外の段階全体の幅（最小={min_rest}）より大きくない"
             ),
             Self::RestCount { count } => {
-                format!("`Tier` はちょうど {MAX_REST_TIERS} つ（{count} 個は使えない）")
+                format!("`Tier` は {MAX_REST_TIERS} つまで（{count} 個は使えない）")
             }
             Self::BadName { .. } => "`name` は空でなく、他の段階と重ならない".to_owned(),
         }
@@ -194,7 +194,7 @@ pub fn validate_tiers(focus: &TierSpec, rest: &[TierSpec]) -> Result<Tiers, Vec<
         }
     }
 
-    if rest.len() != MAX_REST_TIERS {
+    if rest.len() > MAX_REST_TIERS {
         errors.push(TierError::RestCount { count: rest.len() });
     }
 
@@ -337,10 +337,16 @@ mod tests {
             codes_of(validate_tiers(&spec(1.0), &[spec(0.9), spec(0.5)])),
             [codes::TIER_COUNT, codes::TIER_SPREAD]
         );
-        assert_eq!(
-            codes_of(validate_tiers(&spec(1.0), &[])),
-            [codes::TIER_COUNT]
-        );
+        // `Tier` が 0 個は通る（減光なし。DU-20）。
+        assert!(validate_tiers(&spec(1.0), &[]).is_ok());
+    }
+
+    #[test]
+    fn no_rest_tier_means_no_dimming() {
+        let t = validate_tiers(&spec(1.0), &[]).unwrap_or_else(|_| Tiers::builtin());
+        assert!(t.rest.is_empty());
+        assert!((t.unfocused_dim() - 1.0).abs() < f32::EPSILON);
+        assert_eq!(t.unfocused_ring(), None);
     }
 
     #[test]

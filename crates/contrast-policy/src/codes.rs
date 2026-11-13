@@ -34,7 +34,7 @@ pub const TIER_MISSING_FOCUS: &str = "CT061";
 pub const TIER_NOT_MONOTONIC: &str = "CT062";
 /// フォーカス段階との差が、フォーカス外の段階全体の幅以下（DU-12）。
 pub const TIER_SPREAD: &str = "CT063";
-/// `Tier` の個数が合わない（この版では 1 つだけ）。
+/// `Tier` の個数が多すぎる（この版では 0 個または 1 個。DU-20）。
 pub const TIER_COUNT: &str = "CT064";
 /// `Tier` の `name` が空か、重複している。
 pub const TIER_BAD_NAME: &str = "CT065";
