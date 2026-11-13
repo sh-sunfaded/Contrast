@@ -13,7 +13,7 @@ niri の設定の既定値は niri の既定（wiki / パッケージの既定�
 |---|---|---|---|---|
 | `layout.gaps 16` | はい | △ → **N1 で実装**（`Layout.gap`） | 描画側で core の矩形を縮める | S |
 | `layout.struts` | 空 | △ → N1 は `Layout.outerGap`（四辺同じ値）。辺ごとの struts は未 | CDL に辺ごとの値 | S |
-| `focus-ring`（width 4、active #7fc8ff、inactive #505050） | はい | ○ 近い（`Appearance.borderWidth`・`focusColor`・`borderColor`）。窓を枠の幅だけ縮める点が違う | N1 で非フォーカスの枠の幅（`inactiveBorderWidth`）を足した | S |
+| `focus-ring`（width 4、active #7fc8ff、inactive #505050） | はい | ○ 近い（`Appearance.borderWidth`・`Tiers/FocusTier.ringColor`。旧 `focusColor`・`borderColor` は廃止）。窓を枠の幅だけ縮める点が違う。フォーカス外の窓の減光（`Tier.l`）は Contrast 独自 | N1 で非フォーカスの枠の幅（`inactiveBorderWidth`）を足した | S |
 | `border`（off） | 無効 | △ focus-ring と同じ仕組みの 1 本だけ。2 本重ねは未 | — | S |
 | `shadow` | いいえ | △ → **N1 で実装**（`shadowBlur` / `shadowOffsetX/Y` / `shadowColor`） | 影のシェーダ | M |
 | `geometry-corner-radius` | いいえ | △ → **N1 で実装**（`Appearance.radius`） | 窓の角丸シェーダ（カスタムテクスチャシェーダ） | M |

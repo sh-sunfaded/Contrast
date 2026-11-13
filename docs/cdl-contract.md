@@ -14,8 +14,11 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
 
 | 要素 | props | 子 | 一意 |
 | --- | --- | --- | --- |
-| `Contrast` | `modKey?: "alt" \| "super"`（省略時は下記の優先順位で決まる） | `Appearance` \| `Workspaces` \| `Layout` \| `Cursor` \| `Input` \| `Startup` \| `DataControlClient` \| `Environment` \| `Keybind` | `Appearance`、`Workspaces`、`Layout`、`Cursor`、`Input`、`Environment` |
-| `Appearance` | `borderWidth: Length`、`focusColor: Color`、`borderColor?: Color`、`background?: Color`、`radius?: Length`、`shadowBlur?: Length`、`shadowOffsetX?: Length`、`shadowOffsetY?: Length`、`shadowColor?: Color`、`inactiveBorderWidth?: Length` | なし | — |
+| `Contrast` | `modKey?: "alt" \| "super"`（省略時は下記の優先順位で決まる） | `Appearance` \| `Tiers` \| `Workspaces` \| `Layout` \| `Cursor` \| `Input` \| `Startup` \| `DataControlClient` \| `Environment` \| `Keybind` | `Appearance`、`Tiers`、`Workspaces`、`Layout`、`Cursor`、`Input`、`Environment` |
+| `Appearance` | `borderWidth?: Length`（省略 = 0 = 枠なし）、`background?: Color`、`radius?: Length`、`shadowBlur?: Length`、`shadowOffsetX?: Length`、`shadowOffsetY?: Length`、`shadowColor?: Color`、`inactiveBorderWidth?: Length` | なし | — |
+| `Tiers` | なし | `FocusTier` \| `Tier` | `Contrast` の中で 1 つまで。`FocusTier` は `Tiers` の中で 1 つまで（`E4006`）。省略すると組み込みの段階（フォーカス `l=1`、フォーカス外 `l=0.8`、枠なし） |
+| `FocusTier` | `l: number`（0 より大きく 1 以下）、`ringColor?: Color` | なし | `Tiers` の中でちょうど 1 つ（無いと CT061） |
+| `Tier` | `l: number`（0 より大きく 1 以下）、`ringColor?: Color`、`name?: string`（診断用。空・重複は CT065） | なし | `Tiers` の中でちょうど 1 つ（この版。0 個・2 個以上は CT064） |
 | `Workspaces` | `count: number`（整数、1〜32）、`mode?: "fixed" \| "dynamic"`（既定 `"fixed"`） | なし | — |
 | `Layout` | `gap?: Length`、`outerGap?: Length`、`mode?: "equal" \| "scrolling"`（既定 `"equal"`）、`defaultColumnWidth?: number`、`presetColumnWidths?: string`、`windowHeightPresets?: string`、`animation?: "easing" \| "spring"`（既定 `"easing"`）、`animationMs?: number`（既定 0） | なし | — |
 | `Cursor` | `theme?: string`、`size?: number`、`hideAfterInactiveMs?: number` | なし | — |
@@ -38,11 +41,12 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
   - ワークスペースの切り替え: 新しく見える窓が、番号が大きくなる向きなら下から、小さくなる向きなら上から滑り込む。
     出ていく窓は補間せず、すぐ消える。
   - 補間しない: 窓が最初に開くとき、全画面にするとき（全画面から戻るときは全画面の矩形から補間する）、出力の大きさが変わるとき。
-- 見た目の追加 prop はすべて省略でき、省略時は今の見た目と同じ（角丸 0・影なし・隙間 0・非フォーカスの枠の幅は `borderWidth`）。
+- 見た目の追加 prop はすべて省略でき、省略時は枠なし・角丸 0・影なし・隙間 0（非フォーカスの枠の幅は `borderWidth`）。
   - `gap` は窓と窓の間、`outerGap` は出力の端と窓の間（px）。core の矩形は変えず、描画側で縮める。
   - `radius` は窓と枠の角丸の半径。`shadowBlur` が 0 のとき影は描かない。`shadowOffsetX/Y` は負も使える。
-  - 枠（フォーカスリング）は窓の**外側**に描く（niri と同じ）。窓の大きさは枠の太さで変わらない（隙間 `gap` の中に枠が広がる）。`inactiveBorderWidth` はフォーカス外の窓の枠の太さ（`borderColor` があるときだけ描く）。
-    `borderColor` が無いとフォーカス外の枠は描かない。
+  - 枠（フォーカスリング）は窓の**外側**に描く（niri と同じ）。窓の大きさは枠の太さで変わらない（隙間 `gap` の中に枠が広がる）。`inactiveBorderWidth` はフォーカス外の窓の枠の太さ。
+    枠を描くのは、その窓の段階に `ringColor` があり、かつ太さが 1 以上のときだけ。フォーカス窓の太さは `borderWidth`、フォーカス外は `inactiveBorderWidth`（省略時は `borderWidth`、`borderWidth` に収める）。
+    `borderWidth` を省略（0）にすると、どの窓にも枠を描かない。
   - 長さの範囲は 0〜512 の整数 px（`shadowOffsetX/Y` は -512〜512）。外れると CT003。`Cursor.size` は 8〜256 の整数。
   - `Cursor` は環境変数 `XCURSOR_THEME` / `XCURSOR_SIZE` より優先する。リロードで更新する。
 - `Startup` は niri の `spawn-at-startup`。コンポジタが Wayland のソケットを公開したあと、書かれた順に、起動時に一度だけ spawn する。
@@ -67,7 +71,19 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
 - `Appearance`、`Workspaces`、`Input` を省略したときは `Settings::builtin()` の値を使う。
 - `modKey` と `action` は本来リテラルユニオン（`"alt" | "super"` など）だが、`cdl-host` は `Literal` を公開していないので
   スキーマ上は `string` にして、Contrast の変換で検査する（誤りは CT003 / CT020）。
-- `borderWidth` は 0 以上の整数（px。負・非整数は CT003）。`focusColor` はフォーカス窓の枠、`borderColor` は省略時は描かないフォーカス外の窓の枠、`background` は背景色（省略時は組み込みの色）。
+- `borderWidth` は 0〜256 の整数（px。範囲外・非整数は CT003）。枠の色は段階の `ringColor`（`FocusTier` がフォーカス窓、`Tier` がフォーカス外の窓）。`background` は背景色（省略時は組み込みの色）。
+- **旧 prop の廃止（DU-8）**: `Appearance` の `focusColor`・`borderColor` は廃止した。書くと CDL が「`<Appearance>` に props `…` はない」（`E4003`）で拒否する（位置はその prop）。
+  起動時なら `Settings::builtin()` で起動、リロードなら旧版を保持する（3 節）。`focusColor` → `FocusTier.ringColor`、`borderColor` → `Tier.ringColor`。
+- **注意の段階（Tiers）**: 明度 `l` の段階で「注意」を表す。フォーカス窓は `FocusTier`、フォーカス外の窓は `Tier`。検査（INV-A1）は変換で行う:
+  1. 各 `l` は有限で 0 より大きく 1 以下（CT060。`l` が数でなければ CDL の型の診断）。
+  2. `FocusTier` が無い（CT061）。
+  3. 段階が単調減少でない: `F > n_1 > …`（フォーカス段階が最も明るく、書いた順に狭義の単調減少。CT062）。
+  4. DU-12: `F − max(N) > max(N) − min(N)`（狭義。差は OKLCH の L の差。`F` はフォーカス段階、`N` はフォーカス外の段階の `l` の集合。CT063。`Tier` が 1 つなら `F > n_1` と同じ）。
+  5. `Tier` の個数がちょうど 1 でない（この版は 1 つまで。CT064）。2 個以上のときは、4 も破れば CT063 も同時に出る。
+  6. `name` が空・重複（CT065）。
+  **減光**: フォーカス外の窓（Tiled / Floating。全画面の窓とフォーカス窓は除く）の画素に、プリマルチプライドの RGB へ乗数 `k = (l_tier / l_focus)^(3/2.2)` を掛ける（アルファ・矩形・枠・影は変えない。ポップアップ・サブサーフェスも同じ乗数）。
+  **`k` と組み込みの `l = 0.8` は仮置き**（中立のグレーでだけ正確な近似で、目標値ではない）。`l` は「窓の画素を何倍に暗くするか」の指標で、周囲（壁紙・隣の窓）に対する知覚コントラストの保証ではない（未決。ui-breaking-update §7）。
+  `screenshot-window` は減光しない（常に乗数 1）。`screenshot-screen` は画面に見えているとおり減光が入る。オーバービューは減光しない。
 
 ### `modKey` の決まり方
 
@@ -140,6 +156,8 @@ interface Policy     { windowOpen?: (w: WindowInfo) => Placement }
 - `windowOpen(w)` は新しい窓が最初に map されるときに 1 回呼ばれる。
 - `appId`: 無いときは `""`。`title`: 無いときは省略。`workspace`: フォーカス中のワークスペース（1 始まり）。
 - 戻り値 `workspace` を省略したときはフォーカス中のワークスペース。`focus` を省略したときは `true`。
+  `focus: false` は、**既にフォーカス窓があるときだけ**有効で、フォーカスが None のときは無視して新しい窓にフォーカスを渡す（DU-10。表示中のワークスペースに窓があればフォーカスは Some）。
+  **この動作の core 側は未実装**（実装は core-spec への追記と tests/spec の INV-F1 の検査が先。U2 の段階 A はスキップ）。現状は `focus: false` ならフォーカス None のまま。
 - `fullscreen`（niri の `open-fullscreen`）を省略したときは `false`。`true` なら、配置のあとに全画面にする（コンポジタが core の `ToggleFullscreen` を送る）。
   `ToggleFullscreen` はフォーカス窓に効くので、窓がフォーカスを得たときだけ全画面になる（`focus: false` や、表示中でないワークスペースへの配置では、全画面にしない。ログに出す）。
 - `columnWidth: "window"`（niri の窓ルールの `default-column-width {}`）なら、列の幅を窓に決めさせる（最初の configure の幅を 0 にし、窓が描いた幅＋隙間を列の幅にする。core の追補 20 節）。ほかの値は診断。
@@ -174,6 +192,12 @@ interface Policy     { windowOpen?: (w: WindowInfo) => Placement }
 | CT042 | フックの戻り値の `workspace` が不正（非整数・1 未満） |
 | CT043 | フックの戻り値の `workspace` が `Workspaces.count` を超える |
 | CT050 | リロードで反映できない変更（ワークスペース数） |
+| CT060 | `FocusTier` / `Tier` の `l` が有限の数でない、または 0 以下か 1 超（位置はその要素） |
+| CT061 | `Tiers` に `FocusTier` が無い（位置は `Tiers`。2 個以上は CDL の `E4006`） |
+| CT062 | 段階が単調でない（`F > n_1 > …` を満たさない。位置は破った `Tier`） |
+| CT063 | フォーカス段階との差が、フォーカス外の段階全体の幅以下（DU-12。位置は `FocusTier`。メッセージに F・max(N)・min(N)） |
+| CT064 | `Tier` の個数がちょうど 1 でない（この版。位置は `Tiers`） |
+| CT065 | `Tier` の `name` が空・重複（位置はその `Tier`） |
 
 CDL 自身の診断（`E0001`〜）は、そのままのコードで `ConfigDiagnostic` に写す。位置は `file:line:col`。
 値木の診断は要素単位の位置しか取れない（props に位置がない）ので、誤りのある prop を含む要素の位置を示し、メッセージに prop 名を書く。
