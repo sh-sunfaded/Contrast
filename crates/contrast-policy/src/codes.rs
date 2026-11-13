@@ -26,5 +26,17 @@ pub const HOOK_BAD_SHAPE: &str = "CT041";
 pub const HOOK_BAD_WORKSPACE: &str = "CT042";
 /// フックの戻り値の `workspace` が数を超える。
 pub const HOOK_WORKSPACE_RANGE: &str = "CT043";
+/// `FocusTier` / `Tier` の `l` が有限の数でない、または 0 以下か 1 超。
+pub const TIER_BAD_L: &str = "CT060";
+/// `Tiers` に `FocusTier` が無い。
+pub const TIER_MISSING_FOCUS: &str = "CT061";
+/// 段階が単調でない（`F > n_1 > …` を満たさない）。
+pub const TIER_NOT_MONOTONIC: &str = "CT062";
+/// フォーカス段階との差が、フォーカス外の段階全体の幅以下（DU-12）。
+pub const TIER_SPREAD: &str = "CT063";
+/// `Tier` の個数が合わない（この版では 1 つだけ）。
+pub const TIER_COUNT: &str = "CT064";
+/// `Tier` の `name` が空か、重複している。
+pub const TIER_BAD_NAME: &str = "CT065";
 /// リロードで反映できない変更。
 pub const NOT_APPLIED: &str = "CT050";

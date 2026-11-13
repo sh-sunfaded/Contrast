@@ -164,6 +164,16 @@ pub trait Policy {
     fn unfocused_border_color(&self) -> Option<[f32; 4]> {
         None
     }
+    /// 注意の段階（フォーカス段階とフォーカス外の段階）。既定は組み込みの段階。
+    fn tiers(&self) -> crate::tier::Tiers {
+        crate::tier::Tiers::builtin()
+    }
+
+    /// フォーカス外の窓の画素に掛ける乗数（0〜1、1 で減光なし）。窓の矩形・枠・影には掛けない。
+    fn unfocused_dim(&self) -> f32 {
+        self.tiers().unfocused_dim()
+    }
+
     /// ワークスペースの数（1 以上）。
     fn workspace_count(&self) -> u8;
 

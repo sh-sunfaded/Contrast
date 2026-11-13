@@ -95,6 +95,8 @@ pub struct Appearance {
     pub shadow: Shadow,
     /// フォーカス外の窓の枠の太さ（px）。`None` なら `border_width` と同じ。窓の大きさは `border_width` で決まる。
     pub inactive_border_width: Option<i32>,
+    /// 注意の段階（フォーカス段階とフォーカス外の段階。減光の乗数と枠の色）。
+    pub tiers: crate::tier::Tiers,
 }
 
 /// 窓の影。
@@ -327,6 +329,7 @@ impl Settings {
                 radius: 0,
                 shadow: Shadow::default(),
                 inactive_border_width: None,
+                tiers: crate::tier::Tiers::builtin(),
             },
             workspaces: 4,
             workspace_mode: contrast_core::WorkspaceMode::Fixed,

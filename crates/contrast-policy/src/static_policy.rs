@@ -92,6 +92,10 @@ impl Policy for StaticPolicy {
         self.store.focus_border_color()
     }
 
+    fn tiers(&self) -> crate::tier::Tiers {
+        self.store.tiers()
+    }
+
     fn workspace_count(&self) -> u8 {
         self.store.workspace_count()
     }

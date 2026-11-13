@@ -296,6 +296,10 @@ impl Policy for ConfigStore {
         self.config().settings.appearance.border_color
     }
 
+    fn tiers(&self) -> crate::tier::Tiers {
+        self.config().settings.appearance.tiers.clone()
+    }
+
     fn workspace_count(&self) -> u8 {
         self.config().settings.workspaces
     }
