@@ -18,7 +18,7 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
 | `Appearance` | `borderWidth?: Length`（省略 = 0 = 枠なし）、`background?: Color`、`radius?: Length`、`shadowBlur?: Length`、`shadowOffsetX?: Length`、`shadowOffsetY?: Length`、`shadowColor?: Color`、`inactiveBorderWidth?: Length` | なし | — |
 | `Tiers` | なし | `FocusTier` \| `Tier` | `Contrast` の中で 1 つまで。`FocusTier` は `Tiers` の中で 1 つまで（`E4006`）。省略すると組み込みの段階（フォーカス `l=1`、フォーカス外 `l=0.8`、枠なし） |
 | `FocusTier` | `l: number`（0 より大きく 1 以下）、`ringColor?: Color` | なし | `Tiers` の中でちょうど 1 つ（無いと CT061） |
-| `Tier` | `l: number`（0 より大きく 1 以下）、`ringColor?: Color`、`name?: string`（診断用。空・重複は CT065） | なし | `Tiers` の中でちょうど 1 つ（この版。0 個・2 個以上は CT064） |
+| `Tier` | `l: number`（0 より大きく 1 以下）、`ringColor?: Color`、`name?: string`（診断用。空・重複は CT065） | なし | `Tiers` の中で 0 個か 1 個（この版。0 個は減光なし。2 個以上は CT064） |
 | `Workspaces` | `count: number`（整数、1〜32）、`mode?: "fixed" \| "dynamic"`（既定 `"fixed"`） | なし | — |
 | `Layout` | `gap?: Length`、`outerGap?: Length`、`mode?: "equal" \| "scrolling"`（既定 `"equal"`）、`defaultColumnWidth?: number`、`presetColumnWidths?: string`、`windowHeightPresets?: string`、`animation?: "easing" \| "spring"`（既定 `"easing"`）、`animationMs?: number`（既定 0） | なし | — |
 | `Cursor` | `theme?: string`、`size?: number`、`hideAfterInactiveMs?: number` | なし | — |
@@ -79,7 +79,7 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
   2. `FocusTier` が無い（CT061）。
   3. 段階が単調減少でない: `F > n_1 > …`（フォーカス段階が最も明るく、書いた順に狭義の単調減少。CT062）。
   4. DU-12: `F − max(N) > max(N) − min(N)`（狭義。差は OKLCH の L の差。`F` はフォーカス段階、`N` はフォーカス外の段階の `l` の集合。CT063。`Tier` が 1 つなら `F > n_1` と同じ）。
-  5. `Tier` の個数がちょうど 1 でない（この版は 1 つまで。CT064）。2 個以上のときは、4 も破れば CT063 も同時に出る。
+  5. `Tier` が 2 個以上（この版は 0 個か 1 個。0 個は減光なし（乗数 1.0）で、INV-A1 は自明に成り立つ。CT064）。2 個以上のときは、4 も破れば CT063 も同時に出る。
   6. `name` が空・重複（CT065）。
   **減光**: フォーカス外の窓（Tiled / Floating。全画面の窓とフォーカス窓は除く）の画素に、プリマルチプライドの RGB へ乗数 `k = (l_tier / l_focus)^(3/2.2)` を掛ける（アルファ・矩形・枠・影は変えない。ポップアップ・サブサーフェスも同じ乗数）。
   **`k` と組み込みの `l = 0.8` は仮置き**（中立のグレーでだけ正確な近似で、目標値ではない）。`l` は「窓の画素を何倍に暗くするか」の指標で、周囲（壁紙・隣の窓）に対する知覚コントラストの保証ではない（未決。ui-breaking-update §7）。
@@ -196,7 +196,7 @@ interface Policy     { windowOpen?: (w: WindowInfo) => Placement }
 | CT061 | `Tiers` に `FocusTier` が無い（位置は `Tiers`。2 個以上は CDL の `E4006`） |
 | CT062 | 段階が単調でない（`F > n_1 > …` を満たさない。位置は破った `Tier`） |
 | CT063 | フォーカス段階との差が、フォーカス外の段階全体の幅以下（DU-12。位置は `FocusTier`。メッセージに F・max(N)・min(N)） |
-| CT064 | `Tier` の個数がちょうど 1 でない（この版。位置は `Tiers`） |
+| CT064 | `Tier` が 2 個以上（この版は 0 個か 1 個。位置は `Tiers`） |
 | CT065 | `Tier` の `name` が空・重複（位置はその `Tier`） |
 
 CDL 自身の診断（`E0001`〜）は、そのままのコードで `ConfigDiagnostic` に写す。位置は `file:line:col`。

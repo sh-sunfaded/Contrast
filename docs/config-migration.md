@@ -65,7 +65,7 @@
 | `default-column-width { proportion 0.5; }`、`preset-column-widths` | `Layout.defaultColumnWidth`・`presetColumnWidths` | 0.33333 0.5 0.66667 |
 | スクロールするレイアウト | `Layout.mode="scrolling"` | |
 | `animations`（既定） | `Layout.animation="spring"`（niri の既定のバネ: 減衰比 1.0、stiffness 800／ワークスペース切替は 1000）と `Layout.animationMs`（0 で無効） | 150 |
-| `focus-ring`（width 4、active #7fc8ff、inactive #505050） | `Appearance.borderWidth` と `Tiers/FocusTier.ringColor`（旧 `focusColor` は廃止）。inactive はフォーカス外の窓に描かれないので `Tier` に `ringColor` を書かない（旧 `borderColor` は廃止）。フォーカス外を暗くする `Tier.l` は Contrast 独自（niri にない） | |
+| `focus-ring`（width 4、active #7fc8ff、inactive #505050） | `Appearance.borderWidth` と `Tiers/FocusTier.ringColor`（旧 `focusColor` は廃止）。inactive はフォーカス外の窓に描かれないので `Tier` に `ringColor` を書かない（旧 `borderColor` は廃止）。フォーカス外を暗くする `Tier.l` は Contrast 独自（niri にない）なので、`examples/niri.cdl` は `Tier` を置かず減光なし | |
 | `cursor`（Cecilia、24） | `Cursor.theme`・`size` | |
 | `input.touchpad`（tap、natural-scroll） | `Input.tapToClick`・`naturalScroll` | |
 | `workspace`（Mod+1〜9） | `Workspaces.count` | 9 |

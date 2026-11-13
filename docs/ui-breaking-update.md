@@ -47,7 +47,8 @@
 | DU-12 | INV-A1 の式は `F − max(N) > max(N) − min(N)`（狭義）。差は OKLCH の L の差。APCA の Lc は使わない |
 | DU-13（暫定） | フォーカス None で、アクティブでない出力の表示中ワークスペースに `focus:false` の窓が開いたら、窓にフォーカスを渡し、アクティブな出力もそちらへ移す（`set_focus` の既存の動作）。niri の実挙動は未確認。この場合の期待値は人間が確定する（テストで固定しない） |
 | DU-14 | 人間の仕様テストの置き場は `crates/contrast-compositor/tests/spec/` と `crates/contrast-policy-cdl/tests/spec/`（人間が編集） |
-| DU-15 | 段階数は計 2 段（`FocusTier` + `Tier` 1 つ）。スキーマは `Tier` を 1 個以上と書けるが、変換は 2 個以上を CT064 で拒否する（この版では 1 つまで） |
+| DU-15（DU-20 で改訂） | 段階数は `FocusTier` + `Tier` 0 個または 1 個（計 1〜2 段）。スキーマは `Tier` の個数を制限せず、変換が 2 個以上を CT064 で拒否する（この版では 1 つまで） |
+| DU-20 | `Tier` は 0 個または 1 個。0 個は「減光なし（乗数 1.0）」。2 個以上は CT064。`Tiers` を省略したときの組み込みの既定は変えない（`FocusTier l=1.0` + `Tier l=0.8`）。INV-A1 は `Tier` が 0 個のとき自明に成り立つ。`examples/niri.cdl` は `Tier` を置かない（niri には減光がない） |
 | DU-16 | `config/appearance.cdl` は現行と同じ枠（4px・`#7fc8ff`）を `borderWidth` と `FocusTier.ringColor` で残し、減光だけを足す。`config/theme.cdl` に `TIER_*` 定数を足す |
 | DU-17 | 減光の方式は「窓のテクスチャシェーダに乗数を足す」（`StyledSurface` の `dim`）。アルファ・矩形・枠・影は変えない。`screenshot-window` は常に乗数 1 |
 | DU-18 | 乗数 `k = (L_tier / L_focus)^(3/2.2)` と、組み込みの `l = 0.8` は**仮置き**（中立のグレーでだけ正確な近似）。目標値ではない |
