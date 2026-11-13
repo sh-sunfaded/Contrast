@@ -572,17 +572,13 @@ fn ring_elements(
     };
     let mut out = Vec::new();
     // 枠は窓（フレーム）の外側に描く（niri のフォーカスリングと同じ）。
-    if let (Some(frame), Some(id)) = (state.focused_tile(output), state.core.view().focus()) {
+    if let (Some(frame), Some(id), Some(color)) = (
+        state.focused_tile(output),
+        state.core.view().focus(),
+        state.policy.focus_border_color(),
+    ) {
         let alpha = state.focused_open_look().map_or(1.0, |(a, _)| a);
-        out.push((
-            id,
-            ring(
-                crate::geometry::outset(frame, b),
-                b,
-                state.policy.focus_border_color(),
-                alpha,
-            ),
-        ));
+        out.push((id, ring(crate::geometry::outset(frame, b), b, color, alpha)));
     }
     if let Some(color) = state.policy.unfocused_border_color() {
         let thin = unfocused_width(b, state.policy.appearance().inactive_border_width);
@@ -652,7 +648,7 @@ pub(crate) fn unfocused_width(border: i32, inactive: Option<i32>) -> i32 {
     inactive.map_or(border, |w| w.clamp(0, border.max(0)))
 }
 
-/// フォーカス窓の枠（`focusColor`）と、設定があればフォーカス外の窓の枠（`borderColor`）の帯。
+/// フォーカス窓の枠（`FocusTier.ringColor`）と、設定があればフォーカス外の窓の枠（`Tier.ringColor`）の帯。
 fn border_elements(
     state: &mut Contrast,
     output: &Output,
@@ -664,10 +660,12 @@ fn border_elements(
     let focus_id = state.core.view().focus();
     let focused_alpha = state.focused_open_look().map_or(1.0, |(a, _)| a);
     // 枠は窓（フレーム）の外側に描く。
-    if let (Some(tile), Some(id)) = (state.focused_tile(output), focus_id)
-        && let Some(es) = edges(crate::geometry::outset(tile, b), b)
+    if let (Some(tile), Some(id), Some(color)) = (
+        state.focused_tile(output),
+        focus_id,
+        state.policy.focus_border_color(),
+    ) && let Some(es) = edges(crate::geometry::outset(tile, b), b)
     {
-        let color = state.policy.focus_border_color();
         bands.extend(es.into_iter().map(|e| (e, color, focused_alpha, id)));
     }
     if let Some(color) = state.policy.unfocused_border_color() {

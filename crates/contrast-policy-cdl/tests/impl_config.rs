@@ -54,8 +54,9 @@ fn the_config_loads_without_diagnostics() -> Result<(), String> {
     assert_eq!(s.layout.preset_column_widths.len(), 3);
     assert_eq!(s.appearance.border_width, 4);
     assert_eq!(s.appearance.radius, 0);
-    // niri はフォーカス外の窓に枠を描かず、タッチパッドの dwt は off。
-    assert!(s.appearance.border_color.is_none());
+    // niri はフォーカス外の窓に枠を描かず（Tier に ringColor は無い）、タッチパッドの dwt は off。
+    assert!(s.appearance.tiers.focus_ring().is_some());
+    assert!(s.appearance.tiers.unfocused_ring().is_none());
     assert!(!s.input.disable_while_typing);
     assert_eq!(s.cursor.theme.as_deref(), Some("Cecilia"));
     assert_eq!(s.cursor.size, Some(24));

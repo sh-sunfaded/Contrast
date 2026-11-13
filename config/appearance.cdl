@@ -1,19 +1,28 @@
 "use cdl 1";
-import { Appearance, Layout, Cursor, Screenshot, Workspaces } from "host:contrast";
+import { Appearance, Tiers, FocusTier, Tier, Layout, Cursor, Screenshot, Workspaces } from "host:contrast";
 import {
-  GAP, BORDER_WIDTH, FOCUS_COLOR, BACKGROUND, DEFAULT_COLUMN_WIDTH,
+  GAP, BORDER_WIDTH, FOCUS_COLOR, BACKGROUND, TIER_FOCUS_L, TIER_REST_L, DEFAULT_COLUMN_WIDTH,
   PRESET_COLUMN_WIDTHS, ANIMATION_MS, WORKSPACE_COUNT, CURSOR_THEME, CURSOR_SIZE,
 } from "./theme.cdl";
 
 // 見た目と窓の並べ方（niri の layout、focus-ring、cursor）。niri の border は無効なので移さない。
-// focus-ring の inactive-color は「非アクティブなモニタ」のリングの色で、フォーカス外の窓には何も描かないので、borderColor は書かない。
+// 枠の太さは Appearance の borderWidth、枠の色は段階（FocusTier / Tier）の ringColor。
+// focus-ring の inactive-color は「非アクティブなモニタ」のリングの色で、フォーカス外の窓には何も描かないので、Tier に ringColor は書かない。
+// フォーカス外の窓は、Tier の l に応じて暗くする（Contrast 独自。niri にはない）。
 
 export const appearance = (
   <Appearance
     borderWidth={BORDER_WIDTH}
-    focusColor={FOCUS_COLOR}
     background={BACKGROUND}
   />
+);
+
+/** 注意の段階。フォーカス窓は枠（niri の focus-ring と同じ 4px・#7fc8ff）、フォーカス外の窓は枠なしで暗くする。 */
+export const tiers = (
+  <Tiers>
+    <FocusTier l={TIER_FOCUS_L} ringColor={FOCUS_COLOR} />
+    <Tier l={TIER_REST_L} />
+  </Tiers>
 );
 
 /** スクロールする列のレイアウト（niri と同じ）。 */

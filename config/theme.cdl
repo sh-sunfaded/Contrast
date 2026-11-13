@@ -11,6 +11,15 @@ export const BORDER_WIDTH = px(4);
 /** フォーカス窓の枠の色（niri の focus-ring の active-color）。 */
 export const FOCUS_COLOR = color("#7fc8ff");
 
+/**
+ * 注意の段階（Tier）の明度 L（OKLCH）。フォーカス窓の段階と、フォーカス外の窓の段階。
+ * 仮置き: L は「窓の画素を何倍に暗くするか」の目安（乗数 = (L_tier / L_focus)^(3/2.2)。グレーでだけ正確な近似）で、
+ * 周囲（壁紙・隣の窓）に対する知覚コントラストの保証ではない。目標値は実測で決める。
+ * 検査: 0 < L <= 1、フォーカス段階が最も明るい、フォーカス段階との差 > フォーカス外の段階全体の幅。
+ */
+export const TIER_FOCUS_L = 1;
+export const TIER_REST_L = 0.8;
+
 /** 背景色。niri の既定の layout.background-color（0.25 のグレー）。壁紙は swaybg が覆う。 */
 export const BACKGROUND = color("#404040");
 

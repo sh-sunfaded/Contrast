@@ -1,7 +1,7 @@
 "use cdl 1";
 import { Contrast } from "host:contrast";
 import type { Policy, WindowInfo, Placement } from "host:contrast";
-import { appearance, layout, cursor, screenshot, workspaces } from "./appearance.cdl";
+import { appearance, tiers, layout, cursor, screenshot, workspaces } from "./appearance.cdl";
 import { input } from "./input.cdl";
 import { startup, environment } from "./startup.cdl";
 import { keybinds } from "./keybinds.cdl";
@@ -28,6 +28,7 @@ export const policy = {
 export default (
   <Contrast>
     {appearance}
+    {tiers}
     {layout}
     {cursor}
     {screenshot}

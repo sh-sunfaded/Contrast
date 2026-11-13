@@ -198,7 +198,7 @@ fn read_mod_key(cx: &mut Ctx<'_>, root: Node<'_>, default: ModKey) -> ModKey {
 
 /// `Appearance` を読む。
 fn read_appearance(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
-    if let Some(Px(width)) = cx.prop::<Px>(node, "borderWidth") {
+    if let Some(Px(width)) = cx.optional::<Px>(node, "borderWidth") {
         let max = u32::try_from(MAX_BORDER_WIDTH).unwrap_or(0);
         match integer_in(width, 0, max).and_then(|w| i32::try_from(w).ok()) {
             Some(w) => settings.appearance.border_width = w,
@@ -208,12 +208,6 @@ fn read_appearance(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
                 format!("`borderWidth` は 0〜{MAX_BORDER_WIDTH}px の整数（{width}px は使えない）"),
             ),
         }
-    }
-    if let Some(Rgba(c)) = cx.prop::<Rgba>(node, "focusColor") {
-        settings.appearance.focus_color = rgba8(c);
-    }
-    if let Some(Rgba(c)) = cx.optional::<Rgba>(node, "borderColor") {
-        settings.appearance.border_color = Some(rgba8(c));
     }
     if let Some(Rgba(c)) = cx.optional::<Rgba>(node, "background") {
         settings.appearance.background = rgba8(c);

@@ -1,11 +1,15 @@
 // Contrast の組み込みの既定値（Settings::builtin()）と同じ内容の設定。
 // テストで「これを読んだ結果 == Settings::builtin()」を確かめている。
 "use cdl 1";
-import { Contrast, Appearance, Workspaces, Input, Keybind } from "host:contrast";
+import { Contrast, Appearance, Tiers, FocusTier, Tier, Workspaces, Input, Keybind } from "host:contrast";
 
 export default (
   <Contrast>
-    <Appearance borderWidth={px(3)} focusColor={color("#66a6ff")} background={color("#1f2433")} />
+    <Appearance background={color("#1f2433")} />
+    <Tiers>
+      <FocusTier l={1} />
+      <Tier l={0.8} />
+    </Tiers>
     <Workspaces count={4} />
     <Input tapToClick={true} naturalScroll={false} accelSpeed={0} disableWhileTyping={true} />
     <Keybind keys="mod+Return" action="spawn" command="foot" />

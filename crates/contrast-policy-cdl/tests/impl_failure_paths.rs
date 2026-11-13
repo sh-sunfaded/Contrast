@@ -167,3 +167,60 @@ fn deep_import_chain_terminates() -> Result<(), String> {
     }
     Ok(())
 }
+
+/// 旧スキーマの `Appearance`（`focusColor` / `borderColor`）を書いた設定。DU-8: 未知の prop として診断される。
+fn old_appearance(props: &str) -> String {
+    format!(
+        "\"use cdl 1\";\nimport {{ Contrast, Appearance }} from \"host:contrast\";\nexport default (\n  <Contrast>\n    <Appearance borderWidth={{px(4)}} {props} />\n  </Contrast>\n);\n"
+    )
+}
+
+#[test]
+fn old_color_props_are_unknown_props_with_a_position() -> Result<(), String> {
+    for (name, props) in [
+        ("focus_color", r##"focusColor={color("#7fc8ff")}"##),
+        ("border_color", r##"borderColor={color("#445566")}"##),
+    ] {
+        let d = dir(&format!("old_{name}"))?;
+        let path = d.join("config.cdl");
+        fs::write(&path, old_appearance(props)).map_err(|e| e.to_string())?;
+        let diags = expect_failed(name, load(&path)?)?;
+        // 診断は CDL の（`E…`）もので、位置（ファイル）を持つ。コードは実行して確かめる（標準エラーに出る）。
+        assert!(
+            diags
+                .iter()
+                .all(|(c, f, _)| c.starts_with('E') && !f.is_empty()),
+            "{name}: {diags:?}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn reload_with_old_props_keeps_the_previous_config() -> Result<(), String> {
+    use contrast_policy::{ConfigStore, Policy, ReloadOutcome};
+
+    let d = dir("reload_keeps")?;
+    let path = d.join("config.cdl");
+    let valid = "\"use cdl 1\";\nimport { Contrast, Appearance, Tiers, FocusTier, Tier } from \"host:contrast\";\nexport default (\n  <Contrast>\n    <Appearance borderWidth={px(4)} />\n    <Tiers>\n      <FocusTier l={1} ringColor={color(\"#7fc8ff\")} />\n      <Tier l={0.8} />\n    </Tiers>\n  </Contrast>\n);\n";
+    fs::write(&path, valid).map_err(|e| e.to_string())?;
+    let loader = CdlLoader::new();
+    let LoadOutcome::Loaded(config) = loader.load(&path) else {
+        return Err("the new schema must load".to_owned());
+    };
+    let store = ConfigStore::new(*config);
+    assert_eq!(store.border_width(), 4);
+    assert!(store.focus_border_color().is_some());
+    let generation = store.generation();
+
+    fs::write(&path, old_appearance(r##"focusColor={color("#112233")}"##))
+        .map_err(|e| e.to_string())?;
+    match store.reload(&loader, &path) {
+        ReloadOutcome::Failed(d) => eprintln!("[reload] Failed {d:?}"),
+        other => return Err(format!("expected Failed, got {other:?}")),
+    }
+    assert_eq!(store.generation(), generation, "世代は変わらない");
+    assert_eq!(store.border_width(), 4);
+    assert!(store.focus_border_color().is_some(), "旧設定の枠の色が残る");
+    Ok(())
+}

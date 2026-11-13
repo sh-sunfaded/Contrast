@@ -88,8 +88,12 @@ impl Policy for StaticPolicy {
         self.store.border_width()
     }
 
-    fn focus_border_color(&self) -> [f32; 4] {
+    fn focus_border_color(&self) -> Option<[f32; 4]> {
         self.store.focus_border_color()
+    }
+
+    fn unfocused_border_color(&self) -> Option<[f32; 4]> {
+        self.store.unfocused_border_color()
     }
 
     fn tiers(&self) -> crate::tier::Tiers {

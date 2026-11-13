@@ -78,7 +78,8 @@ fn config_example_loads_and_window_rules_apply() -> Result<(), String> {
     let config = load(&example("config.cdl")).map_err(|d| format!("{d:?}"))?;
     assert_eq!(config.settings.workspaces, 6);
     assert_eq!(config.settings.appearance.border_width, 4);
-    assert!(config.settings.appearance.border_color.is_some());
+    assert!(config.settings.appearance.tiers.focus_ring().is_some());
+    assert!(config.settings.appearance.tiers.unfocused_ring().is_some());
     let meta = |app: &str, dialog: bool| window(app, dialog);
 
     let (p, d) = config.place(&meta("firefox", false), Some(0));
@@ -139,14 +140,8 @@ fn all_conversion_errors_are_reported_together() -> Result<(), String> {
 fn prop_value_errors_have_codes() -> Result<(), String> {
     let cases = [
         (r#"<Contrast modKey="hyper">"#, "CT003"),
-        (
-            r##"<Appearance borderWidth={px(-1)} focusColor={color("#fff")} />"##,
-            "CT003",
-        ),
-        (
-            r##"<Appearance borderWidth={px(1.5)} focusColor={color("#fff")} />"##,
-            "CT003",
-        ),
+        (r##"<Appearance borderWidth={px(-1)} />"##, "CT003"),
+        (r##"<Appearance borderWidth={px(1.5)} />"##, "CT003"),
         (r#"<Workspaces count={0} />"#, "CT010"),
         (r#"<Workspaces count={33} />"#, "CT010"),
         (r#"<Workspaces count={2.5} />"#, "CT010"),

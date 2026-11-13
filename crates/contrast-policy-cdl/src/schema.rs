@@ -56,9 +56,7 @@ pub(crate) fn contrast_schema() -> Result<Schema, Vec<String>> {
         .component(
             MODULE,
             ComponentDef::new("Appearance")
-                .prop("borderWidth", Ty::Length)
-                .prop("focusColor", Ty::Color)
-                .optional_prop("borderColor", Ty::Color)
+                .optional_prop("borderWidth", Ty::Length)
                 .optional_prop("background", Ty::Color)
                 .optional_prop("radius", Ty::Length)
                 .optional_prop("shadowBlur", Ty::Length)
