@@ -31,6 +31,7 @@ pub(crate) fn contrast_schema() -> Result<Schema, Vec<String>> {
                 .optional_prop("modKey", Ty::String)
                 .children(&[
                     "Appearance",
+                    "Tiers",
                     "Workspaces",
                     "Layout",
                     "Cursor",
@@ -44,6 +45,7 @@ pub(crate) fn contrast_schema() -> Result<Schema, Vec<String>> {
                 ])
                 .unique_child("Environment")
                 .unique_child("Appearance")
+                .unique_child("Tiers")
                 .unique_child("Workspaces")
                 .unique_child("Layout")
                 .unique_child("Cursor")
@@ -64,6 +66,25 @@ pub(crate) fn contrast_schema() -> Result<Schema, Vec<String>> {
                 .optional_prop("shadowOffsetY", Ty::Length)
                 .optional_prop("shadowColor", Ty::Color)
                 .optional_prop("inactiveBorderWidth", Ty::Length),
+        )
+        .component(
+            MODULE,
+            ComponentDef::new("Tiers")
+                .children(&["FocusTier", "Tier"])
+                .unique_child("FocusTier"),
+        )
+        .component(
+            MODULE,
+            ComponentDef::new("FocusTier")
+                .prop("l", Ty::Number)
+                .optional_prop("ringColor", Ty::Color),
+        )
+        .component(
+            MODULE,
+            ComponentDef::new("Tier")
+                .prop("l", Ty::Number)
+                .optional_prop("ringColor", Ty::Color)
+                .optional_prop("name", Ty::String),
         )
         .component(
             MODULE,
