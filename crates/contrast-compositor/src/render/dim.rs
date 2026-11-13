@@ -61,6 +61,25 @@ mod tests {
     }
 
     #[test]
+    fn no_rest_tier_means_no_dimming_path() {
+        // `Tier` が 0 個の設定（DU-20）では乗数が 1.0 なので、`StyledSurface` で包まれず、`wants_shaders` も増えない。
+        let tiers = contrast_policy::Tiers {
+            focus: contrast_policy::Tier {
+                l: 1.0,
+                ring_color: None,
+            },
+            rest: Vec::new(),
+        };
+        let k = tiers.unfocused_dim();
+        assert!(!is_dimming(k));
+        assert!(!is_dimming(window_dim(false, false, k)));
+        // 対照: 組み込みの既定（`Tier` が 1 つ）は減光する。
+        assert!(is_dimming(
+            contrast_policy::Tiers::builtin().unfocused_dim()
+        ));
+    }
+
+    #[test]
     fn dimming_is_detected_by_a_difference_from_one() {
         assert!(!is_dimming(1.0));
         assert!(is_dimming(0.99));
