@@ -1,4 +1,4 @@
-//! 窓の開く・閉じるアニメーション（niri の既定: 開く 150ms・ease-out-expo、閉じる 150ms・ease-out-quad）。
+//! 窓の開く・閉じるアニメーション（`<Motion>` の `Open`・`Close`。曲線と長さは設定。見た目は透明度と拡大率で固定）。
 //!
 //! niri（`src/layout/opening_window.rs`・`closing_window.rs`）と同じく、窓をオフスクリーンのテクスチャに描いてから、
 //! 透明度と拡大率を掛けて重ねる。開く: 透明度 = 進み、拡大率 = 進み / 2 + 0.5。閉じる: 透明度 = 1 − 進み、拡大率 = (1 − 進み) / 5 + 0.8。
@@ -31,20 +31,6 @@ use contrast_policy::{EasingCurve, MotionCurve, MotionKind, MotionSettings};
 use crate::spring::{Spring, SpringParams};
 use crate::state::Contrast;
 
-/// 開くアニメーションの長さ（niri の既定）。
-pub const OPEN_DURATION: Duration = Duration::from_millis(150);
-/// 閉じるアニメーションの長さ（niri の既定）。
-pub const CLOSE_DURATION: Duration = Duration::from_millis(150);
-
-/// niri の ease-out-expo: `1 − 2^(−10t)`（t ≥ 1 で 1）。
-pub fn ease_out_expo(t: f64) -> f64 {
-    if t >= 1.0 {
-        1.0
-    } else {
-        1.0 - 2f64.powf(-10.0 * t.max(0.0))
-    }
-}
-
 /// ease-out-quad: `1 − (1 − t)^2`。
 pub fn ease_out_quad(t: f64) -> f64 {
     let t = t.clamp(0.0, 1.0);
@@ -65,8 +51,6 @@ pub fn close_look(p: f64) -> (f32, f64) {
 /// 開閉の動きの曲線。
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum OpenCloseCurve {
-    /// 従来の固定の曲線（開く: ease-out-expo、閉じる: ease-out-quad）。`<Motion>` が無い設定のとき。
-    Legacy,
     /// `<Motion>` で選んだ easing。
     Easing(EasingCurve),
     /// niri のバネ（`niriSpring`）。長さは収束するまで。
@@ -83,17 +67,9 @@ pub struct Timing {
 }
 
 impl Timing {
-    /// 経過 `elapsed` の、曲線を通した進み（0〜1）。`kind` は `Legacy` の曲線（開く・閉じる）を決める。
-    pub fn value(&self, kind: MotionKind, elapsed: Duration) -> f64 {
+    /// 経過 `elapsed` の、曲線を通した進み（0〜1）。
+    pub fn value(&self, elapsed: Duration) -> f64 {
         match self.curve {
-            OpenCloseCurve::Legacy => {
-                let f = fraction(elapsed, stretched(self.duration));
-                if kind == MotionKind::Open {
-                    ease_out_expo(f)
-                } else {
-                    ease_out_quad(f)
-                }
-            }
             OpenCloseCurve::Easing(curve) => f64::from(contrast_policy::motion::ease(
                 curve,
                 contrast_policy::motion::progress(elapsed, stretched(self.duration)),
@@ -111,23 +87,9 @@ impl Timing {
 }
 
 /// 種別 `kind`（`Open` か `Close`）の動き。`None` は動かさない（即時）。
-/// `<Motion>` が無い（`motion` が `None`）ときは従来どおり、`animation_ms != 0` なら 150ms の固定の曲線。
-/// ある（`Some`）ときは Motion に従い、書かれていない種別・長さ 0 の easing は動かさない。
-pub fn timing_for(
-    kind: MotionKind,
-    motion: Option<MotionSettings>,
-    legacy_animation_ms: u32,
-) -> Option<Timing> {
-    let Some(settings) = motion else {
-        return (legacy_animation_ms != 0).then_some(Timing {
-            curve: OpenCloseCurve::Legacy,
-            duration: if kind == MotionKind::Open {
-                OPEN_DURATION
-            } else {
-                CLOSE_DURATION
-            },
-        });
-    };
+/// `<Motion>` が無い・その種別が書かれていない・長さ 0 の easing は動かさない。`niriSpring` は収束するまで。
+pub fn timing_for(kind: MotionKind, motion: Option<MotionSettings>) -> Option<Timing> {
+    let settings = motion?;
     let spec = settings.spec(kind)?;
     match spec.curve {
         MotionCurve::Easing(curve) => (spec.duration_ms != 0).then_some(Timing {
@@ -156,14 +118,6 @@ fn slowdown() -> f64 {
 /// 長さ `total` を、検証用の遅さで伸ばしたもの。
 fn stretched(total: Duration) -> Duration {
     total.mul_f64(slowdown())
-}
-
-/// 経過 `elapsed` の、長さ `total` に対する 0〜1 の割合。
-fn fraction(elapsed: Duration, total: Duration) -> f64 {
-    if total.is_zero() {
-        return 1.0;
-    }
-    (elapsed.as_secs_f64() / total.as_secs_f64()).clamp(0.0, 1.0)
 }
 
 /// 窓の絵: テクスチャの左上を原点にした要素、その大きさ、全体の論理座標での描く位置と中心。
@@ -251,7 +205,7 @@ impl WindowAnims {
     pub fn open_look_of(&self, key: ExternalKey) -> Option<(f32, f64)> {
         let (started, timing, drawn) = self.opening.get(&key)?;
         drawn.as_ref()?;
-        let p = timing.value(MotionKind::Open, started.elapsed());
+        let p = timing.value(started.elapsed());
         Some(open_look(p))
     }
 
@@ -298,7 +252,7 @@ impl WindowAnims {
             .filter(|(key, _)| live(**key))
             .filter_map(|(key, (started, timing, drawn))| {
                 let d = drawn.as_ref().filter(|d| &d.output == output)?;
-                let p = timing.value(MotionKind::Open, now.duration_since(*started));
+                let p = timing.value(now.duration_since(*started));
                 let (alpha, scale) = open_look(p);
                 Some((*key, make(d, alpha, scale)))
             })
@@ -308,9 +262,7 @@ impl WindowAnims {
             .iter()
             .filter_map(|c| {
                 let d = c.drawn.as_ref().filter(|d| &d.output == output)?;
-                let p = c
-                    .timing
-                    .value(MotionKind::Close, now.duration_since(c.started));
+                let p = c.timing.value(now.duration_since(c.started));
                 let (alpha, scale) = close_look(p);
                 // 窓の絵と、同じ中心・拡大率・透明度の枠の帯（niri は枠も含めたタイルの絵を縮める）。
                 let at: Point<i32, Physical> =
@@ -396,8 +348,7 @@ impl Contrast {
         // フレームごとの時間の処理（DnD の端スクロール、オーバービューのバネの終わり）もここで。
         self.dnd_tick();
         self.overview.settle();
-        let legacy_ms = self.policy.layout_settings().animation_ms;
-        let open_timing = timing_for(MotionKind::Open, self.policy.motion(), legacy_ms);
+        let open_timing = timing_for(MotionKind::Open, self.policy.motion());
         let now = Instant::now();
         let view = self.core.view();
         let visible: Vec<(ExternalKey, smithay::desktop::Window, Output, WindowId)> = view
@@ -609,10 +560,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn curves_start_at_zero_and_end_at_one() {
-        assert_eq!(ease_out_expo(0.0), 0.0);
-        assert_eq!(ease_out_expo(1.0), 1.0);
-        assert!(ease_out_expo(0.5) > 0.96 && ease_out_expo(0.5) < 0.97);
+    fn ease_out_quad_starts_at_zero_and_ends_at_one() {
         assert_eq!(ease_out_quad(0.0), 0.0);
         assert_eq!(ease_out_quad(1.0), 1.0);
         assert!((ease_out_quad(0.5) - 0.75).abs() < 1e-12);
@@ -662,42 +610,27 @@ mod tests {
     }
 
     #[test]
-    fn without_a_motion_element_open_and_close_keep_the_fixed_150ms_enabled_by_animation_ms() {
+    fn without_a_motion_element_open_and_close_are_instant() {
         for kind in [MotionKind::Open, MotionKind::Close] {
-            assert_eq!(timing_for(kind, None, 0), None);
-            // `animationMs` の値は長さに使わない（0 かどうかだけ）。
+            assert_eq!(timing_for(kind, None), None);
+            // 組み込みの既定（旧 `animationMs = 0` と同じ見た目）も動かさない。
             assert_eq!(
-                timing_for(kind, None, 1),
-                Some(Timing {
-                    curve: OpenCloseCurve::Legacy,
-                    duration: Duration::from_millis(150),
-                })
+                timing_for(kind, contrast_policy::Settings::builtin().motion),
+                None
             );
         }
-        // 従来の曲線: 開く = expo、閉じる = quad。
-        let t = Timing {
-            curve: OpenCloseCurve::Legacy,
-            duration: OPEN_DURATION,
-        };
-        let half = Duration::from_millis(75);
-        assert_eq!(t.value(MotionKind::Open, half), ease_out_expo(0.5));
-        assert_eq!(t.value(MotionKind::Close, half), ease_out_quad(0.5));
     }
 
     #[test]
-    fn a_motion_element_decides_open_and_close_and_ignores_animation_ms() {
+    fn a_motion_element_decides_open_and_close() {
         let quad = MotionCurve::Easing(EasingCurve::EaseOutQuad);
-        // 書かれていない種別は動かさない（`animationMs` が 150 でも）。
+        // 書かれていない種別は動かさない。
         assert_eq!(
-            timing_for(
-                MotionKind::Open,
-                motion_with(MotionKind::Close, quad, 100),
-                150
-            ),
+            timing_for(MotionKind::Open, motion_with(MotionKind::Close, quad, 100)),
             None
         );
         assert_eq!(
-            timing_for(MotionKind::Open, motion_with(MotionKind::Open, quad, 90), 0),
+            timing_for(MotionKind::Open, motion_with(MotionKind::Open, quad, 90)),
             Some(Timing {
                 curve: OpenCloseCurve::Easing(EasingCurve::EaseOutQuad),
                 duration: Duration::from_millis(90),
@@ -705,30 +638,18 @@ mod tests {
         );
         // 長さ 0 は動かさない。
         assert_eq!(
-            timing_for(
-                MotionKind::Open,
-                motion_with(MotionKind::Open, quad, 0),
-                150
-            ),
+            timing_for(MotionKind::Open, motion_with(MotionKind::Open, quad, 0)),
             None
         );
         // niriSpring は長さを持たず、収束までの時間を使う。
         let spring = timing_for(
             MotionKind::Close,
             motion_with(MotionKind::Close, MotionCurve::NiriSpring, 0),
-            0,
         );
         let t = spring.expect("spring");
         assert_eq!(t.curve, OpenCloseCurve::Spring);
         assert!(t.duration > Duration::ZERO);
-        assert_eq!(t.value(MotionKind::Close, Duration::ZERO), 0.0);
-        assert!(t.value(MotionKind::Close, t.duration) > 0.99);
-    }
-
-    #[test]
-    fn the_fraction_is_clamped() {
-        assert_eq!(fraction(Duration::from_millis(75), OPEN_DURATION), 0.5);
-        assert_eq!(fraction(Duration::from_millis(300), OPEN_DURATION), 1.0);
-        assert_eq!(fraction(Duration::ZERO, Duration::ZERO), 1.0);
+        assert_eq!(t.value(Duration::ZERO), 0.0);
+        assert!(t.value(t.duration) > 0.99);
     }
 }

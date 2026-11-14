@@ -46,7 +46,5 @@ pub const MOTION_BAD_CURVE: &str = "CT071";
 pub const MOTION_SPRING_CONFLICT: &str = "CT072";
 /// `Motion` の中で同じ種別が重複している。
 pub const MOTION_DUPLICATE: &str = "CT073";
-/// `<Motion>` があるので、旧 `Layout.animation` / `animationMs` は無視される（警告）。
-pub const MOTION_IGNORES_LAYOUT: &str = "CT074";
 /// リロードで反映できない変更。
 pub const NOT_APPLIED: &str = "CT050";

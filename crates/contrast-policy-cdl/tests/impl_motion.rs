@@ -6,8 +6,7 @@ use std::fs;
 use std::path::Path;
 
 use contrast_policy::{
-    ConfigDiagnostic, ConfigLoader, DiagnosticSeverity, EasingCurve, LoadOutcome, MotionCurve,
-    MotionKind, MotionSpec,
+    ConfigDiagnostic, ConfigLoader, EasingCurve, LoadOutcome, MotionCurve, MotionKind, MotionSpec,
 };
 use contrast_policy_cdl::CdlLoader;
 
@@ -301,41 +300,85 @@ fn a_string_duration_is_a_cdl_type_error() -> Result<(), String> {
 }
 
 #[test]
-fn motion_with_the_old_layout_animation_warns_and_still_loads() -> Result<(), String> {
-    let body = "    <Layout animation=\"spring\" animationMs={150} />\n    <Motion>\n      <Scroll />\n    </Motion>";
-    let (text, r) = run("legacy", body)?;
-    let (m, warnings) = r.map_err(|d| format!("{d:?}"))?;
-    assert!(m.is_some());
-    let got: Vec<_> = warnings
-        .iter()
-        .map(|d| (d.code.as_str(), d.severity, d.line.zip(d.column)))
-        .collect();
-    assert_eq!(
-        got,
-        [
-            (
-                "CT074",
-                DiagnosticSeverity::Warning,
-                Some(position_of(&text, "animation=\"spring\"")?)
-            ),
-            (
-                "CT074",
-                DiagnosticSeverity::Warning,
-                Some(position_of(&text, "animationMs={150}")?)
-            ),
-        ]
-    );
+fn the_old_layout_animation_props_are_unknown_props_at_the_prop() -> Result<(), String> {
+    for (dir, body, needle) in [
+        (
+            "old-animation",
+            "    <Layout animation=\"spring\" />",
+            "animation=\"spring\"",
+        ),
+        (
+            "old-ms",
+            "    <Layout animationMs={150} />",
+            "animationMs={150}",
+        ),
+        (
+            "old-with-motion",
+            "    <Layout animationMs={150} />\n    <Motion />",
+            "animationMs={150}",
+        ),
+    ] {
+        let (text, r) = run(dir, body)?;
+        let diags = r.err().ok_or("旧 prop は拒否される")?;
+        let got: Vec<_> = diags
+            .iter()
+            .map(|d| (d.code.as_str(), d.line.zip(d.column)))
+            .collect();
+        assert_eq!(
+            got,
+            [("E4003", Some(position_of(&text, needle)?))],
+            "{dir}: {diags:?}"
+        );
+    }
     Ok(())
 }
 
 #[test]
-fn layout_animation_alone_has_no_warning_and_no_motion() -> Result<(), String> {
-    let (_, r) = run(
-        "legacy-only",
-        "    <Layout animation=\"spring\" animationMs={150} />",
-    )?;
+fn without_a_motion_element_every_kind_is_instant() -> Result<(), String> {
+    let (_, r) = run("no-motion", "    <Layout gap={px(8)} />")?;
     let (m, w) = r.map_err(|d| format!("{d:?}"))?;
     assert_eq!(m, None);
     assert!(w.is_empty());
+    Ok(())
+}
+
+#[test]
+fn a_config_with_an_old_prop_fails_to_reload_and_the_old_config_is_kept() -> Result<(), String> {
+    use contrast_policy::{Config, ConfigStore, Policy, ReloadOutcome};
+    let base = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join("impl_motion")
+        .join("reload");
+    fs::create_dir_all(&base).map_err(|e| e.to_string())?;
+    let path = base.join("config.cdl");
+    let doc = |body: &str| {
+        format!(
+            "\"use cdl 1\";\nimport {{ Contrast, Layout, Motion, Scroll }} from \"host:contrast\";\nexport default (\n  <Contrast>\n{body}\n  </Contrast>\n);\n"
+        )
+    };
+    let loader = CdlLoader::new();
+    fs::write(
+        &path,
+        doc("    <Motion><Scroll curve=\"niriSpring\" /></Motion>"),
+    )
+    .map_err(|e| e.to_string())?;
+    let LoadOutcome::Loaded(first) = loader.load(&path) else {
+        return Err("最初の設定が読めない".to_owned());
+    };
+    let store = ConfigStore::new(*first);
+    let before = store.generation();
+    let had = Policy::motion(&store);
+    assert!(had.is_some());
+    // 旧 prop を書いた設定: 失敗し、世代も動きも変わらない。
+    fs::write(&path, doc("    <Layout animation=\"spring\" />")).map_err(|e| e.to_string())?;
+    let ReloadOutcome::Failed(diags) = store.reload(&loader, &path) else {
+        return Err("失敗するはず".to_owned());
+    };
+    assert_eq!(
+        diags.iter().map(|d| d.code.as_str()).collect::<Vec<_>>(),
+        ["E4003"]
+    );
+    assert_eq!(store.generation(), before);
+    assert_eq!(Policy::motion(&store), had);
+    let _ = Config::builtin;
     Ok(())
 }

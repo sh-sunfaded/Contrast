@@ -9,13 +9,13 @@ use std::collections::BTreeMap;
 use cdl_host::{Millis, Node, Px, Rgba};
 use contrast_core::{Direction, LayoutMode, Ratio, WindowHeight};
 use contrast_policy::settings::{
-    MAX_ANIMATION_MS, MAX_BORDER_WIDTH, MAX_COOLDOWN_MS, MAX_DECORATION_PX,
-    MAX_HIDE_AFTER_INACTIVE_MS, MAX_WINDOW_HEIGHT_PX, MAX_WORKSPACES, rgba8,
+    MAX_BORDER_WIDTH, MAX_COOLDOWN_MS, MAX_DECORATION_PX, MAX_HIDE_AFTER_INACTIVE_MS,
+    MAX_WINDOW_HEIGHT_PX, MAX_WORKSPACES, rgba8,
 };
 use contrast_policy::{
-    Action, AnimationKind, ConfigDiagnostic, DiagnosticSeverity, EasingCurve, KeyBinding, KeySpec,
-    MAX_MOTION_MS, ModKey, MotionCurve, MotionKind, MotionSettings, MotionSpec, Settings,
-    StartupCommand, TierSlot, TierSpec, codes, validate_tiers,
+    Action, ConfigDiagnostic, EasingCurve, KeyBinding, KeySpec, MAX_MOTION_MS, ModKey, MotionCurve,
+    MotionKind, MotionSettings, MotionSpec, Settings, StartupCommand, TierSlot, TierSpec, codes,
+    validate_tiers,
 };
 
 use crate::diag::{at, convert, internal};
@@ -27,8 +27,6 @@ struct Ctx<'a> {
     sources: &'a BTreeMap<String, String>,
     /// これまでに集めた診断。
     diags: Vec<ConfigDiagnostic>,
-    /// 成功しても知らせたいこと（警告）。
-    warnings: Vec<ConfigDiagnostic>,
 }
 
 impl Ctx<'_> {
@@ -45,16 +43,6 @@ impl Ctx<'_> {
             None => at(node.span(), code, message, self.sources),
         };
         self.diags.push(diag);
-    }
-
-    /// `node` の prop `key` の位置に警告を足す（無ければ要素の位置）。
-    fn warn_at(&mut self, node: Node<'_>, key: &str, code: &str, message: impl Into<String>) {
-        let mut diag = match node.prop_span(key) {
-            Some(span) => at(&span, code, message, self.sources),
-            None => at(node.span(), code, message, self.sources),
-        };
-        diag.severity = DiagnosticSeverity::Warning;
-        self.warnings.push(diag);
     }
 
     /// スキーマが通した列挙の値を、変換が知らなかった（スキーマと変換の食い違い＝実装の不具合）。
@@ -127,11 +115,10 @@ pub(crate) fn to_settings(
     root: Node<'_>,
     sources: &BTreeMap<String, String>,
     default_mod_key: ModKey,
-) -> Result<(Settings, Vec<ConfigDiagnostic>), Vec<ConfigDiagnostic>> {
+) -> Result<Settings, Vec<ConfigDiagnostic>> {
     let mut cx = Ctx {
         sources,
         diags: Vec::new(),
-        warnings: Vec::new(),
     };
     let mut settings = Settings::builtin();
     settings.keybinds.clear();
@@ -144,21 +131,13 @@ pub(crate) fn to_settings(
     // 1 回目: Appearance と Workspaces（キーバインドの検査に数が要る）。
     let mut keybind_nodes = Vec::new();
     let mut data_control_nodes = Vec::new();
-    let mut motion_node = None;
-    let mut layout_nodes = Vec::new();
     for child in root.children() {
         match child.component() {
             "Appearance" => read_appearance(&mut cx, child, &mut settings),
             "Tiers" => read_tiers(&mut cx, child, &mut settings),
             "Workspaces" => read_workspaces(&mut cx, child, &mut settings),
-            "Layout" => {
-                layout_nodes.push(child);
-                read_layout(&mut cx, child, &mut settings);
-            }
-            "Motion" => {
-                motion_node = Some(child);
-                read_motion(&mut cx, child, &mut settings);
-            }
+            "Layout" => read_layout(&mut cx, child, &mut settings),
+            "Motion" => read_motion(&mut cx, child, &mut settings),
             "Cursor" => read_cursor(&mut cx, child, &mut settings),
             "Screenshot" => read_screenshot(&mut cx, child, &mut settings),
             "HotkeyOverlay" => read_hotkey_overlay(&mut cx, child, &mut settings),
@@ -176,7 +155,6 @@ pub(crate) fn to_settings(
     }
 
     read_data_control_clients(&mut cx, &data_control_nodes, &mut settings);
-    warn_legacy_animation(&mut cx, motion_node, &layout_nodes);
 
     // 2 回目: Keybind。
     let mut seen: BTreeMap<KeyId, (u32, u32)> = BTreeMap::new();
@@ -203,28 +181,9 @@ pub(crate) fn to_settings(
     }
 
     if cx.diags.is_empty() {
-        Ok((settings, cx.warnings))
+        Ok(settings)
     } else {
         Err(cx.diags)
-    }
-}
-
-/// `<Motion>` があるとき、旧 `Layout.animation` / `animationMs` が無視されることを警告する（CT074）。
-fn warn_legacy_animation(cx: &mut Ctx<'_>, motion: Option<Node<'_>>, layouts: &[Node<'_>]) {
-    if motion.is_none() {
-        return;
-    }
-    for layout in layouts {
-        for key in ["animation", "animationMs"] {
-            if layout.prop_span(key).is_some() {
-                cx.warn_at(
-                    *layout,
-                    key,
-                    codes::MOTION_IGNORES_LAYOUT,
-                    format!("`<Motion>` があるので、旧 `Layout` の `{key}` は無視する"),
-                );
-            }
-        }
     }
 }
 
@@ -560,22 +519,6 @@ fn read_layout(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
                 "defaultColumnWidth",
                 codes::BAD_PROP,
                 format!("`defaultColumnWidth` は 0 より大きく 1 以下の数（{w} は使えない）"),
-            ),
-        }
-    }
-    match cx.optional::<String>(node, "animation").as_deref() {
-        None | Some("easing") => {}
-        Some("spring") => settings.layout.animation = AnimationKind::Spring,
-        Some(other) => cx.unexpected_value(node, "animation", other),
-    }
-    if let Some(ms) = cx.optional::<f64>(node, "animationMs") {
-        match integer_in(ms, 0, MAX_ANIMATION_MS) {
-            Some(n) => settings.layout.animation_ms = n,
-            None => cx.error_at(
-                node,
-                "animationMs",
-                codes::BAD_PROP,
-                format!("`animationMs` は 0〜{MAX_ANIMATION_MS} の整数（{ms} は使えない）"),
             ),
         }
     }

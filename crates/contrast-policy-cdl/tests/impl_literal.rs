@@ -1,4 +1,4 @@
-//! 列挙の prop（`modKey`・`Layout.mode`・`Layout.animation`・`Startup.ipc`・`Workspaces.mode`）が、
+//! 列挙の prop（`modKey`・`Layout.mode`・`Startup.ipc`・`Workspaces.mode`）が、
 //! CDL のリテラルのユニオンで検査されること。有効な値は通り、範囲外は E4004（評価前の型の誤り）で、
 //! メッセージにユニオンが出る。位置は誤りのある prop。
 
@@ -95,9 +95,8 @@ fn mod_key_accepts_alt_and_super_and_rejects_the_rest() -> Result<(), String> {
 }
 
 #[test]
-fn layout_mode_and_animation_are_enumerations() -> Result<(), String> {
+fn layout_mode_is_an_enumeration() -> Result<(), String> {
     use contrast_core::LayoutMode;
-    use contrast_policy::AnimationKind;
     for (dir, v, want) in [
         ("e", "equal", LayoutMode::Equal),
         ("s", "scrolling", LayoutMode::Scrolling),
@@ -109,30 +108,12 @@ fn layout_mode_and_animation_are_enumerations() -> Result<(), String> {
         )?;
         assert_eq!(r.map_err(|d| format!("{d:?}"))?.layout.mode, want);
     }
-    for (dir, v, want) in [
-        ("e", "easing", AnimationKind::Easing),
-        ("s", "spring", AnimationKind::Spring),
-    ] {
-        let (_, r) = run(
-            &format!("la-{dir}"),
-            "",
-            &format!("    <Layout animation=\"{v}\" />"),
-        )?;
-        assert_eq!(r.map_err(|d| format!("{d:?}"))?.layout.animation, want);
-    }
     assert_e4004(
         "lm-bad",
         "",
         "    <Layout mode=\"grid\" />",
         "\"grid\"",
         &["equal", "scrolling"],
-    )?;
-    assert_e4004(
-        "la-bad",
-        "",
-        "    <Layout animation=\"bounce\" />",
-        "\"bounce\"",
-        &["easing", "spring"],
     )
 }
 

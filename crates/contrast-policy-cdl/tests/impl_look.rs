@@ -251,52 +251,6 @@ fn plain_scrolling_actions_are_recognised() -> Result<(), String> {
 }
 
 #[test]
-fn animation_ms_defaults_to_off_and_accepts_the_edges() -> Result<(), String> {
-    let none = load("anim-none", "")?.map_err(|d| format!("{d:?}"))?;
-    assert_eq!(none.layout.animation_ms, 0);
-    for (dir, v, want) in [
-        ("zero", "0", 0),
-        ("niri", "150", 150),
-        ("max", "2000", 2000),
-    ] {
-        let s =
-            load(dir, &format!("<Layout animationMs={{{v}}} />"))?.map_err(|d| format!("{d:?}"))?;
-        assert_eq!(s.layout.animation_ms, want, "{v}");
-        // ほかの項目は既定のまま。
-        assert_eq!(s.layout.gap, 0);
-    }
-    Ok(())
-}
-
-#[test]
-fn bad_animation_ms_is_ct003() -> Result<(), String> {
-    for (dir, v) in [("negative", "-1"), ("fraction", "1.5"), ("over", "2001")] {
-        let r = load(dir, &format!("<Layout animationMs={{{v}}} />"))?;
-        assert_eq!(r.err(), Some(vec!["CT003".to_owned()]), "{v}");
-    }
-    Ok(())
-}
-
-#[test]
-fn animation_kind_defaults_to_easing_and_accepts_spring() -> Result<(), String> {
-    use contrast_policy::AnimationKind;
-    let none = load("kind-none", "")?.map_err(|d| format!("{d:?}"))?;
-    assert_eq!(none.layout.animation, AnimationKind::Easing);
-    for (dir, v, want) in [
-        ("kind-easing", "easing", AnimationKind::Easing),
-        ("kind-spring", "spring", AnimationKind::Spring),
-    ] {
-        let s =
-            load(dir, &format!("<Layout animation=\"{v}\" />"))?.map_err(|d| format!("{d:?}"))?;
-        assert_eq!(s.layout.animation, want, "{v}");
-    }
-    // 範囲外は列挙の誤りなので CDL の E4004。
-    let bad = load("kind-bad", "<Layout animation=\"bounce\" />")?;
-    assert_eq!(bad.err(), Some(vec!["E4004".to_owned()]));
-    Ok(())
-}
-
-#[test]
 fn screenshot_path_defaults_to_niri_and_can_be_changed_or_disabled() -> Result<(), String> {
     let none = load("shot-none", "")?.map_err(|d| format!("{d:?}"))?;
     assert_eq!(
@@ -316,7 +270,22 @@ fn niri_example_animates() -> Result<(), String> {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/niri.cdl");
     match CdlLoader::new().load(&path) {
         LoadOutcome::Loaded(c) => {
-            assert_eq!(c.settings.layout.animation_ms, 150);
+            // 旧 `Layout.animation*` ではなく `<Motion>`（niri の既定のバネ 5 種別。Focus なし）。
+            let m = c.settings.motion.ok_or("<Motion> が無い")?;
+            for k in [
+                contrast_policy::MotionKind::Scroll,
+                contrast_policy::MotionKind::Resize,
+                contrast_policy::MotionKind::Workspace,
+                contrast_policy::MotionKind::Open,
+                contrast_policy::MotionKind::Close,
+            ] {
+                assert_eq!(
+                    m.spec(k).map(|s| s.curve),
+                    Some(contrast_policy::MotionCurve::NiriSpring),
+                    "{k:?}"
+                );
+            }
+            assert_eq!(m.spec(contrast_policy::MotionKind::Focus), None);
             Ok(())
         }
         LoadOutcome::Failed(d) => Err(format!("{d:?}")),

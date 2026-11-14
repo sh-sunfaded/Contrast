@@ -104,7 +104,7 @@ pub(crate) fn load_config(
             "ルートが関数の形になっている（Contrast の設定は要素で書く）".to_owned(),
         )]);
     };
-    let (settings, warnings) = to_settings(root, &sources, default_mod_key)?;
+    let settings = to_settings(root, &sources, default_mod_key)?;
     let hook = CdlPolicy::new(Rc::new(program), sources);
-    Ok(Config::new(settings, Some(Box::new(hook))).with_warnings(warnings))
+    Ok(Config::new(settings, Some(Box::new(hook))))
 }

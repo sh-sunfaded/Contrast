@@ -605,7 +605,6 @@ impl Contrast {
         let timing = crate::window_anim::timing_for(
             contrast_policy::MotionKind::Close,
             self.policy.motion(),
-            self.policy.layout_settings().animation_ms,
         );
         self.window_anims.start_closing(key, timing);
         if let Some(window) = self.shell.windows.remove(&key) {
@@ -781,10 +780,9 @@ impl Contrast {
         );
     }
 
-    /// 種別 `kind` の補間の曲線。`<Motion>` があればそれに従い（書かれていない種別は即時）、
-    /// 無ければ旧 `Layout.animation` と `animationMs`（0 なら補間しない）に従う。
+    /// 種別 `kind` の補間の曲線。`<Motion>` に従い、書かれていない種別（`<Motion>` なしを含む）は即時。
     fn animation_motion(&self, kind: contrast_policy::MotionKind) -> crate::anim::Motion {
-        crate::anim::motion_for(kind, self.policy.motion(), &self.policy.layout_settings())
+        crate::anim::motion_for(kind, self.policy.motion())
     }
 
     /// 窓に大きさと状態を伝え、Space 上の位置を合わせる（ログなし。補間の毎フレームからも呼ぶ）。

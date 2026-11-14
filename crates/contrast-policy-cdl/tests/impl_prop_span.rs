@@ -89,9 +89,9 @@ fn tier_name_duplicate_points_at_the_name_attribute() -> Result<(), String> {
 fn layout_range_error_points_at_the_prop() -> Result<(), String> {
     assert_single_at(
         "layout-gap",
-        "    <Layout animationMs={99999} />",
+        "    <Layout gap={px(9999)} />",
         "CT003",
-        "animationMs={99999}",
+        "gap={px(9999)}",
     )
 }
 

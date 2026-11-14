@@ -451,12 +451,12 @@ mod tests {
     #[test]
     fn load_warnings_are_reported_when_a_config_is_applied() {
         let store = ConfigStore::new(Config::builtin());
-        let config = Config::builtin().with_warnings(vec![diag(codes::MOTION_IGNORES_LAYOUT)]);
+        let config = Config::builtin().with_warnings(vec![diag(codes::NOT_APPLIED)]);
         let ReloadOutcome::Applied { diagnostics, .. } = store.replace(config) else {
             panic!("applied");
         };
         assert_eq!(diagnostics.len(), 1);
-        assert_eq!(diagnostics[0].code, codes::MOTION_IGNORES_LAYOUT);
+        assert_eq!(diagnostics[0].code, codes::NOT_APPLIED);
     }
 
     #[test]

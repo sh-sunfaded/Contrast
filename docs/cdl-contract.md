@@ -19,10 +19,10 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
 | `Tiers` | なし | `FocusTier` \| `Tier` | `Contrast` の中で 1 つまで。`FocusTier` は `Tiers` の中で 1 つまで（`E4006`）。省略すると組み込みの段階（フォーカス `l=1`、フォーカス外 `l=0.8`、枠なし） |
 | `FocusTier` | `l: number`（0 より大きく 1 以下）、`ringColor?: Color` | なし | `Tiers` の中でちょうど 1 つ（無いと CT061） |
 | `Tier` | `l: number`（0 より大きく 1 以下）、`ringColor?: Color`、`name?: string`（診断用。空・重複は CT065） | なし | `Tiers` の中で 0 個か 1 個（この版。0 個は減光なし。2 個以上は CT064） |
-| `Motion` | なし | `Scroll` \| `Resize` \| `Workspace` \| `Focus` \| `Open` \| `Close` | `Contrast` の中で 1 つまで。省略すると全種別が即時（旧 `Layout.animation*` に従う）。種別の重複は CT073 |
+| `Motion` | なし | `Scroll` \| `Resize` \| `Workspace` \| `Focus` \| `Open` \| `Close` | `Contrast` の中で 1 つまで。省略すると全種別が即時。種別の重複は CT073 |
 | `Scroll` / `Resize` / `Workspace` / `Focus` / `Open` / `Close` | `curve?: string`、`duration?: Duration` | なし | `Motion` の中で各 1 つまで（CT073） |
 | `Workspaces` | `count: number'（整数、1〜32）、`mode?: "fixed" \| "dynamic"`（既定 `"fixed"`） | なし | — |
-| `Layout` | `gap?: Length`、`outerGap?: Length`、`mode?: "equal" \| "scrolling"`（既定 `"equal"`）、`defaultColumnWidth?: number`、`presetColumnWidths?: string`、`windowHeightPresets?: string`、`animation?: "easing" \| "spring"`（既定 `"easing"`）、`animationMs?: number`（既定 0） | なし | — |
+| `Layout` | `gap?: Length`、`outerGap?: Length`、`mode?: "equal" \| "scrolling"`（既定 `"equal"`）、`defaultColumnWidth?: number`、`presetColumnWidths?: string`、`windowHeightPresets?: string` | なし | — |
 | `Cursor` | `theme?: string`、`size?: number`、`hideAfterInactiveMs?: number` | なし | — |
 | `Screenshot` | `path?: string`（`~` と strftime の `%Y` などを展開。既定は niri と同じ `~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png`。空文字列で保存しない） | なし | — |
 | `HotkeyOverlay` | `skipAtStartup?: boolean`（起動時にオーバーレイを開かない。niri の `skip-at-startup`）、`hideNotBound?: boolean`（束縛の無い行を隠す。`hide-not-bound`） | なし | — |
@@ -36,8 +36,8 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
 - `Layout.mode` はスクロール列レイアウト（core-spec 12 節）を選ぶ。起動時に決まり、リロードでは変わらない（変えるには再起動）。
   `defaultColumnWidth` は新しい列の幅（0 より大きく 1 以下の割合、既定 0.5）。`presetColumnWidths` はプリセットの列幅で、
   割合を空白かコンマで区切って 1〜8 個（既定 `0.33333 0.5 0.66667`）。割合は分母 1000 に丸める。範囲外・不正な書式は CT003。
-- `Layout.animationMs` は窓のアニメーションの長さ（0〜2000 の整数ミリ秒。0 で無効、既定 0）。0 より大きいと、core が決めた窓の行き先の矩形へ、
-  今の矩形から ease-out で近づける。範囲外・非整数は CT003。リロードで更新する。
+- アニメーションは `<Motion>`（下の「Motion」の節）で決める。旧 `Layout.animation`・`Layout.animationMs` は廃止した（書くと CDL が未知の prop（E4003、位置はその prop）として拒否する。移行の書き方は Motion の節）。
+  `<Motion>` が無い設定は全種別が即時。窓の矩形は、core が決めた行き先の矩形へ、種別の曲線で今の矩形から近づく。リロードで更新する。
   - 移動と大きさの変化: 補間した矩形を、毎フレーム窓に configure する（枠・影・隙間も補間した矩形に従う）。
     クライアントが追いつくまでの数フレームは、窓の中身と枠にずれが出ることがある。
   - ワークスペースの切り替え: 新しく見える窓が、番号が大きくなる向きなら下から、小さくなる向きなら上から滑り込む。
@@ -71,7 +71,7 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
 - `Input` はタッチパッドの設定。libinput のデバイスが追加されたとき（起動時の既存デバイスを含む）とリロードのときに、タッチパッドに適用する。
   デバイスが対応しない項目はログに出して無視する。`accelSpeed` が -1〜1 の外（または非数）なら CT003。
 - `Appearance`、`Workspaces`、`Input` を省略したときは `Settings::builtin()` の値を使う。
-- 列挙の prop（`modKey`・`Layout.mode`・`Layout.animation`・`Startup.ipc`・`Workspaces.mode`）は、スキーマ上は文字列リテラルのユニオン
+- 列挙の prop（`modKey`・`Layout.mode`・`Startup.ipc`・`Workspaces.mode`）は、スキーマ上は文字列リテラルのユニオン
   （`"alt" | "super"` など。`cdl_host::Literal` と `Ty::union`）で、範囲外の値は CDL が評価前に **E4004**（位置はその値、メッセージにユニオン）で拒否する。
   変数や配列に通すときは、型注釈もリテラルのユニオンにする（`ipc?: string` は E4004。`ipc?: "niri"` と書く）。
   `Keybind.action` は未知の action の案内文（CT020）を保つため `string` のままで、Contrast の変換で検査する。
@@ -91,11 +91,11 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
 
 ### Motion（U3。`docs/ui-spec.md` §4.2・§5）
 
-- 種別は要素名で固定（`Scroll`・`Resize`・`Workspace`・`Focus`・`Open`・`Close`）。書かなかった種別は**即時**。`<Motion>` ごと省略したときは、旧 `Layout.animation` / `animationMs` に従う（今までの挙動）。
+- 種別は要素名で固定（`Scroll`・`Resize`・`Workspace`・`Focus`・`Open`・`Close`）。書かなかった種別は**即時**。`<Motion>` ごと省略したときも全種別が即時（組み込みの既定も同じ。旧 `animationMs` の既定 0 と同じ見た目）。
 - `curve`（`string`のまま。未知の名前は CT071）: `easeOutCubic`（既定）・`easeOutQuad`・`easeOutExpo`・`easeInOutCubic`・`niriSpring`。`niriSpring` は niri のバネ（互換専用）で、長さを持たない。`Focus` には使えない。`linear` は無い。
 - `duration`（`Duration`）: CDL に Duration のリテラルは無く、`ms(150)` と書く（`sec(0.15)` も同じ 150ms。整数ミリ秒にならない小数は CDL の E5009）。`ms(-5)` は CDL を通るので、**範囲（0 以上 400 以下。INV-T1 の `MAX_MOTION_MS`。設定で上げられない）は Contrast の変換で検査する**（CT070）。0 は「その種別は動きなし」。`niriSpring` は INV-T1 の対象外で、`duration` との併記は CT072。
 - 既定の長さ: `Focus` は 120ms、ほかは 150ms。
-- 併存: `<Motion>` があるとき、旧 `Layout.animation`・`animationMs` は**無視**する。書かれていれば、その prop の位置に警告 CT074 を出す（読み込みは成功する。リロードの結果の診断に載る）。旧 prop は後の段階で廃止する。
+- 移行（旧 prop の廃止）: 旧 `Layout.animation="spring"`（`animationMs` が 0 でない）は、`<Scroll curve="niriSpring" />`・`<Resize …/>`・`<Workspace …/>`・`<Open …/>`・`<Close …/>` の 5 種別（`Focus` は書かない）。旧 `animation="easing"` と `animationMs={N}`（1〜400）は、5 種別に `curve="easeOutCubic" duration={ms(N)}`。旧 `animationMs` が 401 以上（旧上限は 2000）だった設定は INV-T1 の 400ms を超えるので書き直す（Contrast は切り詰めない）。`animationMs={0}` は `<Motion>` を書かない。旧 prop を書いた設定はリロードに失敗し、旧設定を保持する。
 - コンポジタの挙動（U3 段階 (b)(c)）: 命令（意味操作）ごとに矩形の動きの種別が 1 つ決まり（`contrast_policy::motion::kind_of`。`SwitchPresetColumnWidth` などは Resize、`SwitchWorkspace` などは Workspace、`FocusMonitor`・`MoveColumnToMonitor` を含む。それ以外と窓の出現・消滅・ジェスチャーは Scroll）、その命令の移動・リサイズは全部その種別の曲線・長さで動く。割り込みは「置き換え」で、始点は今表示している値（`niriSpring` だけ速度を引き継ぐ）。`Open`・`Close` は窓の出現・消滅の動き（見た目は透明度＋拡大で固定）。
   `Focus` はフォーカスの明度遷移で、窓ごとの減光の乗数を線形に補間する（時間 → 進行度 → 曲線 → 乗数）。矩形の動きと同時に走ってよい。履歴の無い窓は補間せず目標から始まり、閉じる窓は画面で見えていた乗数で止まる。`screenshot-window` は常に減光なし。リロードで `Tier` の `l` が変わったときは補間せず即時。`<Focus>` を書かなければ減光は今までどおり即時。命令→種別の対応のうち `FocusMonitor`・`MoveColumnToMonitor`・`MoveToWorkspace`・`ToggleFloating` は人間の確認待ち。
 - 診断の位置は原因の prop（`curve`・`duration`）。複数 prop にまたがる検査（`niriSpring` と `duration` の併記）と、種別の重複は要素の位置。
@@ -217,7 +217,6 @@ interface Policy     { windowOpen?: (w: WindowInfo) => Placement }
 | CT071 | `Motion` の未知の `curve`（位置は `curve` の属性） |
 | CT072 | `niriSpring` と `duration` の併記（位置は要素）、または `Focus` に `niriSpring`（位置は `curve` の属性） |
 | CT073 | `Motion` の中で同じ種別が 2 つ以上（位置は 2 つ目以降の要素） |
-| CT074 | 警告: `<Motion>` があるので、旧 `Layout.animation` / `animationMs` を無視する（位置はその prop） |
 
 CDL 自身の診断（`E0001`〜）は、そのままのコードで `ConfigDiagnostic` に写す。位置は `file:line:col`。
 値木の診断は、原因の prop が 1 つに決まるもの（範囲外・形式の誤り・重複・未知の action など。CDL 0.2.1 の `Node::prop_span`）はその prop の属性（`name={値}`）の位置を示す。複数の prop にまたがるもの（`set-window-height` の `height` / `heightPx`、`Env` の `name` / `value` の複合検査、CT063 など）と、prop が無いもの（`spawn` の `command` 忘れなど）は要素の位置を示す。どちらもメッセージに prop 名を書く。

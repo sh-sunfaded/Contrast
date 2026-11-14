@@ -1,17 +1,15 @@
 //! 窓の矩形の補間（移動・大きさの変化・ワークスペース切替のアニメーション）。
 //!
 //! 補間するのは、窓ごとの「フレーム」（隙間を引いたあと、枠の外側の矩形）。配置の判断は core がするので、
-//! ここは core が決めた行き先の矩形へ、今の矩形から滑らかに近づけるだけ。曲線は、ease-out の 3 次（`Layout.animationMs`）か、
-//! niri の既定のバネ（`Layout.animation="spring"`。窓の移動・リサイズ・ビューの横移動は stiffness 800、ワークスペースの切り替えで
+//! ここは core が決めた行き先の矩形へ、今の矩形から滑らかに近づけるだけ。曲線は、`<Motion>` の種別ごとの easing か、
+//! niri の既定のバネ（`niriSpring`。窓の移動・リサイズ・ビューの横移動は stiffness 800、ワークスペースの切り替えで
 //! 新しく見える窓は 1000。どちらも減衰比 1.0）。時刻は呼び出し側が渡す（この型は時計を読まない）。
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
 
 use contrast_core::{Rect, WindowId};
-use contrast_policy::{
-    AnimationKind, EasingCurve, LayoutSettings, MotionCurve, MotionKind, MotionSettings,
-};
+use contrast_policy::{EasingCurve, MotionCurve, MotionKind, MotionSettings};
 
 use crate::spring::{Spring, SpringParams};
 
@@ -26,26 +24,15 @@ pub enum Motion {
     Eased(EasingCurve, Duration),
 }
 
-/// 種別 `kind` の動きの曲線。`motion` が `Some`（`<Motion>` がある）なら Motion に従い、書かれていない種別は即時。
-/// `None` なら旧 `Layout.animation` / `animationMs`（`legacy`）に従う（`<Motion>` が無い設定の挙動は変わらない）。
-pub fn motion_for(
-    kind: MotionKind,
-    motion: Option<MotionSettings>,
-    legacy: &LayoutSettings,
-) -> Motion {
-    match motion {
-        None => match legacy.animation {
-            AnimationKind::Spring if legacy.animation_ms != 0 => Motion::Spring,
-            _ => Motion::Easing(Duration::from_millis(u64::from(legacy.animation_ms))),
-        },
-        Some(m) => match m.spec(kind) {
-            None => Motion::Easing(Duration::ZERO),
-            Some(spec) => match spec.curve {
-                MotionCurve::NiriSpring => Motion::Spring,
-                MotionCurve::Easing(curve) => {
-                    Motion::Eased(curve, Duration::from_millis(u64::from(spec.duration_ms)))
-                }
-            },
+/// 種別 `kind` の動きの曲線。`<Motion>` に書かれていない種別（`motion` が `None` を含む）は即時。
+pub fn motion_for(kind: MotionKind, motion: Option<MotionSettings>) -> Motion {
+    match motion.and_then(|m| m.spec(kind)) {
+        None => Motion::Easing(Duration::ZERO),
+        Some(spec) => match spec.curve {
+            MotionCurve::NiriSpring => Motion::Spring,
+            MotionCurve::Easing(curve) => {
+                Motion::Eased(curve, Duration::from_millis(u64::from(spec.duration_ms)))
+            }
         },
     }
 }
@@ -470,14 +457,6 @@ mod tests {
 
     use contrast_policy::{MotionCurve, MotionSpec};
 
-    fn legacy(kind: AnimationKind, ms: u32) -> LayoutSettings {
-        LayoutSettings {
-            animation: kind,
-            animation_ms: ms,
-            ..LayoutSettings::default()
-        }
-    }
-
     fn spec(curve: MotionCurve, ms: u32) -> MotionSpec {
         MotionSpec {
             curve,
@@ -486,27 +465,20 @@ mod tests {
     }
 
     #[test]
-    fn without_a_motion_element_the_legacy_settings_apply_to_every_kind() {
-        use MotionKind::{Resize, Scroll, Workspace};
-        for kind in [Scroll, Resize, Workspace] {
-            assert_eq!(
-                motion_for(kind, None, &legacy(AnimationKind::Spring, 150)),
-                Motion::Spring
-            );
-            assert_eq!(
-                motion_for(kind, None, &legacy(AnimationKind::Easing, 100)),
-                Motion::Easing(Duration::from_millis(100))
-            );
-            // `animationMs` が 0 なら、spring でも補間しない。
-            assert_eq!(
-                motion_for(kind, None, &legacy(AnimationKind::Spring, 0)),
-                Motion::Easing(Duration::ZERO)
-            );
+    fn without_a_motion_element_every_kind_is_instant() {
+        use MotionKind::{Close, Focus, Open, Resize, Scroll, Workspace};
+        for kind in [Scroll, Resize, Workspace, Focus, Open, Close] {
+            assert_eq!(motion_for(kind, None), Motion::Easing(Duration::ZERO));
         }
+        // 組み込みの既定（旧 `animationMs = 0` と同じ見た目）も即時。
+        assert_eq!(
+            motion_for(Scroll, contrast_policy::Settings::builtin().motion),
+            Motion::Easing(Duration::ZERO)
+        );
     }
 
     #[test]
-    fn a_motion_element_selects_curve_and_duration_per_kind_and_ignores_the_legacy_settings() {
+    fn a_motion_element_selects_curve_and_duration_per_kind() {
         use MotionKind::{Resize, Scroll, Workspace};
         let mut m = MotionSettings::default();
         m.set(
@@ -514,15 +486,14 @@ mod tests {
             spec(MotionCurve::Easing(EasingCurve::EaseOutQuad), 200),
         );
         m.set(Resize, spec(MotionCurve::NiriSpring, 0));
-        let old = legacy(AnimationKind::Easing, 999);
         assert_eq!(
-            motion_for(Scroll, Some(m), &old),
+            motion_for(Scroll, Some(m)),
             Motion::Eased(EasingCurve::EaseOutQuad, Duration::from_millis(200))
         );
-        assert_eq!(motion_for(Resize, Some(m), &old), Motion::Spring);
+        assert_eq!(motion_for(Resize, Some(m)), Motion::Spring);
         // 書かれていない種別は即時。
         assert_eq!(
-            motion_for(Workspace, Some(m), &old),
+            motion_for(Workspace, Some(m)),
             Motion::Easing(Duration::ZERO)
         );
         // 長さ 0 の easing も即時。
@@ -532,7 +503,7 @@ mod tests {
             spec(MotionCurve::Easing(EasingCurve::EaseOutCubic), 0),
         );
         assert_eq!(
-            motion_for(Scroll, Some(z), &old),
+            motion_for(Scroll, Some(z)),
             Motion::Eased(EasingCurve::EaseOutCubic, Duration::ZERO)
         );
     }

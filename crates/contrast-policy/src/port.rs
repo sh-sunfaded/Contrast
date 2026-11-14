@@ -169,8 +169,8 @@ pub trait Policy {
         crate::tier::Tiers::builtin()
     }
 
-    /// 動き（Motion）。`None` は `<Motion>` が書かれていない（旧 `layout_settings()` の `animation*` に従う）。
-    /// `Some` のときは旧 `animation*` を無視し、書かれていない種別は即時。
+    /// 動き（Motion）。`None` は `<Motion>` が書かれていない = 全種別が即時。
+    /// `Some` のときも、書かれていない種別は即時。
     fn motion(&self) -> Option<crate::motion::MotionSettings> {
         None
     }

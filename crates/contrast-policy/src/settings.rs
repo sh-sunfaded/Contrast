@@ -119,16 +119,6 @@ impl Default for Shadow {
     }
 }
 
-/// 窓の移動・大きさの変化・ワークスペース切替の補間の曲線。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum AnimationKind {
-    /// ease-out の 3 次。かける時間は `animation_ms`。
-    #[default]
-    Easing,
-    /// niri の既定のバネ（窓の移動・リサイズ・ビューの横移動、ワークスペースの切り替え）。`animation_ms` が 0 なら補間しない。
-    Spring,
-}
-
 /// 窓の並べ方の設定。
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct LayoutSettings {
@@ -144,17 +134,10 @@ pub struct LayoutSettings {
     pub preset_column_widths: Vec<contrast_core::Ratio>,
     /// プリセットの窓の高さ。空なら core の既定（1/3・1/2・2/3）。
     pub window_height_presets: Vec<contrast_core::Ratio>,
-    /// 窓の移動・大きさの変化・ワークスペース切替の補間にかける時間（ミリ秒。`Easing` のとき）。0 で補間しない（`Spring` も）。
-    pub animation_ms: u32,
-    /// 補間の曲線。
-    pub animation: AnimationKind,
 }
 
 /// `set-window-height` の `heightPx` の上限（px）。
 pub const MAX_WINDOW_HEIGHT_PX: u32 = 16_384;
-
-/// `animation_ms` の上限（ミリ秒）。
-pub const MAX_ANIMATION_MS: u32 = 2000;
 
 /// ホットキーのオーバーレイの設定（niri の `hotkey-overlay`）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -267,8 +250,8 @@ pub struct Settings {
     pub data_control_clients: Vec<String>,
     /// キーバインド（並びの順）。
     pub keybinds: Vec<KeyBinding>,
-    /// 動き（Motion）。`None` は `<Motion>` が書かれていない（旧 `layout.animation*` に従う）。
-    /// `Some` のときは旧 `layout.animation*` を無視し、書かれていない種別は即時。
+    /// 動き（Motion）。`None` は `<Motion>` が書かれていない = 全種別が即時（`Some` で何も書かないのと同じ）。
+    /// `Some` のときは、書かれていない種別は即時。組み込みの既定は `None`（旧 `animationMs = 0` と同じ見た目）。
     pub motion: Option<crate::motion::MotionSettings>,
 }
 

@@ -35,6 +35,27 @@ fn load(mod_key: ModKey) -> Result<Settings, String> {
     }
 }
 
+/// 基準線の動き: Scroll・Resize・Workspace・Open・Close が `niriSpring`、`Focus` は書かない（減光なし）。
+fn assert_niri_spring_motion(m: Option<contrast_policy::MotionSettings>) -> Result<(), String> {
+    use contrast_policy::{MotionCurve, MotionKind, MotionSpec};
+    let spring = Some(MotionSpec {
+        curve: MotionCurve::NiriSpring,
+        duration_ms: 0,
+    });
+    let m = m.ok_or("<Motion> が無い")?;
+    for k in [
+        MotionKind::Scroll,
+        MotionKind::Resize,
+        MotionKind::Workspace,
+        MotionKind::Open,
+        MotionKind::Close,
+    ] {
+        assert_eq!(m.spec(k), spring, "{k:?}");
+    }
+    assert_eq!(m.spec(MotionKind::Focus), None);
+    Ok(())
+}
+
 /// 修飾キーを `mod` に足した `Mods`。
 fn with(mod_key: ModKey, f: impl FnOnce(&mut Mods)) -> Mods {
     let mut mods = mod_key.mods();
@@ -49,8 +70,8 @@ fn the_config_loads_without_diagnostics() -> Result<(), String> {
     assert_eq!(s.layout.mode, contrast_core::LayoutMode::Scrolling);
     assert_eq!(s.layout.gap, 16);
     assert_eq!(s.layout.outer_gap, 16);
-    assert_eq!(s.layout.animation_ms, 150);
-    assert_eq!(s.layout.animation, contrast_policy::AnimationKind::Spring);
+    // 動きは `<Motion>`（niri の既定のバネ）。Focus は書かない。
+    assert_niri_spring_motion(s.motion)?;
     assert_eq!(s.layout.preset_column_widths.len(), 3);
     assert_eq!(s.appearance.border_width, 4);
     assert_eq!(s.appearance.radius, 0);
