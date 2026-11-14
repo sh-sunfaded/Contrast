@@ -48,7 +48,7 @@ fn defaults_keep_the_current_look() -> Result<(), String> {
 #[test]
 fn layout_appearance_and_cursor_are_read() -> Result<(), String> {
     let body = r##"
-    <Appearance borderWidth={px(4)} focusColor={color("#7fc8ff")} radius={px(12)} shadowBlur={px(30)}
+    <Appearance borderWidth={px(4)} radius={px(12)} shadowBlur={px(30)}
       shadowOffsetX={px(0)} shadowOffsetY={px(-5)} shadowColor={color("#00000080")} inactiveBorderWidth={px(2)} />
     <Layout gap={px(16)} outerGap={px(8)} />
     <Cursor theme="Cecilia" size={24} />"##;
@@ -74,15 +74,15 @@ fn out_of_range_values_are_ct003() -> Result<(), String> {
         ("gap_frac", "<Layout outerGap={px(1.5)} />"),
         (
             "radius_neg",
-            r##"<Appearance borderWidth={px(1)} focusColor={color("#fff")} radius={px(-2)} />"##,
+            r##"<Appearance borderWidth={px(1)} radius={px(-2)} />"##,
         ),
         (
             "shadow_big",
-            r##"<Appearance borderWidth={px(1)} focusColor={color("#fff")} shadowBlur={px(9999)} />"##,
+            r##"<Appearance borderWidth={px(1)} shadowBlur={px(9999)} />"##,
         ),
         (
             "offset_big",
-            r##"<Appearance borderWidth={px(1)} focusColor={color("#fff")} shadowOffsetX={px(-600)} />"##,
+            r##"<Appearance borderWidth={px(1)} shadowOffsetX={px(-600)} />"##,
         ),
         ("size_small", r#"<Cursor size={4} />"#),
         ("size_big", r#"<Cursor size={1000} />"#),
@@ -340,5 +340,27 @@ fn hotkey_overlay_defaults_to_niri_and_can_skip_at_startup_and_hide_not_bound() 
     assert!(!one.hotkey_overlay.skip_at_startup && one.hotkey_overlay.hide_not_bound);
     let bad = load("hotkey-bad", "<HotkeyOverlay skipAtStartup=\"yes\" />")?;
     assert!(bad.is_err());
+    Ok(())
+}
+
+#[test]
+fn border_width_is_optional_and_defaults_to_no_border() -> Result<(), String> {
+    // 省略 = 0 = 枠なし（組み込みの既定と同じ）。
+    let s = load(
+        "no_border_width",
+        r##"<Appearance background={color("#102030")} />"##,
+    )?
+    .map_err(|d| format!("{d:?}"))?;
+    assert_eq!(s.appearance.border_width, 0);
+    assert_eq!(
+        s.appearance.border_width,
+        Settings::builtin().appearance.border_width
+    );
+    // 指定すればその太さ。範囲外は今までどおり CT003。
+    let s = load("with_border_width", "<Appearance borderWidth={px(2)} />")?
+        .map_err(|d| format!("{d:?}"))?;
+    assert_eq!(s.appearance.border_width, 2);
+    let bad = load("bad_border_width", "<Appearance borderWidth={px(999)} />")?;
+    assert_eq!(bad.err(), Some(vec!["CT003".to_owned()]));
     Ok(())
 }

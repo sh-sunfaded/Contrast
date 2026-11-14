@@ -288,12 +288,16 @@ impl Policy for ConfigStore {
         self.config().settings.appearance.border_width
     }
 
-    fn focus_border_color(&self) -> [f32; 4] {
-        self.config().settings.appearance.focus_color
+    fn focus_border_color(&self) -> Option<[f32; 4]> {
+        self.config().settings.appearance.tiers.focus_ring()
     }
 
     fn unfocused_border_color(&self) -> Option<[f32; 4]> {
-        self.config().settings.appearance.border_color
+        self.config().settings.appearance.tiers.unfocused_ring()
+    }
+
+    fn tiers(&self) -> crate::tier::Tiers {
+        self.config().settings.appearance.tiers.clone()
     }
 
     fn workspace_count(&self) -> u8 {

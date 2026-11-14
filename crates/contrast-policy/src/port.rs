@@ -157,13 +157,23 @@ pub trait Policy {
     /// フォーカス枠の太さ（論理ピクセル、0 で枠なし）。窓はタイルからこの幅だけ内側に縮めて置く。
     fn border_width(&self) -> i32;
 
-    /// フォーカス枠の色（RGBA、0.0〜1.0）。
-    fn focus_border_color(&self) -> [f32; 4];
+    /// フォーカス窓の枠（ring）の色（RGBA、0.0〜1.0。`FocusTier.ringColor`）。`None` なら描かない。
+    fn focus_border_color(&self) -> Option<[f32; 4]>;
 
-    /// フォーカス外の窓の枠の色（RGBA、0.0〜1.0）。`None` なら描かない。
+    /// フォーカス外の窓の枠（ring）の色（RGBA、0.0〜1.0。`Tier.ringColor`）。`None` なら描かない。
     fn unfocused_border_color(&self) -> Option<[f32; 4]> {
         None
     }
+    /// 注意の段階（フォーカス段階とフォーカス外の段階）。既定は組み込みの段階。
+    fn tiers(&self) -> crate::tier::Tiers {
+        crate::tier::Tiers::builtin()
+    }
+
+    /// フォーカス外の窓の画素に掛ける乗数（0〜1、1 で減光なし）。窓の矩形・枠・影には掛けない。
+    fn unfocused_dim(&self) -> f32 {
+        self.tiers().unfocused_dim()
+    }
+
     /// ワークスペースの数（1 以上）。
     fn workspace_count(&self) -> u8;
 

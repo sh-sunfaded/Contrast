@@ -89,8 +89,8 @@ mod tests {
         fn border_width(&self) -> i32 {
             0
         }
-        fn focus_border_color(&self) -> [f32; 4] {
-            [0.0; 4]
+        fn focus_border_color(&self) -> Option<[f32; 4]> {
+            None
         }
         fn workspace_count(&self) -> u8 {
             4

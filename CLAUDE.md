@@ -2,7 +2,7 @@
 
 ## このリポジトリ
 Rust + Smithay の Wayland コンポジタ Contrast。
-現在の作業対象は `crates/contrast-core` だけ。他のクレートには触れない。
+作業対象は既定で `crates/contrast-core` だけ。`crates/contrast-policy`・`crates/contrast-policy-cdl`・`crates/contrast-compositor` は、指示で明示されたときだけ触る。指示に無いクレートには触れない。
 - 仕様: `docs/core-spec.md`（「暫定決定」節を含めて正とする）
 - 仕様への疑問: `docs/questions.md`
 
@@ -12,6 +12,8 @@ CDL（Contrast Document Language）は別リポジトリ。contrast-core は CDL
 1. 次のパスは人間が書く仕様。読むだけで、編集・作成・削除しない。
    - `crates/contrast-core/tests/spec/`
    - `crates/contrast-core/src/verification/spec/`
+   - `crates/contrast-compositor/tests/spec/`
+   - `crates/contrast-policy-cdl/tests/spec/`
    - `CLAUDE.md`, `.claude/`, `docs/core-spec.md`, 各 `Cargo.toml`
    - `scripts/`, `.github/`, `rust-toolchain.toml`, `flake.nix`, 各 `clippy.toml` / `rustfmt.toml` / `deny.toml`
 2. 破壊的操作をしない: rm、ファイル削除、`git reset`、`git clean`、
@@ -21,6 +23,7 @@ CDL（Contrast Document Language）は別リポジトリ。contrast-core は CDL
 4. 本体コードで使用禁止: `unsafe`、`unwrap`、`expect`、`panic!`、`unreachable!`、
    `todo!`、`unimplemented!`、添字アクセス `a[i]`、オーバーフローしうる素の算術。
    `#[allow(...)]` で lint を黙らせない。
+   本規則は、contrast-core 以外でも、新しく足すコードに適用する。
 5. `docs/core-spec.md` の「公開 API」のシグネチャを変えない。
    `#[non_exhaustive]` な enum への variant 追加は、仕様の「エラー」節に
    列挙されたものに限る。それ以外が必要なら作業を止めて理由を報告する。
@@ -36,11 +39,13 @@ CDL（Contrast Document Language）は別リポジトリ。contrast-core は CDL
   その項目に依存しない作業だけを続ける。依存する作業は止める。
 - 完了前に `scripts/verify.sh --full` を実行し、末尾 30 行を報告に貼る。
 - コミットは `core(pN): <要約>` 形式。小さい単位で複数回コミットしてよい。push はしない。
+  core 以外は `<crate>: <要約>` 形式（crate は policy / cdl / compositor）。
 
 ## コマンド
 - `scripts/verify.sh`          fmt / clippy / no_std ビルド / 層検査 / test（256 ケース）
 - `scripts/verify.sh --full`   上記 + test 10,000 ケース + 差分ミュータント
 - `cargo test -p contrast-core --test spec <名前>`  仕様テスト（tests/spec/main.rs が入口。名前でフィルタ）
+- `cargo clippy -p <crate> --all-targets -- -D warnings` / `cargo test -p <crate>`  core 以外の検査（verify.sh は core だけを見る）
 
 ## 書き方
 - 公開・非公開を問わず全項目に doc コメント。モジュール冒頭に役割と
@@ -57,3 +62,4 @@ CDL（Contrast Document Language）は別リポジトリ。contrast-core は CDL
 2. 追加したテストとハーネス
 3. `verify.sh --full` の末尾 30 行
 4. 仕様上の疑問（`docs/questions.md` に書いたもの）と、それで止めた作業
+指示が報告ファイルを指定したときは、そこに書く（TUI からコピーできないため）。

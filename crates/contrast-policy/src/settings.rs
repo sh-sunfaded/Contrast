@@ -81,12 +81,8 @@ pub const MAX_COOLDOWN_MS: u32 = 3_600_000;
 /// 見た目の設定。色は RGBA（0.0〜1.0）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Appearance {
-    /// 枠の太さ（px、0 で枠なし）。
+    /// フォーカス窓の枠の太さ（px、0 で枠なし）。枠を描くのは、その窓の段階に `ring_color` があり、太さが 1 以上のときだけ。
     pub border_width: i32,
-    /// フォーカス窓の枠の色。
-    pub focus_color: [f32; 4],
-    /// フォーカス外の窓の枠の色。`None` なら描かない。
-    pub border_color: Option<[f32; 4]>,
     /// 背景色。
     pub background: [f32; 4],
     /// 窓と枠の角の丸め半径（px、0 で角丸なし）。
@@ -95,6 +91,8 @@ pub struct Appearance {
     pub shadow: Shadow,
     /// フォーカス外の窓の枠の太さ（px）。`None` なら `border_width` と同じ。窓の大きさは `border_width` で決まる。
     pub inactive_border_width: Option<i32>,
+    /// 注意の段階（フォーカス段階とフォーカス外の段階。減光の乗数と枠の色）。
+    pub tiers: crate::tier::Tiers,
 }
 
 /// 窓の影。
@@ -320,13 +318,12 @@ impl Settings {
         Self {
             mod_key: ModKey::Alt,
             appearance: Appearance {
-                border_width: 3,
-                focus_color: rgba8([0x66, 0xa6, 0xff, 0xff]),
-                border_color: None,
+                border_width: 0,
                 background: rgba8([0x1f, 0x24, 0x33, 0xff]),
                 radius: 0,
                 shadow: Shadow::default(),
                 inactive_border_width: None,
+                tiers: crate::tier::Tiers::builtin(),
             },
             workspaces: 4,
             workspace_mode: contrast_core::WorkspaceMode::Fixed,

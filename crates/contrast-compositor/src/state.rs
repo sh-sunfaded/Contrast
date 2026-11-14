@@ -84,6 +84,8 @@ pub struct Contrast {
     pub shell: Shell,
     /// 枠の帯のバッファ（帯 1 本に 1 つ。フォーカス窓の 4 本、続けてフォーカス外の窓の分）。Id を保って描画の差分追跡を効かせる。
     pub border_buffers: Vec<SolidColorBuffer>,
+    /// 減光する窓の要素の `Id`（乗数が変わった窓の要素を、差分追跡に新しい要素として見せる）。
+    pub dim_ids: crate::render::DimIds,
     /// キーバインドとして握りつぶした押下中のキー（離したときも素通ししない）。
     pub suppressed_keys: Vec<Keycode>,
     /// ホイールの横方向の目盛りの足し込み（ホイールのバインド用）。
@@ -249,6 +251,7 @@ impl Contrast {
             core,
             shell: Shell::default(),
             border_buffers: Default::default(),
+            dim_ids: Default::default(),
             suppressed_keys: Vec::new(),
             wheel_horizontal: crate::input::wheel::ScrollTracker::new(
                 crate::input::wheel::WHEEL_TICK_V120,

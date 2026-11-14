@@ -10,7 +10,7 @@ use smithay::{
         Bind, ExportMem, ImportDma, Offscreen, TextureMapping,
         damage::OutputDamageTracker,
         element::{
-            AsRenderElements, Kind,
+            AsRenderElements, Element, Kind,
             memory::MemoryRenderBufferRenderElement,
             render_elements,
             solid::SolidColorRenderElement,
@@ -28,12 +28,15 @@ use smithay::{
 
 use crate::state::Contrast;
 
+pub(crate) mod dim;
+#[cfg(test)]
+mod dim_tests;
 pub(crate) mod look;
 pub mod offscreen;
 mod rounded;
 
 use look::Shaders;
-use rounded::RoundedSurface;
+pub use rounded::{DimIds, StyledSurface};
 
 /// linux-dmabuf の既定のフィードバック: 描画デバイス（`renderer` の EGL デバイスの render node）と、
 /// レンダラーが受け付けるフォーマット。デバイスを特定できなければ `None`（v3 で公開する）。
@@ -78,8 +81,8 @@ render_elements! {
     Memory=MemoryRenderBufferRenderElement<GlesRenderer>,
     /// 窓・レイヤー面・クライアントが指定したカーソルの面。
     Surface=WaylandSurfaceRenderElement<GlesRenderer>,
-    /// 角丸で描く窓の面。
-    Rounded=RoundedSurface,
+    /// 角丸・減光で描く窓の面。
+    Rounded=StyledSurface<WaylandSurfaceRenderElement<GlesRenderer>>,
     /// 枠の輪と影（ピクセルシェーダ）。
     Pixel=PixelShaderElement,
     /// 開く・閉じる途中の窓（オフスクリーンのテクスチャを拡大・半透明にしたもの）。
@@ -138,7 +141,9 @@ pub fn scene_elements(
     cursor: Vec<SceneElement>,
 ) -> Result<Vec<SceneElement>, RenderError> {
     let appearance = state.policy.appearance();
-    let wants_shaders = appearance.radius > 0 || appearance.shadow.blur > 0;
+    let unfocused_dim = state.policy.unfocused_dim();
+    let wants_shaders =
+        appearance.radius > 0 || appearance.shadow.blur > 0 || dim::is_dimming(unfocused_dim);
     let shaders = if wants_shaders {
         Shaders::get(renderer)
     } else {
@@ -256,6 +261,15 @@ pub fn scene_elements(
             .collect()
     };
     let windows_start = elements.len();
+    // 減光: フォーカス窓と全画面の窓は減光しない。フォーカス外の窓は、要素ごとに同じ乗数（ポップアップ・サブサーフェスを含む）。
+    let focus_id = state.core.view().focus();
+    let fullscreen_ids: Vec<contrast_core::WindowId> = state
+        .windows_on(output)
+        .iter()
+        .filter(|w| w.state == contrast_core::WindowState::Fullscreen)
+        .map(|w| w.id)
+        .collect();
+    state.dim_ids.begin_frame();
     let ordered: Vec<(smithay::desktop::Window, contrast_core::WindowId)> = state
         .space
         .elements()
@@ -280,17 +294,37 @@ pub fn scene_elements(
         let (mine, rest): (Vec<_>, Vec<_>) = borders.into_iter().partition(|(bid, _)| *bid == id);
         borders = rest;
         elements.extend(mine.into_iter().map(|(_, e)| e));
+        let dim = dim::window_dim(
+            focus_id == Some(id),
+            fullscreen_ids.contains(&id),
+            unfocused_dim,
+        );
+        let dimmed = dim::is_dimming(dim);
+        let styled = if round.is_some() || dimmed {
+            shaders.as_ref()
+        } else {
+            None
+        };
+        let radius_px = if round.is_some() {
+            radius as f32 * scale as f32
+        } else {
+            0.0
+        };
         for e in surfaces {
-            elements.push(match round {
-                Some(sh) => SceneElement::Rounded(RoundedSurface::new(
-                    e,
-                    sh.rounded.clone(),
-                    radius as f32 * scale as f32,
-                )),
+            elements.push(match styled {
+                Some(sh) => {
+                    let inner_id = e.id().clone();
+                    let mut s = StyledSurface::new(e, sh.rounded.clone(), radius_px, dim);
+                    if dimmed {
+                        s = s.with_id(state.dim_ids.styled_id(&inner_id, dim));
+                    }
+                    SceneElement::Rounded(s)
+                }
                 None => SceneElement::Surface(e),
             });
         }
     }
+    state.dim_ids.end_frame();
     // 窓の要素を持たない窓（開く途中で絵に置き換えたもの）の枠は、従来どおり窓より前。
     elements.splice(
         windows_start..windows_start,
@@ -538,17 +572,13 @@ fn ring_elements(
     };
     let mut out = Vec::new();
     // 枠は窓（フレーム）の外側に描く（niri のフォーカスリングと同じ）。
-    if let (Some(frame), Some(id)) = (state.focused_tile(output), state.core.view().focus()) {
+    if let (Some(frame), Some(id), Some(color)) = (
+        state.focused_tile(output),
+        state.core.view().focus(),
+        state.policy.focus_border_color(),
+    ) {
         let alpha = state.focused_open_look().map_or(1.0, |(a, _)| a);
-        out.push((
-            id,
-            ring(
-                crate::geometry::outset(frame, b),
-                b,
-                state.policy.focus_border_color(),
-                alpha,
-            ),
-        ));
+        out.push((id, ring(crate::geometry::outset(frame, b), b, color, alpha)));
     }
     if let Some(color) = state.policy.unfocused_border_color() {
         let thin = unfocused_width(b, state.policy.appearance().inactive_border_width);
@@ -618,7 +648,7 @@ pub(crate) fn unfocused_width(border: i32, inactive: Option<i32>) -> i32 {
     inactive.map_or(border, |w| w.clamp(0, border.max(0)))
 }
 
-/// フォーカス窓の枠（`focusColor`）と、設定があればフォーカス外の窓の枠（`borderColor`）の帯。
+/// フォーカス窓の枠（`FocusTier.ringColor`）と、設定があればフォーカス外の窓の枠（`Tier.ringColor`）の帯。
 fn border_elements(
     state: &mut Contrast,
     output: &Output,
@@ -630,10 +660,12 @@ fn border_elements(
     let focus_id = state.core.view().focus();
     let focused_alpha = state.focused_open_look().map_or(1.0, |(a, _)| a);
     // 枠は窓（フレーム）の外側に描く。
-    if let (Some(tile), Some(id)) = (state.focused_tile(output), focus_id)
-        && let Some(es) = edges(crate::geometry::outset(tile, b), b)
+    if let (Some(tile), Some(id), Some(color)) = (
+        state.focused_tile(output),
+        focus_id,
+        state.policy.focus_border_color(),
+    ) && let Some(es) = edges(crate::geometry::outset(tile, b), b)
     {
-        let color = state.policy.focus_border_color();
         bands.extend(es.into_iter().map(|e| (e, color, focused_alpha, id)));
     }
     if let Some(color) = state.policy.unfocused_border_color() {

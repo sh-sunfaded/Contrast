@@ -14,7 +14,7 @@ use contrast_policy::settings::{
 };
 use contrast_policy::{
     Action, AnimationKind, ConfigDiagnostic, KeyBinding, KeySpec, ModKey, Settings, StartupCommand,
-    codes,
+    TierSlot, TierSpec, codes, validate_tiers,
 };
 
 use crate::diag::{at, convert};
@@ -111,6 +111,7 @@ pub(crate) fn to_settings(
     for child in root.children() {
         match child.component() {
             "Appearance" => read_appearance(&mut cx, child, &mut settings),
+            "Tiers" => read_tiers(&mut cx, child, &mut settings),
             "Workspaces" => read_workspaces(&mut cx, child, &mut settings),
             "Layout" => read_layout(&mut cx, child, &mut settings),
             "Cursor" => read_cursor(&mut cx, child, &mut settings),
@@ -197,7 +198,7 @@ fn read_mod_key(cx: &mut Ctx<'_>, root: Node<'_>, default: ModKey) -> ModKey {
 
 /// `Appearance` を読む。
 fn read_appearance(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
-    if let Some(Px(width)) = cx.prop::<Px>(node, "borderWidth") {
+    if let Some(Px(width)) = cx.optional::<Px>(node, "borderWidth") {
         let max = u32::try_from(MAX_BORDER_WIDTH).unwrap_or(0);
         match integer_in(width, 0, max).and_then(|w| i32::try_from(w).ok()) {
             Some(w) => settings.appearance.border_width = w,
@@ -207,12 +208,6 @@ fn read_appearance(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
                 format!("`borderWidth` は 0〜{MAX_BORDER_WIDTH}px の整数（{width}px は使えない）"),
             ),
         }
-    }
-    if let Some(Rgba(c)) = cx.prop::<Rgba>(node, "focusColor") {
-        settings.appearance.focus_color = rgba8(c);
-    }
-    if let Some(Rgba(c)) = cx.optional::<Rgba>(node, "borderColor") {
-        settings.appearance.border_color = Some(rgba8(c));
     }
     if let Some(Rgba(c)) = cx.optional::<Rgba>(node, "background") {
         settings.appearance.background = rgba8(c);
@@ -235,6 +230,80 @@ fn read_appearance(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
     if let Some(v) = optional_px(cx, node, "inactiveBorderWidth") {
         settings.appearance.inactive_border_width = Some(v);
     }
+}
+
+/// `Tiers` を読む。`FocusTier` が無ければ CT061。検査（INV-A1）は `validate_tiers`。
+/// 誤りは、`TierError` の位置（`FocusTier` / n 番目の `Tier`）に対応する要素の位置に出す。
+fn read_tiers(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
+    let mut focus_node = None;
+    let mut rest_nodes = Vec::new();
+    for child in node.children() {
+        match child.component() {
+            "FocusTier" if focus_node.is_none() => focus_node = Some(child),
+            "FocusTier" => {}
+            "Tier" => rest_nodes.push(child),
+            other => cx.error(
+                child,
+                codes::TREE_MISMATCH,
+                format!("`<Tiers>` に `<{other}>` は置けない"),
+            ),
+        }
+    }
+    let Some(focus_node) = focus_node else {
+        cx.error(
+            node,
+            codes::TIER_MISSING_FOCUS,
+            "`<Tiers>` に `<FocusTier>` が要る",
+        );
+        return;
+    };
+    let before = cx.diags.len();
+    let focus = read_tier_spec(cx, focus_node, false);
+    let rest: Vec<Option<TierSpec>> = rest_nodes
+        .iter()
+        .map(|n| read_tier_spec(cx, *n, true))
+        .collect();
+    if cx.diags.len() != before {
+        return;
+    }
+    let (Some(focus), Some(rest)) = (focus, rest.into_iter().collect::<Option<Vec<_>>>()) else {
+        return;
+    };
+    match validate_tiers(&focus, &rest) {
+        Ok(tiers) => settings.appearance.tiers = tiers,
+        Err(errors) => {
+            for e in errors {
+                let target = match e.slot() {
+                    Some(TierSlot::Rest(i)) => rest_nodes.get(i).copied().unwrap_or(node),
+                    Some(TierSlot::Focus) => focus_node,
+                    None => match e {
+                        contrast_policy::TierError::SpreadTooLarge { .. } => focus_node,
+                        _ => node,
+                    },
+                };
+                cx.error(target, e.code(), e.message());
+            }
+        }
+    }
+}
+
+/// `FocusTier` / `Tier` 1 つの `l`・`ringColor`・`name` を読む。型の誤りは診断を足して `None`。
+fn read_tier_spec(cx: &mut Ctx<'_>, node: Node<'_>, with_name: bool) -> Option<TierSpec> {
+    let l = cx.prop::<f64>(node, "l");
+    let ring_color = cx
+        .optional::<Rgba>(node, "ringColor")
+        .map(|Rgba(c)| rgba8(c));
+    let name = if with_name {
+        cx.optional::<String>(node, "name")
+    } else {
+        None
+    };
+    // f64 → f32。範囲外は無限大になり、検査が CT060 にする。
+    Some(TierSpec {
+        l: l? as f32,
+        ring_color,
+        name,
+    })
 }
 
 /// 長さの prop（省略可）を、0〜`MAX_DECORATION_PX` の整数 px で読む。範囲外は診断を足して `None`。
