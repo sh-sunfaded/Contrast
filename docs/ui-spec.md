@@ -70,9 +70,9 @@
 - 曲線: `easeOutCubic`（既定）、`easeOutQuad`、`easeOutExpo`、`easeInOutCubic`、`niriSpring`（互換専用。Scroll・Resize・Workspace・Open・Close のみ。Focus には不可。長さを持たない）。`linear` は置かない
 - 既定の曲線: 全種別 `easeOutCubic` [実装済]（`<Motion>` を使うと Open・Close は従来の expo・quad ではなくこれになる。従来の見た目は `<Open curve="easeOutExpo"/>`・`<Close curve="easeOutQuad"/>` で再現できる）
 - 既定の長さ（仮置き）: Scroll・Resize・Workspace 150ms、Focus 120ms（新規・実機で決める）、Open・Close 150ms
-- 診断（実装済。CT074 = `<Motion>` と旧 `Layout.animation*` の併存の警告。起動時は表示されず、リロードの結果にだけ載る）: CT070（easing の長さが 0 未満・有限でない・400ms 超）、CT071（未知の曲線）、CT072（`niriSpring` と `duration` の併記、または `Focus` に `niriSpring`）、CT073（同種別の重複）。コードの空きは実装時に確認
+- 診断（実装済）: CT070（easing の長さが 0 未満・有限でない・400ms 超）、CT071（未知の曲線）、CT072（`niriSpring` と `duration` の併記、または `Focus` に `niriSpring`）、CT073（同種別の重複）。コードの空きは実装時に確認
 - 長さの型: `duration: Duration`、書式は `ms(150)`（CDL にリテラルは無い。`sec(0.15)`=150ms も通るが、整数ミリ秒にならない小数は E5009）。`ms(-5)` は CDL を通るので、**範囲（0 以上、400ms 以下）は Contrast の変換で検査する** [確定]（CDL 0.2.1 の実測。現在の policy crate には Motion も `duration` も未実装で、`Layout.animationMs`（`Number`）がある。U3 で Motion へ移す）
-- 旧 `Layout.animation`・`animationMs` は最終段階で廃止。併存期間は `<Motion>` があれば旧 prop は無視し、警告を出す [暫定]（Q7）。旧設定の写し方（`animation="spring"` → 5 種別の `niriSpring`、など）は U3 計画 §7.2
+- 旧 `Layout.animation`・`animationMs` は**廃止済み**（U3 段階 (d)、2026-11-14）。書くと CDL が未知 prop（E4003、その prop の位置）として拒否し、リロードは旧設定を保持する。`<Motion>` なし = 全種別即時（旧既定も即時だったので組み込みの見た目は不変）。CT074 は削除。`examples/niri.cdl` は `<Motion>` に `niriSpring` の 5 種別（Focus なし）を書く。移行の書き方は `docs/cdl-contract.md`
 - 対象外: オーバービューの開閉、ワークスペースのジェスチャー追従、スクリーンショット UI（物理・指追従・システム UI）
 
 ### 4.3 プロファイルと文脈 [暫定・未決を含む]（U4）
@@ -136,7 +136,7 @@
 | コンポジタ | CP-4 | キー層の照合・一覧 | [暫定]（U4） |
 | コンポジタ | CP-5 | 互換 IPC と記録 | [暫定] |
 | 設定 | CC-1・3 | Appearance → Tier | [実装済] |
-| 設定 | CC-2 | `Layout.animation*` → Motion | [暫定] |
+| 設定 | CC-2 | `Layout.animation*` → Motion | [実装済] |
 | 設定 | CC-5 | Keybind の同一性、`Env`・Profile | [暫定] |
 | CDL リポジトリ | — | **段階 C は完了（2026-11-14）**: CDL 0.2.1（タグ `v0.2.1` = `cbae4e8`）。破壊的変更は作らず、(A) prop の位置情報（`Node::prop_span`・`prop_error`）と (B) `Literal` の再公開（列挙を `Ty::union` で宣言）だけ。T8（同名コンポーネントの取り違え）も修正。Contrast の移行も完了（`modKey`・`Layout.mode`・`Layout.animation`・`Startup.ipc`・`Workspaces.mode` が Literal。範囲外は E4004、位置は値）。詳細は `docs/cdl-requests.md` | 完了 |
 
