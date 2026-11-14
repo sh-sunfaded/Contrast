@@ -46,6 +46,8 @@ pub struct Shell {
     pub outputs: BTreeMap<ExternalKey, Output>,
     /// 幅を窓に決めさせる窓（niri の `default-column-width {}`）で、最初のバッファを待っているもの。
     pub awaiting_buffer: Vec<Window>,
+    /// いま処理している命令（`submit`）が起こす矩形の動きの種別。命令の外では `None`（Scroll と同じ扱い）。
+    pub motion_kind: Option<contrast_policy::MotionKind>,
 }
 
 impl Shell {
@@ -53,6 +55,14 @@ impl Shell {
     fn issue_key(&mut self) -> ExternalKey {
         self.next_key += 1;
         ExternalKey::new(self.next_key)
+    }
+}
+
+/// 命令が起こす矩形の動きの種別（INV-M1）。意味操作は `kind_of`。それ以外（窓の出現・消滅、ジェスチャーなど）は Scroll。
+fn command_kind(command: &Command) -> contrast_policy::MotionKind {
+    match command {
+        Command::Action(action) => contrast_policy::motion::kind_of(action),
+        _ => contrast_policy::MotionKind::Scroll,
     }
 }
 
@@ -591,8 +601,12 @@ impl Contrast {
             self.anim.forget(id);
         }
         // niri の window-close: 最後のフレームの絵を、縮めながら消す。
-        let enabled = self.policy.layout_settings().animation_ms != 0;
-        self.window_anims.start_closing(key, enabled);
+        let timing = crate::window_anim::timing_for(
+            contrast_policy::MotionKind::Close,
+            self.policy.motion(),
+            self.policy.layout_settings().animation_ms,
+        );
+        self.window_anims.start_closing(key, timing);
         if let Some(window) = self.shell.windows.remove(&key) {
             self.space.unmap_elem(&window);
         }
@@ -643,6 +657,15 @@ impl Contrast {
 
     /// Command を core に渡し、返った Effect を実行する。成功なら true。
     fn submit(&mut self, command: Command) -> bool {
+        // この命令で起きる `Configure` 全部が、同じ種別の曲線・長さを使う（INV-M1）。
+        self.shell.motion_kind = Some(command_kind(&command));
+        let accepted = self.submit_inner(command);
+        self.shell.motion_kind = None;
+        accepted
+    }
+
+    /// `submit` の本体（種別を決めたあと）。
+    fn submit_inner(&mut self, command: Command) -> bool {
         match self.core.apply(command.clone()) {
             Ok(applied) => {
                 for effect in applied.effects {
@@ -735,7 +758,11 @@ impl Contrast {
         // 窓はフレームそのもの（枠は外側に描く）。
         let to_window = |frame: Rect| frame;
         // 全画面にするときは補間しない（全画面から戻るときは、全画面の矩形から補間する）。
-        let motion = self.animation_motion();
+        let kind = self
+            .shell
+            .motion_kind
+            .unwrap_or(contrast_policy::MotionKind::Scroll);
+        let motion = self.animation_motion(kind);
         let animate = state != WindowState::Fullscreen;
         let now = std::time::Instant::now();
         let shown = self.anim.retarget(id, frame, now, motion, animate);
@@ -753,17 +780,10 @@ impl Contrast {
         );
     }
 
-    /// 補間の曲線（`Layout.animation` と `Layout.animationMs`）。`animationMs` が 0 なら補間しない。
-    fn animation_motion(&self) -> crate::anim::Motion {
-        use contrast_policy::AnimationKind;
-        let settings = self.policy.layout_settings();
-        let off = settings.animation_ms == 0;
-        match settings.animation {
-            AnimationKind::Spring if !off => crate::anim::Motion::Spring,
-            _ => crate::anim::Motion::Easing(std::time::Duration::from_millis(u64::from(
-                settings.animation_ms,
-            ))),
-        }
+    /// 種別 `kind` の補間の曲線。`<Motion>` があればそれに従い（書かれていない種別は即時）、
+    /// 無ければ旧 `Layout.animation` と `animationMs`（0 なら補間しない）に従う。
+    fn animation_motion(&self, kind: contrast_policy::MotionKind) -> crate::anim::Motion {
+        crate::anim::motion_for(kind, self.policy.motion(), &self.policy.layout_settings())
     }
 
     /// 窓に大きさと状態を伝え、Space 上の位置を合わせる（ログなし。補間の毎フレームからも呼ぶ）。
@@ -918,6 +938,39 @@ pub(crate) fn read_meta(window: &Window) -> WindowMeta {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_command_decides_one_motion_kind() {
+        use contrast_core::{Action, ColumnWidth, Command, Direction};
+        use contrast_policy::MotionKind::{Resize, Scroll, Workspace};
+        let half = contrast_core::Ratio::new(1, 2).expect("1/2");
+        let rows = [
+            (
+                Command::Action(Action::FocusDirection(Direction::Right)),
+                Scroll,
+            ),
+            (Command::Action(Action::ToggleFullscreen), Resize),
+            (
+                Command::Action(Action::SetColumnWidth(ColumnWidth::Proportion(half))),
+                Resize,
+            ),
+            (
+                Command::Action(Action::SwitchWorkspace(contrast_core::WorkspaceIndex::new(
+                    1,
+                ))),
+                Workspace,
+            ),
+            (
+                Command::ViewGestureEnd {
+                    projected_offset: 0,
+                },
+                Scroll,
+            ),
+        ];
+        for (command, want) in rows {
+            assert_eq!(super::command_kind(&command), want, "{command:?}");
+        }
+    }
+
     use std::rc::Rc;
 
     use contrast_core::{CoreConfig, OutputName};
