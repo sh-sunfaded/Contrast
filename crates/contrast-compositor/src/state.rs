@@ -178,6 +178,8 @@ pub struct Contrast {
     pub dim_anim: crate::dim_anim::DimAnimator,
     /// いまのキー層の名前（既定 `normal`。`enter-mode`・`exit-mode` で変わる。`Env.mode`）。
     pub key_mode: String,
+    /// 観測の記録（環境変数 `CONTRAST_RECORD` で有効。既定は無効。動作に影響しない）。
+    pub(crate) recorder: Option<crate::record::Recorder>,
     /// `Env` で作った設定の警告で、ログに出した文（同じ設定の世代では 1 回だけ出す）。
     pub env_logged: std::collections::BTreeSet<String>,
 }
@@ -240,7 +242,7 @@ impl Contrast {
             contrast_core::Columns::new(),
         );
 
-        Self {
+        let mut state = Self {
             start_time: std::time::Instant::now(),
             socket_name,
             ipc_socket: None,
@@ -299,6 +301,7 @@ impl Contrast {
             window_anims: Default::default(),
             dim_anim: Default::default(),
             key_mode: contrast_policy::NORMAL_MODE.to_owned(),
+            recorder: crate::record::from_env(),
             env_logged: Default::default(),
             screenshot_window_pending: false,
             screenshot_ui: Default::default(),
@@ -313,7 +316,10 @@ impl Contrast {
             input_devices: Vec::new(),
             layout_mode,
             cursor_status: smithay::input::pointer::CursorImageStatus::default_named(),
-        }
+        };
+        // 記録を始めたとき、最初の設定（`profile` つき）を残す。
+        state.record_config_loaded(false);
+        state
     }
 
     /// zwp_linux_dmabuf_v1 を `formats`（レンダラーが受け付けるもの）で公開する。`importer` は、バッファがレンダラーに

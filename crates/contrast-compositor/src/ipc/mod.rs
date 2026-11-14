@@ -5,9 +5,9 @@
 //! - `server`: calloop の Unix ソケットのサーバー。
 
 mod info;
-mod protocol;
+pub(crate) mod protocol;
 mod server;
-mod state;
+pub(crate) mod state;
 
 use std::path::PathBuf;
 
@@ -83,13 +83,38 @@ impl Contrast {
 
     /// 状態が変わったかもしれないとき（core のコマンドのあと）に呼ぶ: ワークスペースの変化を購読者に送る。
     pub(crate) fn ipc_sync(&mut self) {
-        if self.ipc.is_none() {
+        if self.ipc.is_none() && self.recorder.is_none() {
             return;
         }
+        // 状態は 1 回だけ作り、IPC と記録の両方に渡す（記録のために新しい差分の計算や状態の読み出しを足さない）。
         let extra = self.ipc_extra_state();
         let workspaces = self.ipc_workspaces();
+        let stamp = self.record_stamp();
+        if let Some(recorder) = &mut self.recorder {
+            recorder.record_state(&workspaces, &extra, stamp);
+        }
         if let Some(server) = &self.ipc {
             server.publish(workspaces, extra);
+        }
+    }
+
+    /// 記録の時刻（起動からの単調な経過と壁時計）。時計はここだけが読む。
+    pub(crate) fn record_stamp(&self) -> crate::record::Stamp {
+        let wall = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default();
+        crate::record::Stamp {
+            mono_ms: u64::try_from(self.start_time.elapsed().as_millis()).unwrap_or(u64::MAX),
+            wall_ms: u64::try_from(wall.as_millis()).unwrap_or(u64::MAX),
+        }
+    }
+
+    /// 設定を読み込んだことを記録する（`profile` つき。記録が無効なら何もしない）。
+    pub(crate) fn record_config_loaded(&mut self, failed: bool) {
+        let stamp = self.record_stamp();
+        let profile = self.policy.profile();
+        if let Some(recorder) = &mut self.recorder {
+            recorder.record_config(&profile, failed, stamp);
         }
     }
 

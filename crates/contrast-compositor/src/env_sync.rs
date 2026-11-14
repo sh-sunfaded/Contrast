@@ -46,6 +46,10 @@ impl Contrast {
         }
         tracing::info!(from = %self.key_mode, to = mode, "key mode");
         self.key_mode = mode.to_owned();
+        let stamp = self.record_stamp();
+        if let Some(recorder) = &mut self.recorder {
+            recorder.record_mode(mode, stamp);
+        }
         self.sync_env();
     }
 

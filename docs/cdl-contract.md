@@ -103,6 +103,9 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
 - **シーン**: `<Workspace>` の子 `<Launch command>`（宣言のみ。自動起動しない）。`Keybind action="scene" name="web"` が、そのワークスペースへ切り替えてから `Launch` を spawn する。未知の名前は **CT085**。
 - **キー層**: `<Mode name fallthrough?>` で宣言（`normal` は宣言不要・宣言不可）。`Keybind mode="resize"`（既定 `"normal"`）。`enter-mode`（`name`）・`exit-mode`。同一性は `(mode, 修飾キー, キー)`（CT031）。未宣言の層・未知の `enter-mode` の対象は **CT084**。`normal` 以外の層に抜けるキー（`exit-mode`、または `enter-mode name="normal"`）が無い、層の中の修飾キーなし `Escape` を書く、は **CT082**（層の中では修飾キーなしの `Escape` は常に `exit-mode`）。例は `examples/u4-workspaces.cdl`。
 
+- **観測の記録（L3。設定ファイルではなく環境変数）**: `CONTRAST_RECORD` で有効（既定は無効。`/` で始まる値はそのパス、それ以外は `$XDG_STATE_HOME/contrast/events.jsonl`、無ければ `~/.local/state/contrast/events.jsonl`）。1 行 1 JSON（`t_mono_ms`・`t_wall_ms`・`event`）で、`focus`・`workspace_activated`・`workspaces_changed`・`window_opened`・`window_closed`・`config_loaded`（`profile`・`failed`）・`key_mode`。**`title` は記録しない**。差分は IPC と同じ `diff`・`diff_extra` から作る。書き込みの失敗は握りつぶす（最初の 1 回だけ警告）。記録は動作に影響しない（INV-L1）。
+- **IPC**: ワークスペースの `name` は名前表から埋まる（`Fixed` のみ）。`FocusWorkspace` の `Name` 参照は名前表で切り替える（名前表が無いときは従来どおり「未対応」、知らない名前は `workspace not found`）。
+
 ### Motion（U3。`docs/ui-spec.md` §4.2・§5）
 
 - 種別は要素名で固定（`Scroll`・`Resize`・`Workspace`・`Focus`・`Open`・`Close`）。書かなかった種別は**即時**。`<Motion>` ごと省略したときも全種別が即時（組み込みの既定も同じ。旧 `animationMs` の既定 0 と同じ見た目）。

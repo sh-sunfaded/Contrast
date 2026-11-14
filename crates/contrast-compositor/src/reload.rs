@@ -23,6 +23,7 @@ impl Contrast {
                 // キーバインドが変わったかもしれないので、ホットキーのオーバーレイを描き直す。
                 self.hotkey_overlay.invalidate();
                 self.ipc_event_config_loaded(false);
+                self.record_config_loaded(false);
                 for d in &diagnostics {
                     tracing::warn!("{d}");
                 }
@@ -52,6 +53,7 @@ impl Contrast {
             ),
             ReloadOutcome::Failed(diagnostics) => {
                 self.ipc_event_config_loaded(true);
+                self.record_config_loaded(true);
                 tracing::error!(
                     "config: reload failed: {} errors, keeping generation={generation}",
                     diagnostics.len()

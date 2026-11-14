@@ -20,6 +20,7 @@ mod ipc;
 mod locale1;
 mod overview;
 mod power;
+mod record;
 mod reload;
 mod render;
 mod rubber_band;
