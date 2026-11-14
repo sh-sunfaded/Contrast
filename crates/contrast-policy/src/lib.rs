@@ -7,6 +7,7 @@
 //! - `store`: `Config` と、世代番号を振って成功した版だけを差し替える `ConfigStore`（`Policy` として使える）。
 //! - `static_policy`: 組み込みの既定値だけで答える `StaticPolicy` と、既定の配置。
 //! - `core_adapter`: `port::Policy` を contrast-core の `Policy`（窓の配置）として使うアダプタ。
+//! - `motion`: 動き（Motion）の設定の値と、純粋な補間（曲線・進行度・明度の補間・命令→種別）。
 //! - `tier`: 注意の段階（`Tiers`）と、その検査（INV-A1）・減光の乗数。
 //! - `codes`: Contrast の診断コード（`CT…`）。
 //!
@@ -16,6 +17,7 @@ pub mod codes;
 pub mod config;
 pub mod core_adapter;
 pub mod hook;
+pub mod motion;
 pub mod port;
 pub mod settings;
 pub mod static_policy;
@@ -27,6 +29,7 @@ pub use config::{
 };
 pub use core_adapter::PortPlacement;
 pub use hook::{HookPlacement, PlacementHook, WindowInfo};
+pub use motion::{EasingCurve, MAX_MOTION_MS, MotionCurve, MotionKind, MotionSettings, MotionSpec};
 pub use port::{Action, Mods, PlacementWidth, Policy, WindowPlacement};
 pub use settings::{
     AnimationKind, Appearance, CursorSettings, DEFAULT_DATA_CONTROL_CLIENTS,

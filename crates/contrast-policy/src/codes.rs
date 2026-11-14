@@ -38,5 +38,15 @@ pub const TIER_SPREAD: &str = "CT063";
 pub const TIER_COUNT: &str = "CT064";
 /// `Tier` の `name` が空か、重複している。
 pub const TIER_BAD_NAME: &str = "CT065";
+/// `Motion` の easing の長さが 0 未満・400ms 超（INV-T1）。
+pub const MOTION_BAD_DURATION: &str = "CT070";
+/// `Motion` の未知の曲線名。
+pub const MOTION_BAD_CURVE: &str = "CT071";
+/// `niriSpring` と `duration` の併記、または `Focus` に `niriSpring`。
+pub const MOTION_SPRING_CONFLICT: &str = "CT072";
+/// `Motion` の中で同じ種別が重複している。
+pub const MOTION_DUPLICATE: &str = "CT073";
+/// `<Motion>` があるので、旧 `Layout.animation` / `animationMs` は無視される（警告）。
+pub const MOTION_IGNORES_LAYOUT: &str = "CT074";
 /// リロードで反映できない変更。
 pub const NOT_APPLIED: &str = "CT050";

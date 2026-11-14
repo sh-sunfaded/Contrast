@@ -267,6 +267,9 @@ pub struct Settings {
     pub data_control_clients: Vec<String>,
     /// キーバインド（並びの順）。
     pub keybinds: Vec<KeyBinding>,
+    /// 動き（Motion）。`None` は `<Motion>` が書かれていない（旧 `layout.animation*` に従う）。
+    /// `Some` のときは旧 `layout.animation*` を無視し、書かれていない種別は即時。
+    pub motion: Option<crate::motion::MotionSettings>,
 }
 
 /// `screenshot_path` の既定（niri と同じ）。
@@ -339,6 +342,7 @@ impl Settings {
                 .map(|name| (*name).to_owned())
                 .collect(),
             keybinds,
+            motion: None,
         }
     }
 

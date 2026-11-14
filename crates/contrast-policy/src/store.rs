@@ -24,12 +24,25 @@ pub struct Config {
     pub settings: Settings,
     /// `windowOpen` フック。無ければ既定の配置。
     pub hook: Option<Box<dyn PlacementHook>>,
+    /// 読み込みで出た警告（成功したが知らせたいこと。例: `<Motion>` があるので旧 `Layout.animation*` を無視する）。
+    pub warnings: Vec<ConfigDiagnostic>,
 }
 
 impl Config {
     /// 設定値とフックから作る。
     pub fn new(settings: Settings, hook: Option<Box<dyn PlacementHook>>) -> Self {
-        Self { settings, hook }
+        Self {
+            settings,
+            hook,
+            warnings: Vec::new(),
+        }
+    }
+
+    /// 読み込みの警告を付ける。
+    #[must_use]
+    pub fn with_warnings(mut self, warnings: Vec<ConfigDiagnostic>) -> Self {
+        self.warnings = warnings;
+        self
     }
 
     /// 組み込みの既定値（フックなし）。
@@ -151,7 +164,7 @@ impl ConfigStore {
     /// ワークスペース数は起動後に変えられない（core が固定で持つ）ので、現在の数のまま採用し、
     /// 変わっていれば警告（`CT050`）を返す。
     pub fn replace(&self, mut config: Config) -> ReloadOutcome {
-        let mut diagnostics = Vec::new();
+        let mut diagnostics = std::mem::take(&mut config.warnings);
         let current = self.workspace_count();
         if config.settings.workspaces != current {
             diagnostics.push(ConfigDiagnostic {
@@ -413,6 +426,17 @@ mod tests {
         assert!(diagnostics.iter().any(|d| d.code == codes::NOT_APPLIED));
         // 起動時の方式のまま。
         assert_eq!(store.workspace_mode(), WorkspaceMode::Fixed);
+    }
+
+    #[test]
+    fn load_warnings_are_reported_when_a_config_is_applied() {
+        let store = ConfigStore::new(Config::builtin());
+        let config = Config::builtin().with_warnings(vec![diag(codes::MOTION_IGNORES_LAYOUT)]);
+        let ReloadOutcome::Applied { diagnostics, .. } = store.replace(config) else {
+            panic!("applied");
+        };
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].code, codes::MOTION_IGNORES_LAYOUT);
     }
 
     #[test]
