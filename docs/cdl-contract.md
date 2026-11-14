@@ -54,7 +54,7 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
   空（空白だけ）の `command` は CT003。起動に失敗しても残りを続け、ログに出す。
   `ipc="niri"` を付けた `command` の子には、環境変数 `NIRI_SOCKET`（niri 互換の IPC のソケットのパス。`$XDG_RUNTIME_DIR/contrast.<pid>.sock`）を足す。
   ironbar の workspaces のように `NIRI_SOCKET` で niri を見分けるクライアント向けで、ほかの子（ほかの `Startup` と `Keybind` の `spawn`）には渡さない。
-  `ipc` は `"niri"` だけ。ほかの値は CT003。IPC が起動できなかったときは、`NIRI_SOCKET` を渡さない（ログに警告）。
+  `ipc` は `"niri"` だけ。ほかの値は E4004（CDL の Literal 検査）。IPC が起動できなかったときは、`NIRI_SOCKET` を渡さない（ログに警告）。
 - `DataControlClient` は、wlr-data-control（`zwlr_data_control_manager_v1`。フォーカスなしでクリップボードを読み書きできる）を使ってよいクライアントの、
   プログラム名（実行ファイルの名前。nix のラッパー `.name-wrapped` は `name` とみなす。取れなければ `comm`）。ここに無いクライアントには、そのグローバルを見せない。
   1 つも書かないと既定（`ironbar`・`wl-copy`・`wl-paste`・`cliphist`・`wl-clip-persist`）、1 つでも書くと、書いたものだけに置き換わる。
@@ -69,8 +69,10 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
 - `Input` はタッチパッドの設定。libinput のデバイスが追加されたとき（起動時の既存デバイスを含む）とリロードのときに、タッチパッドに適用する。
   デバイスが対応しない項目はログに出して無視する。`accelSpeed` が -1〜1 の外（または非数）なら CT003。
 - `Appearance`、`Workspaces`、`Input` を省略したときは `Settings::builtin()` の値を使う。
-- `modKey` と `action` は本来リテラルユニオン（`"alt" | "super"` など）だが、`cdl-host` は `Literal` を公開していないので
-  スキーマ上は `string` にして、Contrast の変換で検査する（誤りは CT003 / CT020）。
+- 列挙の prop（`modKey`・`Layout.mode`・`Layout.animation`・`Startup.ipc`・`Workspaces.mode`）は、スキーマ上は文字列リテラルのユニオン
+  （`"alt" | "super"` など。`cdl_host::Literal` と `Ty::union`）で、範囲外の値は CDL が評価前に **E4004**（位置はその値、メッセージにユニオン）で拒否する。
+  変数や配列に通すときは、型注釈もリテラルのユニオンにする（`ipc?: string` は E4004。`ipc?: "niri"` と書く）。
+  `Keybind.action` は未知の action の案内文（CT020）を保つため `string` のままで、Contrast の変換で検査する。
 - `borderWidth` は 0〜256 の整数（px。範囲外・非整数は CT003）。枠の色は段階の `ringColor`（`FocusTier` がフォーカス窓、`Tier` がフォーカス外の窓）。`background` は背景色（省略時は組み込みの色）。
 - **旧 prop の廃止（DU-8）**: `Appearance` の `focusColor`・`borderColor` は廃止した。書くと CDL が「`<Appearance>` に props `…` はない」（`E4003`）で拒否する（位置はその prop）。
   起動時なら `Settings::builtin()` で起動、リロードなら旧版を保持する（3 節）。`focusColor` → `FocusTier.ringColor`、`borderColor` → `Tier.ringColor`。
@@ -90,7 +92,7 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
 優先順位は、CDL の `modKey`（明示）> 環境変数 `CONTRAST_MOD_KEY=alt|super` > バックエンドの既定。
 バックエンドの既定は、DRM（実機の TTY）が `super`、winit（nested）が `alt`（ホストのコンポジタが Super を奪うため）。
 読み込み器（`CdlLoader::with_default_mod_key`）が「省略時の `mod`」を受け取り、`modKey` が無い設定にはそれを使う。
-`modKey` が不正なら CT003 で、その設定は使わない。環境変数が不正なら警告して無視する。
+`modKey` が不正なら（`"alt"` と `"super"` 以外は E4004）、その設定は使わない。環境変数が不正なら警告して無視する。
 組み込みの既定値（設定ファイルが無いとき）は、この規則に関わらず Alt のまま。
 
 ### action
@@ -125,7 +127,7 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
   フォーカス列の今の幅の割合（整数パーセント）に足して 1〜100 に収める。どちらも不正なら CT003。
 
 - `Workspaces.mode` は、ワークスペースの方式。`"fixed"` は `count` 個で固定。`"dynamic"` は niri のように、窓のあるものと末尾の空 1 つ（空の状態から始まる）。
-  `dynamic` のとき `count` は `workspace` の番号の上限（CT022 の検査）にだけ使う。ほかの値は CT003。起動時に決まり、リロードでは変わらない（CT050）。
+  `dynamic` のとき `count` は `workspace` の番号の上限（CT022 の検査）にだけ使う。`mode` の `"fixed"` / `"dynamic"` 以外は E4004。起動時に決まり、リロードでは変わらない（CT050）。
 - `move-column-to-workspace`（`workspace` 必須）／`-next`／`-prev` は、フォーカス窓の**列ごと**移して、そこへ切り替える（`Layout.mode` が `scrolling` のときだけ。`equal` では何もしない。
   Floating・Fullscreen の窓は、その窓だけ）。`dynamic` では、存在しない番号は末尾の空のワークスペースになる。`move-workspace-down` / `-up` は、表示中のワークスペースを 1 つ下／上と入れ替える（`dynamic` のみ）。
 - `workspace-next` / `workspace-prev` は、いま表示中の番号の ±1 へ切り替える。`move-to-workspace-next` / `-prev` は、
@@ -180,7 +182,7 @@ interface Policy     { windowOpen?: (w: WindowInfo) => Placement }
 | --- | --- |
 | CT001 | エントリの設定ファイルの状態を調べられない・パスを正準化できない（読めない・UTF-8 でない・サイズ超過は CDL の `E5001` で出る） |
 | CT002 | 値木が期待と食い違う（未知の要素・ルートが違う。スキーマとの不一致で、通常は起きない） |
-| CT003 | prop の値が不正（`modKey` が alt/super でない、`borderWidth` が負または非整数、`Startup` の `command` が空、`Env` の名前が不正・重複、`hideAfterInactiveMs` が範囲外、など） |
+| CT003 | 数値の範囲・形式などの prop の値が不正（`borderWidth` が負または非整数、`Startup` の `command` が空、`Env` の名前が不正・重複、`hideAfterInactiveMs` が範囲外、など。**列挙の範囲外は CT003 ではなく CDL の E4004**） |
 | CT010 | `Workspaces.count` が 1〜32 の整数でない |
 | CT020 | 未知の action |
 | CT021 | `command` が要る action に `command` がない（または空） |

@@ -1,12 +1,23 @@
 //! Contrast のスキーマ（`host:contrast`）を `cdl-host` のビルダーで登録する。内容は `docs/cdl-contract.md` の 1・2 節。
 //!
-//! `modKey` と `action` は本来リテラルユニオンだが、`cdl-host` が `Literal` を公開していないので
-//! `string` にして、`convert` で検査する。
+//! 列挙の prop（`modKey`・`Layout.mode`・`Layout.animation`・`Startup.ipc`・`Workspaces.mode`）は
+//! 文字列リテラルのユニオンで宣言し、範囲外は CDL が評価前に E4004 で拒否する。
+//! `Keybind.action` は未知の action の案内文（CT020）を保つため `string` のままにして、`convert` で検査する。
 
-use cdl_host::{ComponentDef, Field, Schema, Ty};
+use cdl_host::{ComponentDef, Field, Literal, Schema, Ty};
 
 /// ホストモジュール名。
 const MODULE: &str = "host:contrast";
+
+/// 文字列リテラルのユニオン（`"a" | "b"`）。
+fn one_of(values: &[&str]) -> Ty {
+    Ty::union(
+        values
+            .iter()
+            .map(|v| Ty::Literal(Literal::String((*v).to_owned())))
+            .collect(),
+    )
+}
 
 /// スキーマを組み立てる。失敗は `Schema::build` が返す誤りの一覧（実装の不具合を意味する）。
 pub(crate) fn contrast_schema() -> Result<Schema, Vec<String>> {
@@ -28,7 +39,7 @@ pub(crate) fn contrast_schema() -> Result<Schema, Vec<String>> {
         .component(
             MODULE,
             ComponentDef::new("Contrast")
-                .optional_prop("modKey", Ty::String)
+                .optional_prop("modKey", one_of(&["alt", "super"]))
                 .children(&[
                     "Appearance",
                     "Tiers",
@@ -89,12 +100,12 @@ pub(crate) fn contrast_schema() -> Result<Schema, Vec<String>> {
             ComponentDef::new("Layout")
                 .optional_prop("gap", Ty::Length)
                 .optional_prop("outerGap", Ty::Length)
-                .optional_prop("mode", Ty::String)
+                .optional_prop("mode", one_of(&["equal", "scrolling"]))
                 .optional_prop("defaultColumnWidth", Ty::Number)
                 .optional_prop("presetColumnWidths", Ty::String)
                 .optional_prop("windowHeightPresets", Ty::String)
                 .optional_prop("animationMs", Ty::Number)
-                .optional_prop("animation", Ty::String),
+                .optional_prop("animation", one_of(&["easing", "spring"])),
         )
         .component(
             MODULE,
@@ -117,7 +128,7 @@ pub(crate) fn contrast_schema() -> Result<Schema, Vec<String>> {
             MODULE,
             ComponentDef::new("Startup")
                 .prop("command", Ty::String)
-                .optional_prop("ipc", Ty::String),
+                .optional_prop("ipc", one_of(&["niri"])),
         )
         .component(
             MODULE,
@@ -134,7 +145,7 @@ pub(crate) fn contrast_schema() -> Result<Schema, Vec<String>> {
             MODULE,
             ComponentDef::new("Workspaces")
                 .prop("count", Ty::Number)
-                .optional_prop("mode", Ty::String),
+                .optional_prop("mode", one_of(&["fixed", "dynamic"])),
         )
         .component(
             MODULE,

@@ -139,7 +139,7 @@ B は、CDL（`Startup`）と contrast-policy（`Settings.startup` を `Vec<Stri
 
 ### P4: 環境変数と CDL
 - 内容: `CONTRAST_SOCKET` をすべての子に、`NIRI_SOCKET` を `Startup ipc="niri"` の子だけに渡す（`spawn.rs`）。CDL のスキーマ・変換・`docs/cdl-contract.md`・`config/startup.cdl`（ironbar の行に `ipc="niri"`）。
-- 終了条件: 診断つきのテスト（不正な `ipc` の値は CT003）。`Startup` の環境のテスト（`ipc` なしの子には `NIRI_SOCKET` が無い）。
+- 終了条件: 診断つきのテスト（不正な `ipc` の値は E4004（CDL の Literal 検査））。`Startup` の環境のテスト（`ipc` なしの子には `NIRI_SOCKET` が無い）。
 - 自動確認: policy・policy-cdl・compositor のテスト、clippy。nested で、`Startup` の `env` を使い、`ipc="niri"` のある子にだけ `NIRI_SOCKET` が出る。
 - 実機: なし。
 

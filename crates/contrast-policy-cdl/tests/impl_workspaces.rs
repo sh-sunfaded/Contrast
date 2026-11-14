@@ -53,12 +53,12 @@ fn the_mode_defaults_to_fixed_and_dynamic_is_read() -> Result<(), String> {
 }
 
 #[test]
-fn an_unknown_mode_is_ct003() -> Result<(), String> {
+fn an_unknown_mode_is_e4004() -> Result<(), String> {
     for (dir, value) in [("empty", ""), ("upper", "Dynamic"), ("other", "static")] {
         let body = format!(r#"<Workspaces count={{9}} mode="{value}" />"#);
         assert_eq!(
             load(dir, &body)?.err(),
-            Some(vec!["CT003".to_owned()]),
+            Some(vec!["E4004".to_owned()]),
             "{value:?}"
         );
     }

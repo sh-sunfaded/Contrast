@@ -102,12 +102,12 @@ fn startup_ipc_niri_marks_only_that_command() -> Result<(), String> {
 }
 
 #[test]
-fn bad_startup_ipc_is_ct003() -> Result<(), String> {
+fn bad_startup_ipc_is_e4004() -> Result<(), String> {
     for (dir, value) in [("sway", "sway"), ("empty", ""), ("upper", "Niri")] {
         let body = format!(r#"<Startup command="x" ipc="{value}" />"#);
         assert_eq!(
             codes_of(&format!("startup-ipc-{dir}"), &body)?,
-            ["CT003"],
+            ["E4004"],
             "{value:?}"
         );
     }

@@ -144,8 +144,8 @@ fn scrolling_layout_options_are_read() -> Result<(), String> {
 
 #[test]
 fn bad_scrolling_layout_options_are_ct003() -> Result<(), String> {
+    // `mode` は列挙なので CDL が E4004 で拒否する（`impl_literal.rs`）。ここは数値の範囲・形式の検査だけ。
     let bad = [
-        ("mode", r#"<Layout mode="grid" />"#),
         ("width0", "<Layout defaultColumnWidth={0} />"),
         ("width2", "<Layout defaultColumnWidth={1.5} />"),
         ("preset_empty", r#"<Layout presetColumnWidths="" />"#),
@@ -290,8 +290,9 @@ fn animation_kind_defaults_to_easing_and_accepts_spring() -> Result<(), String> 
             load(dir, &format!("<Layout animation=\"{v}\" />"))?.map_err(|d| format!("{d:?}"))?;
         assert_eq!(s.layout.animation, want, "{v}");
     }
+    // 範囲外は列挙の誤りなので CDL の E4004。
     let bad = load("kind-bad", "<Layout animation=\"bounce\" />")?;
-    assert_eq!(bad.err(), Some(vec!["CT003".to_owned()]));
+    assert_eq!(bad.err(), Some(vec!["E4004".to_owned()]));
     Ok(())
 }
 

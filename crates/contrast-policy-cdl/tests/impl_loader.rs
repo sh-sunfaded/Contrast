@@ -145,7 +145,7 @@ fn all_conversion_errors_are_reported_together() -> Result<(), String> {
 #[test]
 fn prop_value_errors_have_codes() -> Result<(), String> {
     let cases = [
-        (r#"<Contrast modKey="hyper">"#, "CT003"),
+        (r#"<Contrast modKey="hyper">"#, "E4004"), // 列挙は CDL のリテラル検査
         (r##"<Appearance borderWidth={px(-1)} />"##, "CT003"),
         (r##"<Appearance borderWidth={px(1.5)} />"##, "CT003"),
         (r#"<Workspaces count={0} />"#, "CT010"),

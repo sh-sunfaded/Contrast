@@ -44,6 +44,17 @@ impl Ctx<'_> {
         self.diags.push(diag);
     }
 
+    /// スキーマが通した列挙の値を、変換が知らなかった（スキーマと変換の食い違い＝実装の不具合）。
+    /// panic せず、位置つきの診断にする。
+    fn unexpected_value(&mut self, node: Node<'_>, key: &str, value: &str) {
+        self.error_at(
+            node,
+            key,
+            codes::TREE_MISMATCH,
+            format!("内部エラー: `{key}` の値 \"{value}\" をスキーマは通したが、変換が知らない"),
+        );
+    }
+
     /// 必須の prop を読む。読めなければ診断を足して `None`。
     fn prop<T: cdl_host::FromValue>(&mut self, node: Node<'_>, key: &str) -> Option<T> {
         match node.prop(key) {
@@ -196,12 +207,7 @@ fn read_mod_key(cx: &mut Ctx<'_>, root: Node<'_>, default: ModKey) -> ModKey {
         Some("alt") => ModKey::Alt,
         Some("super") => ModKey::Super,
         Some(other) => {
-            cx.error_at(
-                root,
-                "modKey",
-                codes::BAD_PROP,
-                format!("`modKey` は \"alt\" か \"super\"（\"{other}\" は使えない）"),
-            );
+            cx.unexpected_value(root, "modKey", other);
             default
         }
     }
@@ -381,12 +387,7 @@ fn read_layout(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
         match mode.as_str() {
             "equal" => settings.layout.mode = LayoutMode::Equal,
             "scrolling" => settings.layout.mode = LayoutMode::Scrolling,
-            other => cx.error_at(
-                node,
-                "mode",
-                codes::BAD_PROP,
-                format!("`mode` は \"equal\" か \"scrolling\"（\"{other}\" は使えない）"),
-            ),
+            other => cx.unexpected_value(node, "mode", other),
         }
     }
     if let Some(w) = cx.optional::<f64>(node, "defaultColumnWidth") {
@@ -403,12 +404,7 @@ fn read_layout(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
     match cx.optional::<String>(node, "animation").as_deref() {
         None | Some("easing") => {}
         Some("spring") => settings.layout.animation = AnimationKind::Spring,
-        Some(other) => cx.error_at(
-            node,
-            "animation",
-            codes::BAD_PROP,
-            format!("`animation` は \"easing\" か \"spring\"（`{other}` は使えない）"),
-        ),
+        Some(other) => cx.unexpected_value(node, "animation", other),
     }
     if let Some(ms) = cx.optional::<f64>(node, "animationMs") {
         match integer_in(ms, 0, MAX_ANIMATION_MS) {
@@ -526,7 +522,7 @@ fn read_cursor(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
 }
 
 /// `Startup` を読む。`command` は空でない文字列（空白で区切った先頭がプログラム、残りが引数）。並びの順に足す。
-/// `ipc` は省略できる。`"niri"` なら、その子に環境変数 `NIRI_SOCKET`（niri 互換の IPC のソケット）を渡す。それ以外は CT003。
+/// `ipc` は省略できる。`"niri"` なら、その子に環境変数 `NIRI_SOCKET`（niri 互換の IPC のソケット）を渡す。それ以外の値はスキーマ（リテラルのユニオン）が E4004 で拒否する。
 fn read_startup(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
     let Some(command) = cx.prop::<String>(node, "command") else {
         return;
@@ -546,12 +542,7 @@ fn read_startup(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
         None => {}
         Some("niri") => startup = startup.with_niri_ipc(),
         Some(other) => {
-            cx.error_at(
-                node,
-                "ipc",
-                codes::BAD_PROP,
-                format!("`Startup` の `ipc` は \"niri\" だけ（`{other}` は使えない）"),
-            );
+            cx.unexpected_value(node, "ipc", other);
             return;
         }
     }
@@ -638,12 +629,7 @@ fn read_workspaces(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
     match cx.optional::<String>(node, "mode").as_deref() {
         None | Some("fixed") => {}
         Some("dynamic") => settings.workspace_mode = contrast_core::WorkspaceMode::Dynamic,
-        Some(other) => cx.error_at(
-            node,
-            "mode",
-            codes::BAD_PROP,
-            format!("`Workspaces` の `mode` は \"fixed\" か \"dynamic\"（`{other}` は使えない）"),
-        ),
+        Some(other) => cx.unexpected_value(node, "mode", other),
     }
     let Some(count) = cx.prop::<f64>(node, "count") else {
         return;
