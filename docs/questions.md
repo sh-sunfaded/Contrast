@@ -155,3 +155,18 @@ Claude Code はここに追記する。人間が回答したら「回答:」行�
     key が未登録なら `UnknownKey`。」
 - 止めた作業: core-spec.md の編集のみ（実装とテストは済み）
 - 回答: D16（core-spec に反映済み）。
+
+### Q13 (p11) `OutputAdded` で、既存の出力の列が空になるとき（D74・D84）
+- 該当箇所: `docs/core-spec-p11.md` D74・D84、`handlers/output_added.rs` の `take_from_others`
+- 疑問: D74 は「`add_output` は、移したワークスペースを元の出力の列から外すだけで、その列に空を足さない（次の命令の最後に補う）」と書く。
+  しかし、既存の出力の列のワークスペースが**すべて**、追加する出力を元の出力とするものだと、外すと列が空になる。
+  core は、各出力が表示するワークスペースを必ず持つ（`invariant.rs:144-146`）ので、その場で空のワークスペースを 1 つ足している
+  （`take_from_others` の `append_empty_workspace`）。D74 は、この場合に列を空のままにするのか、その場で足すのかを書いていない。
+- 起きていること: `tests/niri_parity/multi_monitor.rs:988` の `matches_the_reference_model` が、まれ（1.3%）に落ちる。
+  モデル（`Model::add_output`、`multi_monitor.rs:693-720`）は列を空のまま（`[]`）にし、core は空のワークスペース 1 つ。
+  反例の例: `Add(0), Open, Add(1), Remove(0), Close(0), MoveWorkspace(false), Switch(1), Add(0)`（`PROPTEST_RNG_SEED=36` で再現）。
+- 私の判断（推定。読んだ範囲は `output_added.rs` の `take_from_others`・`invariant.rs:144-146`・モデルの `add_output`）:
+  core が正しく、モデルが「出力の列が空になる」場合を持っていない。ただし、モデルの修正も、core の変更も、していない。
+- 案: D74 に「列が空になるときは、表示のために空のワークスペースを 1 つ足す（これは `OutputAdded` の直後でも足す）」を足し、
+  モデルの `add_output` で、列が空になった出力に空のワークスペースを足す。仕様の編集は人間が行う。
+- 止めた作業: なし（この項目に依存する作業はない）。

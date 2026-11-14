@@ -706,6 +706,16 @@ impl Model {
                 }
             }
         }
+        // 列が空になった出力には、表示するために空のワークスペースを 1 つ足す（この場では補う。
+        // 各出力は表示中のワークスペースを必ず持つ。docs/questions.md の Q13）。
+        for m in 0..self.mons.len() {
+            if self.mons[m].ws.is_empty() {
+                let owner = self.mons[m].output;
+                let e = self.new_ws(Some(owner));
+                self.mons[m].ws.push(e);
+                self.mons[m].active = 0;
+            }
+        }
         moved.reverse();
         let e = self.new_ws(Some(output));
         moved.push(e);
