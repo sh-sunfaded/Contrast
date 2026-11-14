@@ -8,7 +8,8 @@
 //! - 履歴の無い窓（新しく開いた・隠れていた窓）は補間せず目標から始める。
 //! - 新しい目標は動き中のものを置き換える。始点は今表示している値（速度は引き継がない）。
 //! - 終わったら `displayed` は目標に厳密に一致する。
-//! - リロードで `Tier` の `l`（フォーカス外の乗数）が変わったフレームは補間せず即時。
+//! - リロード（設定の世代が変わったフレーム）は補間せず即時。`Env` の変化（プロファイル・フォーカスなど）で `Tier` の `l` が
+//!   変わるときは補間する（DU-34）。
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
@@ -59,17 +60,20 @@ struct Entry {
 pub struct DimAnimator {
     /// 窓ごとの遷移。
     entries: BTreeMap<WindowId, Entry>,
-    /// 前のフレームのフォーカス外の乗数（リロードの検出に使う）。
-    last_rest: Option<f32>,
-    /// このフレームは補間しない（リロードで `Tier` の `l` が変わった）。
+    /// 前のフレームの設定の世代（リロードの検出に使う）。
+    last_generation: Option<u64>,
+    /// このフレームは補間しない（設定がリロードされた）。
     instant_frame: bool,
 }
 
 impl DimAnimator {
-    /// フレームの始めに呼ぶ。フォーカス外の乗数 `rest` が前のフレームと違えば、このフレームは補間しない。
-    pub fn begin_frame(&mut self, rest: f32) {
-        self.instant_frame = self.last_rest.is_some_and(|previous| previous != rest);
-        self.last_rest = Some(rest);
+    /// フレームの始めに呼ぶ。設定の世代 `generation`（リロードで増える）が前のフレームと違えば、このフレームは補間しない。
+    /// `Env` の変化では世代は変わらないので、補間する。
+    pub fn begin_frame(&mut self, generation: u64) {
+        self.instant_frame = self
+            .last_generation
+            .is_some_and(|previous| previous != generation);
+        self.last_generation = Some(generation);
     }
 
     /// 窓 `id` の目標の乗数を `target` にして、いま表示する乗数を返す。
@@ -297,19 +301,30 @@ mod tests {
     }
 
     #[test]
-    fn a_reload_that_changes_the_rest_multiplier_is_instant_for_that_frame_only() {
+    fn a_reload_is_instant_for_that_frame_only_and_an_env_change_is_interpolated()
+    -> Result<(), String> {
         let id = ids(1)[0];
         let (mut d, t0) = (DimAnimator::default(), Instant::now());
-        d.begin_frame(0.8);
+        d.begin_frame(1);
         d.retarget(id, 0.8, t0, MS100);
-        // `Tier` の `l` が変わった（0.8 → 0.6）: 補間しない。
-        d.begin_frame(0.6);
+        // リロード（世代が 1 → 2）で `Tier` の `l` が変わった: 補間しない。
+        d.begin_frame(2);
         assert_eq!(d.retarget(id, 0.6, at(t0, 10), MS100), 0.6);
         assert!(!d.is_running());
         // 次のフレームからは普通に補間する。
-        d.begin_frame(0.6);
+        d.begin_frame(2);
         assert_eq!(d.retarget(id, 1.0, at(t0, 20), MS100), 0.6);
         assert!(d.is_running());
+        // `Env` の変化（プロファイルなど）で目標が変わるが世代は同じ: 補間する。
+        d.begin_frame(2);
+        d.tick(at(t0, 120));
+        assert_eq!(d.displayed(id), Some(1.0));
+        assert_eq!(d.retarget(id, 0.7, at(t0, 130), MS100), 1.0);
+        assert!(d.is_running());
+        d.tick(at(t0, 180));
+        let mid = d.displayed(id).ok_or("履歴")?;
+        assert!(mid < 1.0 && mid > 0.7, "{mid}");
+        Ok(())
     }
 
     #[test]

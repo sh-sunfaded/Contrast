@@ -364,9 +364,9 @@ impl Contrast {
         let mut last = BTreeMap::new();
         let focus_id = view.focus();
         let unfocused_dim = self.policy.unfocused_dim();
-        // 明度遷移: リロードで `Tier` の `l` が変わったフレームは即時。履歴の無い窓は目標から始まる。
+        // 明度遷移: リロード（世代が変わったフレーム）は即時。`Env` の変化は補間する。履歴の無い窓は目標から始まる。
         let focus_motion = crate::dim_anim::focus_motion(self.policy.motion());
-        self.dim_anim.begin_frame(unfocused_dim);
+        self.dim_anim.begin_frame(self.store.generation());
         let visible_ids: BTreeSet<WindowId> = visible.iter().map(|v| v.3).collect();
         for (key, window, output, w_id) in visible {
             let Some(location) = self.space.element_location(&window) else {
