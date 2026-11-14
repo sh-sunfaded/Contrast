@@ -7,6 +7,7 @@ mod anim;
 mod backend;
 mod cursor;
 mod data_control;
+mod dim_anim;
 mod edid;
 mod geometry;
 mod gestures;

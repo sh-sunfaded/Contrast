@@ -294,11 +294,14 @@ pub fn scene_elements(
         let (mine, rest): (Vec<_>, Vec<_>) = borders.into_iter().partition(|(bid, _)| *bid == id);
         borders = rest;
         elements.extend(mine.into_iter().map(|(_, e)| e));
-        let dim = dim::window_dim(
+        // 画面に出す乗数は `DimAnimator::displayed`（`prepare_window_animations` が決めた値）。
+        // まだ無ければ（そのフレームで準備していない窓）目標の乗数。
+        let target = dim::window_dim(
             focus_id == Some(id),
             fullscreen_ids.contains(&id),
             unfocused_dim,
         );
+        let dim = state.dim_anim.displayed(id).unwrap_or(target);
         let dimmed = dim::is_dimming(dim);
         let styled = if round.is_some() || dimmed {
             shaders.as_ref()

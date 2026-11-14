@@ -174,6 +174,8 @@ pub struct Contrast {
     pub unplugged: Vec<(smithay::output::Output, contrast_core::Rect)>,
     /// 窓の開く・閉じるアニメーション（niri の window-open／window-close）。
     pub window_anims: crate::window_anim::WindowAnims,
+    /// フォーカスの明度遷移（窓ごとの減光の乗数の補間。`<Motion><Focus/></Motion>`）。
+    pub dim_anim: crate::dim_anim::DimAnimator,
 }
 
 impl Contrast {
@@ -291,6 +293,7 @@ impl Contrast {
             host_cursor_hidden: false,
             unplugged: Vec::new(),
             window_anims: Default::default(),
+            dim_anim: Default::default(),
             screenshot_window_pending: false,
             screenshot_ui: Default::default(),
             touch_last: Default::default(),

@@ -96,6 +96,8 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
 - `duration`（`Duration`）: CDL に Duration のリテラルは無く、`ms(150)` と書く（`sec(0.15)` も同じ 150ms。整数ミリ秒にならない小数は CDL の E5009）。`ms(-5)` は CDL を通るので、**範囲（0 以上 400 以下。INV-T1 の `MAX_MOTION_MS`。設定で上げられない）は Contrast の変換で検査する**（CT070）。0 は「その種別は動きなし」。`niriSpring` は INV-T1 の対象外で、`duration` との併記は CT072。
 - 既定の長さ: `Focus` は 120ms、ほかは 150ms。
 - 併存: `<Motion>` があるとき、旧 `Layout.animation`・`animationMs` は**無視**する。書かれていれば、その prop の位置に警告 CT074 を出す（読み込みは成功する。リロードの結果の診断に載る）。旧 prop は後の段階で廃止する。
+- コンポジタの挙動（U3 段階 (b)(c)）: 命令（意味操作）ごとに矩形の動きの種別が 1 つ決まり（`contrast_policy::motion::kind_of`。`SwitchPresetColumnWidth` などは Resize、`SwitchWorkspace` などは Workspace、`FocusMonitor`・`MoveColumnToMonitor` を含む。それ以外と窓の出現・消滅・ジェスチャーは Scroll）、その命令の移動・リサイズは全部その種別の曲線・長さで動く。割り込みは「置き換え」で、始点は今表示している値（`niriSpring` だけ速度を引き継ぐ）。`Open`・`Close` は窓の出現・消滅の動き（見た目は透明度＋拡大で固定）。
+  `Focus` はフォーカスの明度遷移で、窓ごとの減光の乗数を線形に補間する（時間 → 進行度 → 曲線 → 乗数）。矩形の動きと同時に走ってよい。履歴の無い窓は補間せず目標から始まり、閉じる窓は画面で見えていた乗数で止まる。`screenshot-window` は常に減光なし。リロードで `Tier` の `l` が変わったときは補間せず即時。`<Focus>` を書かなければ減光は今までどおり即時。命令→種別の対応のうち `FocusMonitor`・`MoveColumnToMonitor`・`MoveToWorkspace`・`ToggleFloating` は人間の確認待ち。
 - 診断の位置は原因の prop（`curve`・`duration`）。複数 prop にまたがる検査（`niriSpring` と `duration` の併記）と、種別の重複は要素の位置。
 
 ### `modKey` の決まり方

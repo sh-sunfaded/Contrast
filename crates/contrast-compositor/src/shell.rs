@@ -599,6 +599,7 @@ impl Contrast {
         tracing::info!("window removed window={}", fmt_id(id.map(raw)));
         if let Some(id) = id {
             self.anim.forget(id);
+            self.dim_anim.forget(id);
         }
         // niri の window-close: 最後のフレームの絵を、縮めながら消す。
         let timing = crate::window_anim::timing_for(
@@ -827,7 +828,9 @@ impl Contrast {
             );
             self.apply_rect(&window, rect, state);
         }
-        self.anim.is_running()
+        // 明度遷移も同じ時刻で進める。動いている間は次のフレームも描く。
+        let dimming = self.dim_anim.tick(std::time::Instant::now());
+        self.anim.is_running() || dimming
     }
 
     /// キーボードフォーカスを core のフォーカス窓に戻す（レイヤー面が消えたあと）。

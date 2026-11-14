@@ -413,6 +413,10 @@ impl Contrast {
         let mut last = BTreeMap::new();
         let focus_id = view.focus();
         let unfocused_dim = self.policy.unfocused_dim();
+        // 明度遷移: リロードで `Tier` の `l` が変わったフレームは即時。履歴の無い窓は目標から始まる。
+        let focus_motion = crate::dim_anim::focus_motion(self.policy.motion());
+        self.dim_anim.begin_frame(unfocused_dim);
+        let visible_ids: BTreeSet<WindowId> = visible.iter().map(|v| v.3).collect();
         for (key, window, output, w_id) in visible {
             let Some(location) = self.space.element_location(&window) else {
                 continue;
@@ -436,12 +440,14 @@ impl Contrast {
                         .collect()
                 })
                 .unwrap_or_default();
-            let dim = crate::render::dim::window_dim(
+            let target = crate::render::dim::window_dim(
                 focus_id == Some(w_id),
                 view.window(w_id)
                     .is_some_and(|w| w.state == contrast_core::WindowState::Fullscreen),
                 unfocused_dim,
             );
+            // 画面に出す乗数は `DimAnimator::displayed` の 1 か所で決める。閉じる窓の絵（`Snapshot.dim`）も同じ値。
+            let dim = self.dim_anim.retarget(w_id, target, now, focus_motion);
             let geo = window.geometry();
             let center = location + Point::from((geo.size.w / 2, geo.size.h / 2));
             let first_time = self.window_anims.seen.insert(key);
@@ -463,6 +469,7 @@ impl Contrast {
             );
         }
         self.window_anims.last = last;
+        self.dim_anim.retain(&visible_ids);
 
         // 開く窓: 今のフレームの絵をテクスチャに描く（中身は毎フレーム変わる）。
         let anims = &mut self.window_anims;
