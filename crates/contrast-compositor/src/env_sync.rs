@@ -23,6 +23,16 @@ pub(crate) fn name_at(names: &[contrast_policy::NamedWorkspace], index: u8) -> O
     names.get(usize::from(index)).map(|w| w.name.clone())
 }
 
+/// 名前 `name` のワークスペースの位置（0 始まり）と、そのシーン（`Launch` のコマンド）。名前表に無ければ `None`。
+pub(crate) fn scene_of(
+    names: &[contrast_policy::NamedWorkspace],
+    name: &str,
+) -> Option<(u8, Vec<String>)> {
+    let index = names.iter().position(|w| w.name == name)?;
+    let scene = names.get(index)?;
+    Some((u8::try_from(index).ok()?, scene.launch.clone()))
+}
+
 impl Contrast {
     /// 押されたキーの行き先（今のキー層で）。実機の入力とデバッグの入力の両方がこれを使う（経路を 1 つにする）。
     pub(crate) fn route_key(&self, mods: contrast_policy::Mods, name: &str) -> KeyRoute {
@@ -100,11 +110,7 @@ impl Contrast {
     /// 名前つきワークスペースへ切り替える（名前表 → 位置 → core の `SwitchWorkspace`）。未知の名前は何もしない。
     pub(crate) fn switch_workspace_by_name(&mut self, name: &str) -> bool {
         let names = self.policy.named_workspaces();
-        let Some(index) = names
-            .iter()
-            .position(|w| w.name == name)
-            .and_then(|i| u8::try_from(i).ok())
-        else {
+        let Some((index, _)) = scene_of(&names, name) else {
             tracing::warn!(name, "CT084: unknown workspace name");
             return false;
         };
@@ -118,11 +124,10 @@ impl Contrast {
     /// 未知のシーンは何もせず警告（CT085）。
     pub(crate) fn open_scene(&mut self, name: &str) {
         let names = self.policy.named_workspaces();
-        let Some(scene) = names.iter().find(|w| w.name == name) else {
+        let Some((_, launch)) = scene_of(&names, name) else {
             tracing::warn!(name, "CT085: unknown scene");
             return;
         };
-        let launch = scene.launch.clone();
         if !self.switch_workspace_by_name(name) {
             return;
         }
@@ -162,6 +167,31 @@ mod tests {
         assert_eq!(name_at(&names, 1).as_deref(), Some("code"));
         assert_eq!(name_at(&names, 2), None);
         assert_eq!(name_at(&[], 0), None);
+    }
+
+    #[test]
+    fn a_scene_is_the_named_workspace_position_and_its_launch_commands() {
+        let names = vec![
+            NamedWorkspace {
+                name: "web".to_owned(),
+                launch: vec!["firefox".to_owned()],
+            },
+            NamedWorkspace {
+                name: "code".to_owned(),
+                launch: vec!["foot".to_owned(), "foot -e htop".to_owned()],
+            },
+        ];
+        assert_eq!(
+            scene_of(&names, "code"),
+            Some((1, vec!["foot".to_owned(), "foot -e htop".to_owned()]))
+        );
+        assert_eq!(
+            scene_of(&names, "web"),
+            Some((0, vec!["firefox".to_owned()]))
+        );
+        // 未知の名前は何も起こさない。
+        assert_eq!(scene_of(&names, "nope"), None);
+        assert_eq!(scene_of(&[], "web"), None);
     }
 
     #[test]
