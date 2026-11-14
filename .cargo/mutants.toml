@@ -3,3 +3,17 @@
 # ミュータントを入れる前の無変更のツリーでも `cargo test` が通るよう、feature を全部付けて実行する。
 # （ビルドとテストの両方に効くので、`additional_cargo_args` ではなくこちらだけを指定する）
 additional_cargo_test_args = ["--all-features"]
+
+# 同値ミュータント（変異しても外から見える結果が変わらないので、テストでは殺せない）。
+# 根拠は .cc-logs/report-u2-remaining.md（T2）と .cc-logs/report-u2-t3.md（T3）。
+# 同じ関数の別の変異（捕まっているもの）まで除外しないよう、行と列まで指定する。
+# core のこの 3 ファイルの行がずれたら、ここも直す（外れると、その変異が見逃しとして現れる）。
+exclude_re = [
+  # distribute_heights の `count >= 1 && count <= total`: 上限の検査は、後段の split_heights の同じ検査と重複している。
+  'scrolling\.rs:58:29: replace && with \|\| in distribute_heights',
+  # snap_view の `leftmost < p && p < rightmost`（2 件）: 端点と等しい点の重複は、安定ソートと `reduce` の「先を残す」で選ばれない。
+  'scrolling\.rs:148:25: replace < with <= in snap_view',
+  'scrolling\.rs:148:34: replace < with <= in snap_view',
+  # window_mapped の `if !state.is_dynamic() { check_index }`: 直後の `list.get(index).ok_or(..)` が同じ誤りを同じ状態で返す。
+  'window_mapped\.rs:52:8: delete ! in handle',
+]
