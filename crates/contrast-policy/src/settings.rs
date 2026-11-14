@@ -6,6 +6,9 @@ use std::collections::BTreeMap;
 
 use crate::port::{Action, Mods};
 
+/// 既定のキー層の名前（層を書かない `Keybind` が属する層）。
+pub const NORMAL_MODE: &str = "normal";
+
 /// ワークスペース数の上限。
 pub const MAX_WORKSPACES: u8 = 32;
 
@@ -66,6 +69,8 @@ impl KeySpec {
 /// 1 つのキーバインド。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyBinding {
+    /// 属するキー層の名前（既定 `NORMAL_MODE`）。同一性は `(mode, mods, keysym)`。
+    pub mode: String,
     /// 当たるキー。
     pub key: KeySpec,
     /// 実行する操作。
@@ -73,6 +78,24 @@ pub struct KeyBinding {
     /// このバインドを続けて実行できる間隔（ミリ秒）。最初の実行から、この時間のあいだは実行しない（niri の `cooldown-ms`）。
     /// ホイールのバインドで、連続する目盛りを間引くのに使う。`None` なら間引かない。
     pub cooldown_ms: Option<u32>,
+}
+
+/// キー層の宣言（`<Mode name fallthrough?>`）。`normal` は宣言しなくてもある。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModeSettings {
+    /// 層の名前。
+    pub name: String,
+    /// 層の中で当たるバインドが無いキーを、`normal` へ素通しするか（既定 false = 消費して何もしない）。
+    pub fallthrough: bool,
+}
+
+/// 名前つきワークスペース（`<Workspaces>` の子 `<Workspace name>`。並び = 位置、0 始まり）。`Fixed` のみ。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NamedWorkspace {
+    /// 名前（互いに異なり、空でない）。
+    pub name: String,
+    /// シーン: `scene` 命令で起動するコマンド（空白で区切った先頭がプログラム、残りが引数）。宣言のみ（自動起動しない）。
+    pub launch: Vec<String>,
 }
 
 /// `cooldown_ms` の上限（ミリ秒。1 時間）。
@@ -253,6 +276,10 @@ pub struct Settings {
     /// 動き（Motion）。`None` は `<Motion>` が書かれていない = 全種別が即時（`Some` で何も書かないのと同じ）。
     /// `Some` のときは、書かれていない種別は即時。組み込みの既定は `None`（旧 `animationMs = 0` と同じ見た目）。
     pub motion: Option<crate::motion::MotionSettings>,
+    /// キー層の宣言（`normal` 以外。宣言の無い層名を `Keybind` が使うと診断）。
+    pub modes: Vec<ModeSettings>,
+    /// 名前つきワークスペース（位置 = 並び。`Fixed` のみ。空なら名前なし）。
+    pub named_workspaces: Vec<NamedWorkspace>,
 }
 
 /// `screenshot_path` の既定（niri と同じ）。
@@ -284,6 +311,7 @@ impl Settings {
         let alt = ModKey::Alt.mods();
         let alt_shift = Mods { shift: true, ..alt };
         let bind = |mods: Mods, key: &str, action: Action| KeyBinding {
+            mode: NORMAL_MODE.to_owned(),
             key: KeySpec {
                 mods,
                 keysym: key.to_owned(),
@@ -326,22 +354,49 @@ impl Settings {
                 .collect(),
             keybinds,
             motion: None,
+            modes: Vec::new(),
+            named_workspaces: Vec::new(),
         }
     }
 
-    /// 押されたキーに当たるバインド。最初に当たったもの。
-    fn find_binding(&self, mods: Mods, keysym: &str) -> Option<&KeyBinding> {
-        self.keybinds.iter().find(|b| b.key.matches(mods, keysym))
+    /// 層 `mode` の、押されたキーに当たるバインド。最初に当たったもの。
+    fn find_binding(&self, mode: &str, mods: Mods, keysym: &str) -> Option<&KeyBinding> {
+        self.keybinds
+            .iter()
+            .find(|b| b.mode == mode && b.key.matches(mods, keysym))
     }
 
-    /// 押されたキーに当たる操作。最初に当たったもの。
+    /// `normal` 層で、押されたキーに当たる操作。最初に当たったもの。
     pub fn resolve_key(&self, mods: Mods, keysym: &str) -> Option<Action> {
-        self.find_binding(mods, keysym).map(|b| b.action.clone())
+        self.resolve_key_in(NORMAL_MODE, mods, keysym)
     }
 
-    /// 押されたキーに当たるバインドの `cooldown_ms`。当たるバインドが無い・間引かないなら `None`。
+    /// 層 `mode` で、押されたキーに当たる操作。最初に当たったもの。
+    pub fn resolve_key_in(&self, mode: &str, mods: Mods, keysym: &str) -> Option<Action> {
+        self.find_binding(mode, mods, keysym)
+            .map(|b| b.action.clone())
+    }
+
+    /// 層 `mode` の、当たらなかったキーを `normal` へ素通しするか（宣言が無ければ false）。
+    pub fn mode_fallthrough(&self, mode: &str) -> bool {
+        self.modes
+            .iter()
+            .find(|m| m.name == mode)
+            .is_some_and(|m| m.fallthrough)
+    }
+
+    /// `normal` 層で、押されたキーに当たるバインドの `cooldown_ms`。当たるバインドが無い・間引かないなら `None`。
     pub fn resolve_cooldown_ms(&self, mods: Mods, keysym: &str) -> Option<u32> {
-        self.find_binding(mods, keysym).and_then(|b| b.cooldown_ms)
+        self.find_binding(NORMAL_MODE, mods, keysym)
+            .and_then(|b| b.cooldown_ms)
+    }
+
+    /// 名前 `name` のワークスペースの位置（0 始まり）。名前表に無ければ `None`。
+    pub fn workspace_named(&self, name: &str) -> Option<u8> {
+        self.named_workspaces
+            .iter()
+            .position(|w| w.name == name)
+            .and_then(|i| u8::try_from(i).ok())
     }
 }
 

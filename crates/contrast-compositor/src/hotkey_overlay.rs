@@ -385,6 +385,7 @@ mod tests {
         action: Action,
     ) -> KeyBinding {
         KeyBinding {
+            mode: contrast_policy::NORMAL_MODE.to_owned(),
             key: KeySpec {
                 mods: Mods {
                     alt,

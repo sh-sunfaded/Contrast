@@ -26,6 +26,10 @@ pub struct Config {
     pub hook: Option<Box<dyn PlacementHook>>,
     /// 読み込みで出た警告（成功したが知らせたいこと。例: `<Motion>` があるので旧 `Layout.animation*` を無視する）。
     pub warnings: Vec<ConfigDiagnostic>,
+    /// 設定ファイルが関数形ルートのとき、`Env` で設定を作る口（`settings` はその基準の `Env` で作った値）。
+    pub env_renderer: Option<Rc<dyn crate::env::EnvRenderer>>,
+    /// 設定を読んだときのプロファイル名（`Env.profile`）。
+    pub profile: String,
 }
 
 impl Config {
@@ -35,7 +39,17 @@ impl Config {
             settings,
             hook,
             warnings: Vec::new(),
+            env_renderer: None,
+            profile: crate::env::DEFAULT_PROFILE.to_owned(),
         }
+    }
+
+    /// `Env` で設定を作る口とプロファイル名を付ける（関数形ルートの設定）。
+    #[must_use]
+    pub fn with_env(mut self, renderer: Rc<dyn crate::env::EnvRenderer>, profile: String) -> Self {
+        self.env_renderer = Some(renderer);
+        self.profile = profile;
+        self
     }
 
     /// 読み込みの警告を付ける。
@@ -132,15 +146,84 @@ pub struct ConfigStore {
     generation: Cell<u64>,
     /// この世代でログに出した診断コード。
     logged: RefCell<BTreeSet<String>>,
+    /// 実際に使う設定。`Env` で変わってよい部分（`Appearance`・`Motion`・`Keybind`）だけが、基準の設定（`current`）と
+    /// 違うことがある。`ConfigStore` の世代・`logged`・CT050 とは別の層で、`replace` で基準に戻る。
+    effective: RefCell<Rc<Settings>>,
+    /// 最後に渡された `Env`（等しければ再 `render` しない）。
+    last_env: RefCell<Option<crate::env::PolicyEnv>>,
 }
 
 impl ConfigStore {
     /// 最初の版で作る。世代は 1。
     pub fn new(config: Config) -> Self {
+        let effective = Rc::new(config.settings.clone());
         Self {
             current: RefCell::new(Rc::new(config)),
             generation: Cell::new(1),
             logged: RefCell::new(BTreeSet::new()),
+            effective: RefCell::new(effective),
+            last_env: RefCell::new(None),
+        }
+    }
+
+    /// 実際に使う設定（`Env` を反映したもの。`Env` を渡していなければ基準の設定と同じ）。
+    pub fn settings(&self) -> Rc<Settings> {
+        Rc::clone(&self.effective.borrow())
+    }
+
+    /// `Env` が変わった。関数形ルートの設定なら `Env` で設定を作り直し、`Appearance`・`Motion`・`Keybind` だけを反映する。
+    /// `Env` が前回と等しければ何もしない。失敗は直前の設定を保持し、同じ `Env` では 1 回だけ警告（CT080）を返す。
+    /// 世代・`logged`・CT050 には触れない（`replace` とは別の層）。
+    pub fn update_env(&self, env: crate::env::PolicyEnv) -> crate::env::EnvUpdate {
+        use crate::env::EnvUpdate;
+        let config = self.config();
+        let Some(renderer) = config.env_renderer.clone() else {
+            return EnvUpdate::Unchanged;
+        };
+        if self.last_env.borrow().as_ref() == Some(&env) {
+            return EnvUpdate::Unchanged;
+        }
+        *self.last_env.borrow_mut() = Some(env.clone());
+        let rendered = match renderer.render(&env) {
+            Ok(rendered) => rendered,
+            Err(diagnostics) => {
+                let detail = diagnostics
+                    .first()
+                    .map(|d| format!("{}: {}", d.code, d.message))
+                    .unwrap_or_default();
+                return EnvUpdate::Failed(ConfigDiagnostic {
+                    severity: DiagnosticSeverity::Warning,
+                    code: codes::ENV_RENDER_FAILED.to_owned(),
+                    file: String::new(),
+                    line: None,
+                    column: None,
+                    message: format!("Env での設定の作成に失敗した（直前の設定を保つ）: {detail}"),
+                });
+            }
+        };
+        let (merged, ignored) = config.settings.apply_env_result(&rendered);
+        // `Env` で変わってはいけない項目（`Layout`・`Workspaces` など）が違っていたら、無視して警告（CT050）。
+        let notes: Vec<ConfigDiagnostic> = ignored
+            .iter()
+            .map(|name| ConfigDiagnostic {
+                severity: DiagnosticSeverity::Warning,
+                code: codes::NOT_APPLIED.to_owned(),
+                file: String::new(),
+                line: None,
+                column: None,
+                message: format!(
+                    "`{name}` は Env では変わらない（起動時に決まる）。Env で作った値は無視する"
+                ),
+            })
+            .collect();
+        let changed = *self.effective.borrow().as_ref() != merged;
+        if changed {
+            *self.effective.borrow_mut() = Rc::new(merged);
+        }
+        if changed || !notes.is_empty() {
+            EnvUpdate::Applied(notes)
+        } else {
+            EnvUpdate::Unchanged
         }
     }
 
@@ -151,7 +234,7 @@ impl ConfigStore {
 
     /// 現在のキーバインドの数。
     pub fn binding_count(&self) -> usize {
-        self.config().settings.keybinds.len()
+        self.settings().keybinds.len()
     }
 
     /// 現在の版。
@@ -195,6 +278,8 @@ impl ConfigStore {
             });
             config.settings.workspace_mode = mode;
         }
+        *self.effective.borrow_mut() = Rc::new(config.settings.clone());
+        *self.last_env.borrow_mut() = None;
         *self.current.borrow_mut() = Rc::new(config);
         self.logged.borrow_mut().clear();
         let generation = self.generation.get().saturating_add(1);
@@ -253,35 +338,35 @@ pub fn load_or_builtin(
 
 impl Policy for ConfigStore {
     fn appearance(&self) -> crate::Appearance {
-        self.config().settings.appearance.clone()
+        self.settings().appearance.clone()
     }
 
     fn layout_settings(&self) -> crate::LayoutSettings {
-        self.config().settings.layout.clone()
+        self.settings().layout.clone()
     }
 
     fn cursor_settings(&self) -> crate::CursorSettings {
-        self.config().settings.cursor.clone()
+        self.settings().cursor.clone()
     }
 
     fn screenshot_path(&self) -> Option<String> {
-        self.config().settings.screenshot_path.clone()
+        self.settings().screenshot_path.clone()
     }
 
     fn hotkey_overlay_settings(&self) -> crate::HotkeyOverlaySettings {
-        self.config().settings.hotkey_overlay
+        self.settings().hotkey_overlay
     }
 
     fn input_settings(&self) -> crate::InputSettings {
-        self.config().settings.input
+        self.settings().input
     }
 
     fn startup_commands(&self) -> Vec<crate::StartupCommand> {
-        self.config().settings.startup.clone()
+        self.settings().startup.clone()
     }
 
     fn data_control_clients(&self) -> Vec<String> {
-        self.config().settings.data_control_clients.clone()
+        self.settings().data_control_clients.clone()
     }
 
     fn environment(&self) -> Vec<(String, String)> {
@@ -294,43 +379,43 @@ impl Policy for ConfigStore {
     }
 
     fn background(&self) -> [f32; 4] {
-        self.config().settings.appearance.background
+        self.settings().appearance.background
     }
 
     fn border_width(&self) -> i32 {
-        self.config().settings.appearance.border_width
+        self.settings().appearance.border_width
     }
 
     fn focus_border_color(&self) -> Option<[f32; 4]> {
-        self.config().settings.appearance.tiers.focus_ring()
+        self.settings().appearance.tiers.focus_ring()
     }
 
     fn unfocused_border_color(&self) -> Option<[f32; 4]> {
-        self.config().settings.appearance.tiers.unfocused_ring()
+        self.settings().appearance.tiers.unfocused_ring()
     }
 
     fn tiers(&self) -> crate::tier::Tiers {
-        self.config().settings.appearance.tiers.clone()
+        self.settings().appearance.tiers.clone()
     }
 
     fn motion(&self) -> Option<crate::motion::MotionSettings> {
-        self.config().settings.motion
+        self.settings().motion
     }
 
     fn workspace_count(&self) -> u8 {
-        self.config().settings.workspaces
+        self.settings().workspaces
     }
 
     fn workspace_mode(&self) -> contrast_core::WorkspaceMode {
-        self.config().settings.workspace_mode
+        self.settings().workspace_mode
     }
 
     fn mod_key(&self) -> crate::settings::ModKey {
-        self.config().settings.mod_key
+        self.settings().mod_key
     }
 
     fn keybindings(&self) -> Vec<crate::settings::KeyBinding> {
-        self.config().settings.keybinds.clone()
+        self.settings().keybinds.clone()
     }
 
     fn layout(&self, area: Rect, count: usize) -> Vec<Rect> {
@@ -352,11 +437,31 @@ impl Policy for ConfigStore {
     }
 
     fn resolve_key(&self, mods: Mods, keysym: &str) -> Option<Action> {
-        self.config().settings.resolve_key(mods, keysym)
+        self.settings().resolve_key(mods, keysym)
+    }
+
+    fn resolve_key_in_mode(&self, mode: &str, mods: Mods, keysym: &str) -> Option<Action> {
+        self.settings().resolve_key_in(mode, mods, keysym)
+    }
+
+    fn mode_fallthrough(&self, mode: &str) -> bool {
+        self.settings().mode_fallthrough(mode)
+    }
+
+    fn named_workspaces(&self) -> Vec<crate::settings::NamedWorkspace> {
+        self.settings().named_workspaces.clone()
+    }
+
+    fn profile(&self) -> String {
+        self.config().profile.clone()
+    }
+
+    fn update_env(&self, env: crate::env::PolicyEnv) -> crate::env::EnvUpdate {
+        ConfigStore::update_env(self, env)
     }
 
     fn key_cooldown_ms(&self, mods: Mods, keysym: &str) -> Option<u32> {
-        self.config().settings.resolve_cooldown_ms(mods, keysym)
+        self.settings().resolve_cooldown_ms(mods, keysym)
     }
 }
 
@@ -446,6 +551,98 @@ mod tests {
         s.motion = Some(m);
         store.replace(Config::new(s, None));
         assert_eq!(Policy::motion(&store), Some(m));
+    }
+
+    /// 呼ばれた回数を数え、`Env` の `profile` が "dim" なら角丸 9、"bad" なら失敗、"fixed" なら `Layout` を変えて返す。
+    struct Renderer(Cell<u32>);
+
+    impl crate::env::EnvRenderer for Renderer {
+        fn render(&self, env: &crate::env::PolicyEnv) -> Result<Settings, Vec<ConfigDiagnostic>> {
+            self.0.set(self.0.get().saturating_add(1));
+            let mut s = Settings::builtin();
+            match env.profile.as_str() {
+                "dim" => s.appearance.radius = 9,
+                "bad" => return Err(vec![diag(codes::ENV_BASELINE_FAILED)]),
+                "fixed" => s.layout.gap = 7,
+                _ => {}
+            }
+            Ok(s)
+        }
+    }
+
+    fn env_store() -> (ConfigStore, Rc<Renderer>) {
+        let renderer = Rc::new(Renderer(Cell::new(0)));
+        let config = Config::builtin().with_env(renderer.clone(), "default".to_owned());
+        (ConfigStore::new(config), renderer)
+    }
+
+    #[test]
+    fn an_equal_env_is_not_rendered_again_and_a_changed_one_applies_only_the_switchable_parts() {
+        use crate::env::{EnvUpdate, PolicyEnv};
+        let (store, renderer) = env_store();
+        let generation = store.generation();
+        assert_eq!(
+            store.update_env(PolicyEnv::baseline("default")),
+            EnvUpdate::Unchanged
+        );
+        let calls = renderer.0.get();
+        assert_eq!(
+            store.update_env(PolicyEnv::baseline("default")),
+            EnvUpdate::Unchanged
+        );
+        assert_eq!(renderer.0.get(), calls, "等しい Env では再 render しない");
+        assert!(matches!(
+            store.update_env(PolicyEnv::baseline("dim")),
+            EnvUpdate::Applied(notes) if notes.is_empty()
+        ));
+        assert_eq!(Policy::appearance(&store).radius, 9);
+        // 世代・基準の設定は動かない（`replace` とは別の層）。
+        assert_eq!(store.generation(), generation);
+        assert_eq!(store.config().settings.appearance.radius, 0);
+        // `Layout` は Env で変わらない。違っていたことは警告（CT050）で知らせる。
+        let EnvUpdate::Applied(notes) = store.update_env(PolicyEnv::baseline("fixed")) else {
+            panic!("applied");
+        };
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].code, codes::NOT_APPLIED);
+        assert_eq!(Policy::layout_settings(&store).gap, 0);
+        // 角丸は "fixed" の Env の値（0）に戻る。
+        assert_eq!(Policy::appearance(&store).radius, 0);
+    }
+
+    #[test]
+    fn a_failing_env_keeps_the_previous_settings_and_warns_once() {
+        use crate::env::{EnvUpdate, PolicyEnv};
+        let (store, _) = env_store();
+        store.update_env(PolicyEnv::baseline("dim"));
+        let failed = store.update_env(PolicyEnv::baseline("bad"));
+        let EnvUpdate::Failed(d) = failed else {
+            panic!("failed");
+        };
+        assert_eq!(d.code, codes::ENV_RENDER_FAILED);
+        assert_eq!(d.severity, DiagnosticSeverity::Warning);
+        // 直前の設定（"dim"）を保持する。
+        assert_eq!(Policy::appearance(&store).radius, 9);
+        // 同じ Env では二度目の警告を出さない。
+        assert_eq!(
+            store.update_env(PolicyEnv::baseline("bad")),
+            EnvUpdate::Unchanged
+        );
+    }
+
+    #[test]
+    fn a_reload_returns_to_the_base_and_forgets_the_last_env() {
+        use crate::env::{EnvUpdate, PolicyEnv};
+        let (store, _) = env_store();
+        store.update_env(PolicyEnv::baseline("dim"));
+        assert_eq!(Policy::appearance(&store).radius, 9);
+        store.replace(Config::builtin());
+        assert_eq!(Policy::appearance(&store).radius, 0);
+        // 静的な設定（`env_renderer` なし）では何もしない。
+        assert_eq!(
+            store.update_env(PolicyEnv::baseline("dim")),
+            EnvUpdate::Unchanged
+        );
     }
 
     #[test]

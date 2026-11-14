@@ -123,6 +123,26 @@ impl Policy for StaticPolicy {
     fn key_cooldown_ms(&self, mods: Mods, keysym: &str) -> Option<u32> {
         self.store.key_cooldown_ms(mods, keysym)
     }
+
+    fn resolve_key_in_mode(&self, mode: &str, mods: Mods, keysym: &str) -> Option<Action> {
+        self.store.resolve_key_in_mode(mode, mods, keysym)
+    }
+
+    fn mode_fallthrough(&self, mode: &str) -> bool {
+        self.store.mode_fallthrough(mode)
+    }
+
+    fn named_workspaces(&self) -> Vec<crate::settings::NamedWorkspace> {
+        self.store.named_workspaces()
+    }
+
+    fn profile(&self) -> String {
+        self.store.profile()
+    }
+
+    fn update_env(&self, env: crate::env::PolicyEnv) -> crate::env::EnvUpdate {
+        self.store.update_env(env)
+    }
 }
 
 #[cfg(test)]

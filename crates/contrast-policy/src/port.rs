@@ -108,6 +108,14 @@ pub enum Action {
     ToggleFloating,
     /// フォーカス窓の全画面を切り替える。
     ToggleFullscreen,
+    /// 名前つきワークスペースへ切り替える（名前表 → 位置 → `SwitchWorkspace`。`Fixed` のみ）。
+    SwitchWorkspaceByName(String),
+    /// シーンを開く: 名前つきワークスペースへ切り替えてから、そのワークスペースの `Launch` を spawn する（手動の命令）。
+    OpenScene(String),
+    /// キー層 `name` に入る。
+    EnterMode(String),
+    /// 今のキー層から出る（`normal` に戻る）。
+    ExitMode,
     /// 設定を再読み込みする。
     ReloadConfig,
     /// コンポジタを終了する。
@@ -258,6 +266,34 @@ pub trait Policy {
     /// 修飾キーとキーシンボル名（xkb の名前、例 `"Return"`, `"q"`, `"Left"`）から
     /// 意味操作を引く。該当しなければ `None`（クライアントへ素通しする）。
     fn resolve_key(&self, mods: Mods, keysym: &str) -> Option<Action>;
+
+    /// キー層 `mode` で、押されたキーに当たる意味操作。`normal` は `resolve_key` と同じ。
+    /// 既定は `normal` だけを引く（層を持たない実装用）。
+    fn resolve_key_in_mode(&self, mode: &str, mods: Mods, keysym: &str) -> Option<Action> {
+        (mode == crate::settings::NORMAL_MODE)
+            .then(|| self.resolve_key(mods, keysym))
+            .flatten()
+    }
+
+    /// 層 `mode` の、当たらなかったキーを `normal` へ素通しするか。既定は false（消費する）。
+    fn mode_fallthrough(&self, _mode: &str) -> bool {
+        false
+    }
+
+    /// 名前つきワークスペース（位置 = 並び）。既定は空。
+    fn named_workspaces(&self) -> Vec<crate::settings::NamedWorkspace> {
+        Vec::new()
+    }
+
+    /// 設定を読んだときのプロファイル名（`Env.profile`）。既定は `"default"`。
+    fn profile(&self) -> String {
+        crate::env::DEFAULT_PROFILE.to_owned()
+    }
+
+    /// `Env` が変わったことを伝える。設定が関数形ルートなら、`Env` で設定を作り直す（等しい `Env` では何もしない）。
+    fn update_env(&self, _env: crate::env::PolicyEnv) -> crate::env::EnvUpdate {
+        crate::env::EnvUpdate::Unchanged
+    }
 
     /// `resolve_key` で当たるバインドの間引き（ミリ秒）。最初の実行から、この時間のあいだは同じバインドを実行しない。
     /// 既定は間引かない。

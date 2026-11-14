@@ -817,6 +817,7 @@ fn read_keybind(cx: &mut Ctx<'_>, node: Node<'_>, settings: &Settings) -> Option
     let action = read_action(cx, node, &action, args);
     let cooldown_ms = read_cooldown(cx, node, cooldown)?;
     Some(KeyBinding {
+        mode: contrast_policy::NORMAL_MODE.to_owned(),
         key: spec?,
         action: action?,
         cooldown_ms,

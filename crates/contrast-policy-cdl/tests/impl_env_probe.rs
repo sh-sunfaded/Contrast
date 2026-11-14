@@ -52,14 +52,14 @@ fn env_ty() -> Ty {
     ])
 }
 
-fn schema() -> Schema {
+fn schema() -> Result<Schema, String> {
     Schema::builder()
         .root(M, "Root")
         .env(M, env_ty())
         .component(M, ComponentDef::new("Root").children(&["Item"]))
         .component(M, ComponentDef::new("Item").prop("name", Ty::String))
         .build()
-        .expect("schema")
+        .map_err(|e| format!("{e:?}"))
 }
 
 struct Memory(BTreeMap<&'static str, &'static str>);
@@ -80,7 +80,7 @@ impl ModuleResolver for Memory {
 fn load(files: &[(&'static str, &'static str)]) -> Result<Program, String> {
     let files = Memory(files.iter().copied().collect());
     Engine::new()
-        .with_schema(schema())
+        .with_schema(schema()?)
         .load(&files, "main.cdl")
         .map_err(|d| {
             d.iter()

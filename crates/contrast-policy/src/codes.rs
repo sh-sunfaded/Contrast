@@ -46,5 +46,17 @@ pub const MOTION_BAD_CURVE: &str = "CT071";
 pub const MOTION_SPRING_CONFLICT: &str = "CT072";
 /// `Motion` の中で同じ種別が重複している。
 pub const MOTION_DUPLICATE: &str = "CT073";
+/// 実行時の `Env` での `render`・変換に失敗した（警告。直前の設定を保持する）。
+pub const ENV_RENDER_FAILED: &str = "CT080";
+/// 読み込み時の代表の `Env` での `render`・変換に失敗した（エラー）。
+pub const ENV_BASELINE_FAILED: &str = "CT081";
+/// キー層に抜けるキー（`exit-mode`、または `normal` への `enter-mode`）が無い（INV-K1）。
+pub const MODE_NO_EXIT: &str = "CT082";
+/// ワークスペースの名前が空・重複している、または `Dynamic` で名前を使っている。
+pub const BAD_WORKSPACE_NAME: &str = "CT083";
+/// 未知のキー層・ワークスペース名を参照している。
+pub const UNKNOWN_NAME: &str = "CT084";
+/// 未知のシーン（`scene` 命令の名前）。
+pub const UNKNOWN_SCENE: &str = "CT085";
 /// リロードで反映できない変更。
 pub const NOT_APPLIED: &str = "CT050";
