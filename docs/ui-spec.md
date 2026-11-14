@@ -4,7 +4,7 @@
 
 状態の凡例: **[確定]** 人間が承認済み / **[実装済]** U2 で実装・検証済み（`report-u2-impl.md`、`report-u2-remaining.md`） / **[暫定]** 推奨案で、人間の承認待ち / **[未決]** 決定材料が足りない。
 
-**2026-11-14 の承認**: DU-21〜29（§10）は承認済み。表中の [暫定] のうち DU-21〜29 に由来するもの（Motion の仕様、INV-T1・INV-M1、IPC、U3 の順序）は [確定] と読む。命令→種別の表、Duration の書式、niri との差、ワークスペース種別の出所は、引き続き [未決]。**CDL の破壊的アップデートは、必要なら Contrast の U3 より先に行う**（技術的負債を残さないため。§9 の段階 C）。
+**2026-11-14 の承認**: DU-21〜29（§10）は承認済み。表中の [暫定] のうち DU-21〜29 に由来するもの（Motion の仕様、INV-T1・INV-M1、IPC、U3 の順序）は [確定] と読む。命令→種別の表、niri との差、ワークスペース種別の出所は、引き続き [未決]。**CDL の破壊的アップデートは、必要なら Contrast の U3 より先に行う**（技術的負債を残さないため。§9 の段階 C）。
 
 作成時の限界: 私は現行リポジトリ・CDL 仕様・niri のソースを直接読んでいない。根拠は U0・U2・U3 の各報告と、会話での決定。採用時に Claude Code が現物と突き合わせる（§10）。
 
@@ -35,8 +35,8 @@
 | INV-S2 | ビュー変換は平行移動と一様拡縮のみ（リフローなし）。現状は平行移動のみで自明に成立 | core | proptest | [確定]（拡縮は U5） |
 | INV-F1 | アクティブな出力（`active_output()`）の表示中ワークスペースに窓が 1 枚でもあれば、フォーカスは Some。`windowOpen` の `focus:false` は、直前にフォーカス窓があるときだけ有効で、None のときは無視して新しい窓へフォーカスを渡す | core | 仕様テスト（人間） | [確定]（DU-10）。非アクティブ出力の場合は [暫定]（DU-13） |
 | INV-R1 | 窓の矩形は、減光・枠・影の有無や強さで変わらない（枠は窓の外側に描く） | コンポジタ | 描画テスト（GL） | [実装済]（GL テストはスキップなし）。幾何テストは未実装 |
-| INV-A1 | `F − max(N) > max(N) − min(N)`（狭義）。`F` はフォーカス段階、`N` は非フォーカス段階の `l`。差は OKLCH の L の差。`Tier` が 0 個のときは自明に成立 | スキーマ検証（変換） | 診断（要素単位の位置） | [実装済]（DU-9・12・20） |
-| INV-T1 | Motion の長さ（easing 系の `duration`）は、定数 `MAX_MOTION_MS = 400` 以下。設定で上げられない。**`niriSpring` は長さを持たず対象外**（niri のバネの収束は手計算で約 0.4〜0.7 秒で、対象に入れると基準線が自分で違反するため） | スキーマ検証（変換） | 診断（要素単位の位置） | [暫定]（DU-21・22） |
+| INV-A1 | `F − max(N) > max(N) − min(N)`（狭義）。`F` はフォーカス段階、`N` は非フォーカス段階の `l`。差は OKLCH の L の差。`Tier` が 0 個のときは自明に成立 | スキーマ検証（変換） | 診断（段階の `l` の prop の位置。複数段階にまたがる検査は要素の位置） | [実装済]（DU-9・12・20） |
+| INV-T1 | Motion の長さ（easing 系の `duration`）は、定数 `MAX_MOTION_MS = 400` 以下。設定で上げられない。**`niriSpring` は長さを持たず対象外**（niri のバネの収束は手計算で約 0.4〜0.7 秒で、対象に入れると基準線が自分で違反するため） | スキーマ検証（変換） | 診断（`duration` prop の位置。CDL 0.2.x の prop 位置） | [暫定]（DU-21・22） |
 | INV-M1 | 動きは 6 種別（Scroll・Resize・Workspace・Focus・Open・Close）。**命令単位で種別が 1 つに決まる**。矩形に掛かる種別は同時に 1 つ。Focus は明度のチャンネルで、矩形の動きと同時に走ってよい（明示した例外）。割り込みは「置き換え」で、キューに積まない | コンポジタ | 例示テスト（人間） | [暫定]（DU-23）。命令→種別の表は人間のレビュー待ち（§5） |
 | INV-Z1 | ズーム段階は離散（2〜3）。段階間で窓の相対位置が保たれる（丸めの許容は未決） | core（幾何）＋スキーマ | proptest | [未決]（U5） |
 | INV-K1 | キー層（mode）から必ず抜けられる | コンポジタ | 例示テスト | [暫定]（U4） |
@@ -70,7 +70,7 @@
 - 曲線: `easeOutCubic`（既定）、`easeOutQuad`、`easeOutExpo`、`easeInOutCubic`、`niriSpring`（互換専用。Scroll・Resize・Workspace・Open・Close のみ。Focus には不可。長さを持たない）。`linear` は置かない
 - 既定の長さ（仮置き）: Scroll・Resize・Workspace 150ms、Focus 120ms（新規・実機で決める）、Open・Close 150ms
 - 診断: CT070（easing の長さが 0 未満・有限でない・400ms 超）、CT071（未知の曲線）、CT072（`niriSpring` と `duration` の併記、または `Focus` に `niriSpring`）、CT073（同種別の重複）。コードの空きは実装時に確認
-- 長さの型: `duration: Duration`（CDL の型。リテラルの書式は未確認）または `ms: Number`。実装の最初に確かめ、使いにくければ `ms` [暫定]（Q3）
+- 長さの型: `duration: Duration`、書式は `ms(150)`（CDL にリテラルは無い。`sec(0.15)`=150ms も通るが、整数ミリ秒にならない小数は E5009）。`ms(-5)` は CDL を通るので、**範囲（0 以上、400ms 以下）は Contrast の変換で検査する** [確定]（CDL 0.2.1 の実測。現在の policy crate には Motion も `duration` も未実装で、`Layout.animationMs`（`Number`）がある。U3 で Motion へ移す）
 - 旧 `Layout.animation`・`animationMs` は最終段階で廃止。併存期間は `<Motion>` があれば旧 prop は無視し、警告を出す [暫定]（Q7）。旧設定の写し方（`animation="spring"` → 5 種別の `niriSpring`、など）は U3 計画 §7.2
 - 対象外: オーバービューの開閉、ワークスペースのジェスチャー追従、スクリーンショット UI（物理・指追従・システム UI）
 
@@ -136,7 +136,7 @@
 | 設定 | CC-1・3 | Appearance → Tier | [実装済] |
 | 設定 | CC-2 | `Layout.animation*` → Motion | [暫定] |
 | 設定 | CC-5 | Keybind の同一性、`Env`・Profile | [暫定] |
-| CDL リポジトリ | — | **現時点で破壊的変更は不要**。非破壊の提案と、U4 での確認事項は `docs/cdl-requests.md` | 報告 |
+| CDL リポジトリ | — | **段階 C は完了（2026-11-14）**: CDL 0.2.1（タグ `v0.2.1` = `cbae4e8`）。破壊的変更は作らず、(A) prop の位置情報（`Node::prop_span`・`prop_error`）と (B) `Literal` の再公開（列挙を `Ty::union` で宣言）だけ。T8（同名コンポーネントの取り違え）も修正。Contrast の移行も完了（`modKey`・`Layout.mode`・`Layout.animation`・`Startup.ipc`・`Workspaces.mode` が Literal。範囲外は E4004、位置は値）。詳細は `docs/cdl-requests.md` | 完了 |
 
 ## 9. ロードマップ（再編後）
 
@@ -149,7 +149,7 @@
 | 2 | **A**: core の CB-1 | Claude Code | 段階 1（ゲート G2） |
 | 3 | **記録と互換 IPC**（CP-5） | Claude Code | niri IPC 仕様の調査（先に調査プロンプト） |
 | 4 | **H1 の計測**: 減光あり/なしを数日ずつ | 人間 | 段階 0・3 |
-| C | **CDL の破壊的アップデート**（必要な場合のみ。内容は調査と計画で確定）。CDL リポジトリで、計画 → 承認 → 実装 → Contrast 側の移行の順。Contrast は、着手前に現行の rev を固定（git tag）する | Claude Code（CDL リポジトリ） | 計画の承認。段階 5 の前に完了 |
+| C ✅完了 | **CDL の更新**（破壊的変更は結局不要で、非破壊の 2 件 + T8 修正）。CDL リポジトリで、計画 → 承認 → 実装 → Contrast 側の移行の順。Contrast は、着手前に現行の rev を固定（git tag）する | Claude Code（CDL リポジトリ） | 計画の承認。段階 5 の前に完了 |
 | 5 | **U3**: Focus 遷移を先に（`Motion` スキーマの追加と `DimAnimator`）。種別ごとの曲線設定の全面配線と、旧 prop の廃止は、計測の結果を見てから | Claude Code | 段階 4 の所見。`tests/spec` の準備（人間） |
 | 6 | **U4**: 名前付きワークスペース、`Env`、Profile、キー層 | Claude Code | 規則 5 の例外許可、CDL 側の確認 |
 | 7 | **U5**: ズーム、ヒント減衰 | Claude Code | CB-3 の許可 |
@@ -174,7 +174,7 @@ DU-1〜9（v0.2 のとおり。DU-1 は DU-10 で訂正）、DU-10〜20（U2 の
 
 ### 未決
 - niri との差: 列の挿入位置、挿入・削除時の `view_x`、削除後に動く列、広い列のスクロール、`Proportion` の再計算、DU-13 の場合（人間が実機で確認）
-- `Duration` の書式（`ms` への切り替え）
+- 設定の型注釈: Literal 化した prop に `string` 型の式は渡せない（E4004）。手元の `~/.config` などの `.cdl` は人間が確認する
 - 命令→種別の表のレビュー（`FocusMonitor`、`MoveColumnToMonitor`、`MoveToWorkspace`、`ToggleFloating`）
 - niri の IPC のサブセット
 - INV-Z1 の丸めの許容
