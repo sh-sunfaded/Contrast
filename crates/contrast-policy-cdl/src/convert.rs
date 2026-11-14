@@ -13,9 +13,9 @@ use contrast_policy::settings::{
     MAX_WINDOW_HEIGHT_PX, MAX_WORKSPACES, rgba8,
 };
 use contrast_policy::{
-    Action, ConfigDiagnostic, EasingCurve, KeyBinding, KeySpec, MAX_MOTION_MS, ModKey, MotionCurve,
-    MotionKind, MotionSettings, MotionSpec, Settings, StartupCommand, TierSlot, TierSpec, codes,
-    validate_tiers,
+    Action, ConfigDiagnostic, EasingCurve, KeyBinding, KeySpec, MAX_MOTION_MS, ModKey,
+    ModeSettings, MotionCurve, MotionKind, MotionSettings, MotionSpec, NORMAL_MODE, NamedWorkspace,
+    Settings, StartupCommand, TierSlot, TierSpec, codes, validate_tiers,
 };
 
 use crate::diag::{at, convert, internal};
@@ -82,11 +82,12 @@ impl Ctx<'_> {
 }
 
 /// 重複検査用のキー: (alt, shift, ctrl, super, キー名)。
-type KeyId = (bool, bool, bool, bool, String);
+type KeyId = (String, bool, bool, bool, bool, String);
 
 /// `KeySpec` を重複検査用のキーにする。
-fn key_id(k: &KeySpec) -> KeyId {
+fn key_id(mode: &str, k: &KeySpec) -> KeyId {
     (
+        mode.to_owned(),
         k.mods.alt,
         k.mods.shift,
         k.mods.ctrl,
@@ -131,6 +132,7 @@ pub(crate) fn to_settings(
     // 1 回目: Appearance と Workspaces（キーバインドの検査に数が要る）。
     let mut keybind_nodes = Vec::new();
     let mut data_control_nodes = Vec::new();
+    let mut mode_nodes = Vec::new();
     for child in root.children() {
         match child.component() {
             "Appearance" => read_appearance(&mut cx, child, &mut settings),
@@ -146,6 +148,7 @@ pub(crate) fn to_settings(
             "DataControlClient" => data_control_nodes.push(child),
             "Environment" => read_environment(&mut cx, child, &mut settings),
             "Keybind" => keybind_nodes.push(child),
+            "Mode" => mode_nodes.push(child),
             other => cx.error(
                 child,
                 codes::TREE_MISMATCH,
@@ -155,6 +158,7 @@ pub(crate) fn to_settings(
     }
 
     read_data_control_clients(&mut cx, &data_control_nodes, &mut settings);
+    read_modes(&mut cx, &mode_nodes, &mut settings);
 
     // 2 回目: Keybind。
     let mut seen: BTreeMap<KeyId, (u32, u32)> = BTreeMap::new();
@@ -163,7 +167,7 @@ pub(crate) fn to_settings(
             continue;
         };
         let here = position(&cx, node, "keys");
-        let id = key_id(&binding.key);
+        let id = key_id(&binding.mode, &binding.key);
         if let Some((line, col)) = seen.get(&id) {
             cx.error_at(
                 node,
@@ -179,6 +183,7 @@ pub(crate) fn to_settings(
         seen.insert(id, here);
         settings.keybinds.push(binding);
     }
+    check_mode_exits(&mut cx, &mode_nodes, &settings);
 
     if cx.diags.is_empty() {
         Ok(settings)
@@ -244,6 +249,16 @@ fn read_motion(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
 
 /// 種別 1 つの `curve`・`duration` を読む。誤りは診断を足して `None`。
 fn read_motion_spec(cx: &mut Ctx<'_>, node: Node<'_>, kind: MotionKind) -> Option<MotionSpec> {
+    // `<Workspace>` は `<Workspaces>` の名前表の要素と同じ名前なので、`name` と子は `<Motion>` の中では書けない。
+    if node.prop_span("name").is_some() {
+        cx.error_at(
+            node,
+            "name",
+            codes::BAD_PROP,
+            "`<Motion>` の中の要素に `name` は書けない（名前は `<Workspaces>` の中の `<Workspace>`）",
+        );
+        return None;
+    }
     let curve_name = cx.optional::<String>(node, "curve");
     let duration = cx.optional::<Millis>(node, "duration");
     let curve = match curve_name.as_deref() {
@@ -748,6 +763,102 @@ fn read_workspaces(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
             format!("`count` は 1〜{MAX_WORKSPACES} の整数（{count} は使えない）"),
         ),
     }
+    read_workspace_names(cx, node, settings);
+}
+
+/// `Workspaces` の子 `Workspace`（名前表。並び = 位置）と、その子 `Launch`（シーン）を読む。`Fixed` のみ（CT083）。
+fn read_workspace_names(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
+    let dynamic = settings.workspace_mode == contrast_core::WorkspaceMode::Dynamic;
+    for child in node.children() {
+        if child.component() != "Workspace" {
+            cx.error(
+                child,
+                codes::TREE_MISMATCH,
+                format!("`<Workspaces>` に `<{}>` は置けない", child.component()),
+            );
+            continue;
+        }
+        if child.prop_span("curve").is_some() || child.prop_span("duration").is_some() {
+            cx.error(
+                child,
+                codes::BAD_PROP,
+                "`<Workspaces>` の `<Workspace>` に `curve`・`duration` は書けない（それは `<Motion>` の中の `<Workspace>`）",
+            );
+            continue;
+        }
+        let Some(name) = cx.prop::<String>(child, "name") else {
+            continue;
+        };
+        let position = settings.named_workspaces.len();
+        if dynamic {
+            cx.error_at(
+                child,
+                "name",
+                codes::BAD_WORKSPACE_NAME,
+                "名前つきワークスペースは `Fixed` だけ（`Dynamic` では位置が詰まるので使えない）",
+            );
+        } else if name.trim().is_empty() {
+            cx.error_at(
+                child,
+                "name",
+                codes::BAD_WORKSPACE_NAME,
+                "ワークスペースの名前が空",
+            );
+        } else if settings.named_workspaces.iter().any(|w| w.name == name) {
+            cx.error_at(
+                child,
+                "name",
+                codes::BAD_WORKSPACE_NAME,
+                format!("ワークスペースの名前 \"{name}\" が重複している"),
+            );
+        } else if position >= usize::from(settings.workspaces) {
+            cx.error_at(
+                child,
+                "name",
+                codes::BAD_WORKSPACE_NAME,
+                format!(
+                    "名前が `count`（{}）より多い（\"{name}\" は {} 番目）",
+                    settings.workspaces,
+                    position.saturating_add(1)
+                ),
+            );
+        } else {
+            let launch = read_launches(cx, child);
+            settings
+                .named_workspaces
+                .push(NamedWorkspace { name, launch });
+        }
+    }
+}
+
+/// `Workspace` の子 `Launch`（`command`。空でない）を読む。
+fn read_launches(cx: &mut Ctx<'_>, node: Node<'_>) -> Vec<String> {
+    let mut launch = Vec::new();
+    for child in node.children() {
+        if child.component() != "Launch" {
+            cx.error(
+                child,
+                codes::TREE_MISMATCH,
+                format!("`<Workspace>` に `<{}>` は置けない", child.component()),
+            );
+            continue;
+        }
+        let Some(command) = cx.prop::<String>(child, "command") else {
+            continue;
+        };
+        let command = command.trim().to_owned();
+        if command.is_empty() {
+            cx.error_at(
+                child,
+                "command",
+                codes::BAD_PROP,
+                "`Launch` の `command` が空",
+            );
+        } else {
+            launch.push(command);
+        }
+    }
+    launch
 }
 
 /// `Input` を読む。省略した prop は既定のまま。`accelSpeed` は -1〜1 の数。
@@ -778,6 +889,60 @@ fn read_input(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
     }
 }
 
+/// `Mode`（キー層の宣言）を読む。名前は空でなく、`normal` でなく、重複しない（CT083）。
+fn read_modes(cx: &mut Ctx<'_>, nodes: &[Node<'_>], settings: &mut Settings) {
+    for node in nodes {
+        let Some(name) = cx.prop::<String>(*node, "name") else {
+            continue;
+        };
+        let fallthrough = cx.optional::<bool>(*node, "fallthrough").unwrap_or(false);
+        if name.is_empty() || name == NORMAL_MODE {
+            cx.error_at(
+                *node,
+                "name",
+                codes::BAD_WORKSPACE_NAME,
+                format!("キー層の名前は空でなく、`{NORMAL_MODE}` 以外（\"{name}\" は使えない）"),
+            );
+        } else if settings.modes.iter().any(|m| m.name == name) {
+            cx.error_at(
+                *node,
+                "name",
+                codes::BAD_WORKSPACE_NAME,
+                format!("キー層の名前 \"{name}\" が重複している"),
+            );
+        } else {
+            settings.modes.push(ModeSettings { name, fallthrough });
+        }
+    }
+}
+
+/// `normal` 以外の層には、抜けるキー（`exit-mode`、または `normal` への `enter-mode`）が要る（INV-K1。CT082）。
+fn check_mode_exits(cx: &mut Ctx<'_>, nodes: &[Node<'_>], settings: &Settings) {
+    for node in nodes {
+        let Some(name) = node.prop::<Option<String>>("name").ok().flatten() else {
+            continue;
+        };
+        if !settings.modes.iter().any(|m| m.name == name) {
+            continue;
+        }
+        let has_exit = settings.keybinds.iter().any(|b| {
+            b.mode == name
+                && match &b.action {
+                    Action::ExitMode => true,
+                    Action::EnterMode(target) => target == NORMAL_MODE,
+                    _ => false,
+                }
+        });
+        if !has_exit {
+            cx.error(
+                *node,
+                codes::MODE_NO_EXIT,
+                format!("キー層 \"{name}\" に抜けるキーが無い（`exit-mode`、または `normal` への `enter-mode` を 1 つ書く）"),
+            );
+        }
+    }
+}
+
 /// `Keybind` を読む。誤りがあれば診断を足して `None`。
 fn read_keybind(cx: &mut Ctx<'_>, node: Node<'_>, settings: &Settings) -> Option<KeyBinding> {
     let keys = cx.prop::<String>(node, "keys");
@@ -790,7 +955,20 @@ fn read_keybind(cx: &mut Ctx<'_>, node: Node<'_>, settings: &Settings) -> Option
     let height_px = cx.optional::<f64>(node, "heightPx");
     let cooldown = cx.optional::<f64>(node, "cooldown");
     let focus = cx.optional::<bool>(node, "focus");
+    let target_name = cx.optional::<String>(node, "name");
+    let mode = cx
+        .optional::<String>(node, "mode")
+        .unwrap_or_else(|| NORMAL_MODE.to_owned());
     let (keys, action) = (keys?, action?);
+    if mode != NORMAL_MODE && !settings.modes.iter().any(|m| m.name == mode) {
+        cx.error_at(
+            node,
+            "mode",
+            codes::UNKNOWN_NAME,
+            format!("キー層 \"{mode}\" は宣言されていない（`<Mode name=\"{mode}\" />` が要る）"),
+        );
+        return None;
+    }
 
     let spec: Option<KeySpec> = match parse_key_spec(&keys, settings.mod_key) {
         Ok(spec) => Some(spec),
@@ -813,11 +991,26 @@ fn read_keybind(cx: &mut Ctx<'_>, node: Node<'_>, settings: &Settings) -> Option
         height_px,
         focus,
         count: settings.workspaces,
+        name: target_name,
     };
-    let action = read_action(cx, node, &action, args);
+    let action = read_action(cx, node, &action, args, settings);
     let cooldown_ms = read_cooldown(cx, node, cooldown)?;
+    // 層の中では、修飾キーなしの `Escape` は常に `exit-mode`（宣言で上書きできない。INV-K1）。
+    if mode != NORMAL_MODE
+        && let Some(spec) = &spec
+        && spec.mods == contrast_policy::Mods::default()
+        && spec.keysym.eq_ignore_ascii_case("escape")
+    {
+        cx.error_at(
+            node,
+            "keys",
+            codes::MODE_NO_EXIT,
+            "層の中では、修飾キーなしの `Escape` は常に `exit-mode`（書き換えられない）",
+        );
+        return None;
+    }
     Some(KeyBinding {
-        mode: contrast_policy::NORMAL_MODE.to_owned(),
+        mode,
         key: spec?,
         action: action?,
         cooldown_ms,
@@ -862,10 +1055,18 @@ struct ActionArgs {
     focus: Option<bool>,
     /// ワークスペースの数。
     count: u8,
+    /// `name`（`workspace-name`・`scene`・`enter-mode` の対象）。
+    name: Option<String>,
 }
 
 /// `action` の名前と引数から `Action` を作る。
-fn read_action(cx: &mut Ctx<'_>, node: Node<'_>, name: &str, args: ActionArgs) -> Option<Action> {
+fn read_action(
+    cx: &mut Ctx<'_>,
+    node: Node<'_>,
+    name: &str,
+    args: ActionArgs,
+    settings: &Settings,
+) -> Option<Action> {
     let ActionArgs {
         command,
         workspace,
@@ -875,6 +1076,7 @@ fn read_action(cx: &mut Ctx<'_>, node: Node<'_>, name: &str, args: ActionArgs) -
         height_px,
         focus,
         count,
+        name: target,
     } = args;
     let simple = match name {
         "close" => Some(Action::CloseFocused),
@@ -893,6 +1095,7 @@ fn read_action(cx: &mut Ctx<'_>, node: Node<'_>, name: &str, args: ActionArgs) -
         "move-workspace-down" => Some(Action::MoveWorkspaceDown),
         "move-workspace-up" => Some(Action::MoveWorkspaceUp),
         "reload-config" => Some(Action::ReloadConfig),
+        "exit-mode" => Some(Action::ExitMode),
         "quit" => Some(Action::Quit),
         "power-off-monitors" => Some(Action::PowerOffMonitors),
         "screenshot-screen" => Some(Action::ScreenshotScreen),
@@ -931,6 +1134,41 @@ fn read_action(cx: &mut Ctx<'_>, node: Node<'_>, name: &str, args: ActionArgs) -
         return simple;
     }
     match name {
+        "workspace-name" | "scene" | "enter-mode" => {
+            let Some(target) = target else {
+                cx.error(
+                    node,
+                    codes::BAD_PROP,
+                    format!("`{name}` には `name` が要る"),
+                );
+                return None;
+            };
+            let known = match name {
+                "enter-mode" => {
+                    target == NORMAL_MODE || settings.modes.iter().any(|m| m.name == target)
+                }
+                _ => settings.workspace_named(&target).is_some(),
+            };
+            if !known {
+                let (code, what) = match name {
+                    "workspace-name" => (codes::UNKNOWN_NAME, "ワークスペース名"),
+                    "scene" => (codes::UNKNOWN_SCENE, "シーン（名前つきワークスペース）"),
+                    _ => (codes::UNKNOWN_NAME, "キー層"),
+                };
+                cx.error_at(
+                    node,
+                    "name",
+                    code,
+                    format!("`{name}` の {what} \"{target}\" は宣言されていない"),
+                );
+                return None;
+            }
+            Some(match name {
+                "workspace-name" => Action::SwitchWorkspaceByName(target),
+                "scene" => Action::OpenScene(target),
+                _ => Action::EnterMode(target),
+            })
+        }
         "spawn" => match command.map(|c| c.trim().to_owned()) {
             Some(c) if !c.is_empty() => Some(Action::Spawn(c)),
             _ => {

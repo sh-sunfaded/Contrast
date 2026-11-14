@@ -6,6 +6,11 @@
 
 use cdl_host::{ComponentDef, Field, Literal, Schema, Ty};
 
+/// 型 `Env` を公開するホストモジュール名（`import type { Env } from "host:contrast-env"`）。
+/// `host:contrast` には要素 `Env`（`Environment` の子）があり、CDL は同じモジュールで要素と型の名前が重なるのを許さない
+/// ので、別のモジュールにする。
+pub(crate) const ENV_MODULE: &str = "host:contrast-env";
+
 /// ホストモジュール名。
 const MODULE: &str = "host:contrast";
 
@@ -26,6 +31,38 @@ fn motion_kind(name: &str) -> ComponentDef {
         .optional_prop("duration", Ty::Duration)
 }
 
+/// `Env`（`docs/ui-spec.md` §4.3）の型。読み取り専用の入力で、関数形ルート `function App(env: Env)` が受ける。
+/// `title` は入れない（変化が頻繁なため）。省略できるのは `workspace.name` と `focus`（読むときは `?.`）。
+fn env_type() -> Ty {
+    Ty::object([
+        ("profile", Field::required(Ty::String)),
+        ("mode", Field::required(Ty::String)),
+        (
+            "output",
+            Field::required(Ty::object([("name", Field::required(Ty::String))])),
+        ),
+        (
+            "workspace",
+            Field::required(Ty::object([
+                ("index", Field::required(Ty::Number)),
+                ("name", Field::optional(Ty::String)),
+                ("windowCount", Field::required(Ty::Number)),
+            ])),
+        ),
+        (
+            "focus",
+            Field::optional(Ty::object([
+                ("appId", Field::required(Ty::String)),
+                ("isDialog", Field::required(Ty::Boolean)),
+                (
+                    "state",
+                    Field::required(one_of(&["tiled", "floating", "fullscreen"])),
+                ),
+            ])),
+        ),
+    ])
+}
+
 /// スキーマを組み立てる。失敗は `Schema::build` が返す誤りの一覧（実装の不具合を意味する）。
 pub(crate) fn contrast_schema() -> Result<Schema, Vec<String>> {
     let window_info = Ty::object([
@@ -43,6 +80,7 @@ pub(crate) fn contrast_schema() -> Result<Schema, Vec<String>> {
     ]);
     Schema::builder()
         .root(MODULE, "Contrast")
+        .env(ENV_MODULE, env_type())
         .component(
             MODULE,
             ComponentDef::new("Contrast")
@@ -61,6 +99,7 @@ pub(crate) fn contrast_schema() -> Result<Schema, Vec<String>> {
                     "Environment",
                     "Keybind",
                     "Motion",
+                    "Mode",
                 ])
                 .unique_child("Environment")
                 .unique_child("Appearance")
@@ -87,7 +126,24 @@ pub(crate) fn contrast_schema() -> Result<Schema, Vec<String>> {
         )
         .component(MODULE, motion_kind("Scroll"))
         .component(MODULE, motion_kind("Resize"))
-        .component(MODULE, motion_kind("Workspace"))
+        // `<Workspace>` は、`<Motion>` の中では種別（`curve`・`duration`）、`<Workspaces>` の中では名前表の要素（`name` と子 `Launch`）。
+        // CDL の要素は名前で 1 つに決まるので、両方の props を持ち、どちらで使えるかは変換が検査する。
+        .component(
+            MODULE,
+            motion_kind("Workspace")
+                .optional_prop("name", Ty::String)
+                .children(&["Launch"]),
+        )
+        .component(
+            MODULE,
+            ComponentDef::new("Launch").prop("command", Ty::String),
+        )
+        .component(
+            MODULE,
+            ComponentDef::new("Mode")
+                .prop("name", Ty::String)
+                .optional_prop("fallthrough", Ty::Boolean),
+        )
         .component(MODULE, motion_kind("Focus"))
         .component(MODULE, motion_kind("Open"))
         .component(MODULE, motion_kind("Close"))
@@ -170,7 +226,8 @@ pub(crate) fn contrast_schema() -> Result<Schema, Vec<String>> {
             MODULE,
             ComponentDef::new("Workspaces")
                 .prop("count", Ty::Number)
-                .optional_prop("mode", one_of(&["fixed", "dynamic"])),
+                .optional_prop("mode", one_of(&["fixed", "dynamic"]))
+                .children(&["Workspace"]),
         )
         .component(
             MODULE,
@@ -192,6 +249,8 @@ pub(crate) fn contrast_schema() -> Result<Schema, Vec<String>> {
                 .optional_prop("delta", Ty::Number)
                 .optional_prop("height", Ty::Number)
                 .optional_prop("heightPx", Ty::Number)
+                .optional_prop("mode", Ty::String)
+                .optional_prop("name", Ty::String)
                 .optional_prop("cooldown", Ty::Number)
                 .optional_prop("focus", Ty::Boolean),
         )
@@ -214,6 +273,7 @@ mod tests {
 
     #[test]
     fn schema_builds() {
-        assert!(contrast_schema().is_ok());
+        let r = contrast_schema();
+        assert!(r.is_ok(), "{:?}", r.err());
     }
 }

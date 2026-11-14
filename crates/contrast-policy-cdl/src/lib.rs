@@ -13,6 +13,7 @@
 
 mod convert;
 mod diag;
+mod env_value;
 mod hook;
 mod keys;
 mod loader;
