@@ -68,8 +68,9 @@
 
 - 種別ごとに高々 1 つ。省略した種別は即時。種別は要素名で固定
 - 曲線: `easeOutCubic`（既定）、`easeOutQuad`、`easeOutExpo`、`easeInOutCubic`、`niriSpring`（互換専用。Scroll・Resize・Workspace・Open・Close のみ。Focus には不可。長さを持たない）。`linear` は置かない
+- 既定の曲線: 全種別 `easeOutCubic` [実装済]（`<Motion>` を使うと Open・Close は従来の expo・quad ではなくこれになる。従来の見た目は `<Open curve="easeOutExpo"/>`・`<Close curve="easeOutQuad"/>` で再現できる）
 - 既定の長さ（仮置き）: Scroll・Resize・Workspace 150ms、Focus 120ms（新規・実機で決める）、Open・Close 150ms
-- 診断: CT070（easing の長さが 0 未満・有限でない・400ms 超）、CT071（未知の曲線）、CT072（`niriSpring` と `duration` の併記、または `Focus` に `niriSpring`）、CT073（同種別の重複）。コードの空きは実装時に確認
+- 診断（実装済。CT074 = `<Motion>` と旧 `Layout.animation*` の併存の警告。起動時は表示されず、リロードの結果にだけ載る）: CT070（easing の長さが 0 未満・有限でない・400ms 超）、CT071（未知の曲線）、CT072（`niriSpring` と `duration` の併記、または `Focus` に `niriSpring`）、CT073（同種別の重複）。コードの空きは実装時に確認
 - 長さの型: `duration: Duration`、書式は `ms(150)`（CDL にリテラルは無い。`sec(0.15)`=150ms も通るが、整数ミリ秒にならない小数は E5009）。`ms(-5)` は CDL を通るので、**範囲（0 以上、400ms 以下）は Contrast の変換で検査する** [確定]（CDL 0.2.1 の実測。現在の policy crate には Motion も `duration` も未実装で、`Layout.animationMs`（`Number`）がある。U3 で Motion へ移す）
 - 旧 `Layout.animation`・`animationMs` は最終段階で廃止。併存期間は `<Motion>` があれば旧 prop は無視し、警告を出す [暫定]（Q7）。旧設定の写し方（`animation="spring"` → 5 種別の `niriSpring`、など）は U3 計画 §7.2
 - 対象外: オーバービューの開閉、ワークスペースのジェスチャー追従、スクリーンショット UI（物理・指追従・システム UI）
@@ -96,6 +97,7 @@
 | Workspace | `SwitchWorkspace`、`MoveToWorkspace`、`MoveColumnToWorkspace`、`MoveColumnToWorkspaceNoFocus`、`MoveWorkspaceUp/Down` |
 | Focus | 命令ではなく状態（フォーカス窓が変わったこと）。どの命令でも、変われば起きる |
 | Open / Close | 窓の出現・消滅 |
+| （U3 実装で追加・暫定） | `CloseFocused` = Scroll（隣の列が詰める）、`FocusMonitor` = Workspace（窓は動かさないので矩形の補間は起きない。Focus の明度遷移のみ見える）、`MoveColumnToMonitor` = Workspace（移動先が別の出力で始点が無い。実機で確認）、`ToggleFullscreen` = Resize（全画面にするときは従来どおり補間しない）。命令でない入力（`WindowMapped`・`WindowUnmapped`・ジェスチャー）と未知の `Action` は Scroll |
 | 補間なし | 出力の大きさの変更、`OutputChanged`・`OutputInsetsChanged`、全画面にするとき |
 
 - 要レビュー（人間）: `FocusMonitor` は窓を動かさずフォーカスだけが変わるので、Workspace ではなく Focus のみかもしれない。`MoveColumnToMonitor` は移動先が別の出力で、矩形の補間に始点が無い可能性がある。`MoveToWorkspace`・`ToggleFloating` の見た目も確認する
