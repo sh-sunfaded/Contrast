@@ -15,6 +15,9 @@ use smithay::{
     utils::{Logical, Physical, Point, Rectangle, Scale},
 };
 
+use contrast_core::Rect;
+use contrast_policy::ZoomLevel;
+
 use crate::render::SceneElement;
 use crate::state::Contrast;
 
@@ -68,6 +71,40 @@ fn shrink<E: Element>(
         Scale::from(xf.scale),
         xf.crop,
     )
+}
+
+/// 点 `p`（論理座標）が矩形 `rect` の中か（左・上は含み、右・下は含まない）。整数の点の `Rect::contains` と、
+/// 点の床を取った結果が一致する（`floor(p)` が矩形の中 ⇔ `p` が実数として矩形の中）。
+pub(crate) fn rect_contains_f64(rect: Rect, p: (f64, f64)) -> bool {
+    let (x, y) = (f64::from(rect.x()), f64::from(rect.y()));
+    p.0 >= x && p.0 < x + f64::from(rect.width()) && p.1 >= y && p.1 < y + f64::from(rect.height())
+}
+
+/// 画面の点 `q` にある窓。`windows` は下から上への並び（上に描かれるものが後ろ）で、矩形は core の等倍の矩形。
+/// `level` が等倍でないとき、`q` を逆写像（`pivot` 中心）で等倍の点にしてから探す。上の窓を優先する。
+pub(crate) fn pick_window<T: Copy>(
+    windows: &[(T, Rect)],
+    q: (f64, f64),
+    pivot: (i32, i32),
+    level: ZoomLevel,
+) -> Option<T> {
+    let world = contrast_policy::unzoom_point(q, pivot, level);
+    windows
+        .iter()
+        .rev()
+        .find(|(_, r)| rect_contains_f64(*r, world))
+        .map(|(t, _)| *t)
+}
+
+/// クライアントに渡す「面の原点」。Smithay は `location − 面の原点` を面内座標として送るので、`location` を画面の位置
+/// （カーソルの位置）のままにして、面内座標を等倍の点 `world` に対する `world − 本当の原点` にするために、
+/// 原点を `origin + (pos − world)` にする。
+pub(crate) fn client_surface_origin(
+    origin: (f64, f64),
+    pos: (f64, f64),
+    world: (f64, f64),
+) -> (f64, f64) {
+    (origin.0 + (pos.0 - world.0), origin.1 + (pos.1 - world.1))
 }
 
 /// 要素 1 つを縮める。縮められない種類（カーソル・UI・すでに縮めたもの）はそのまま。切り抜いて何も残らなければ `None`。
@@ -128,6 +165,37 @@ impl Contrast {
             crop,
             scale,
         })
+    }
+
+    /// 画面の点 `pos` を、等倍の点にする（ポインタ → 窓・面の座標）。ズームしていない・アクティブな出力の外・作業領域が
+    /// 無いときは、そのまま。レイヤー面（バー）は縮めないので、レイヤー面の判定には使わない。
+    pub(crate) fn zoom_unmap(&self, pos: Point<f64, Logical>) -> Point<f64, Logical> {
+        let Some((pivot, level)) = self.zoom_context(pos) else {
+            return pos;
+        };
+        let (x, y) = contrast_policy::unzoom_point((pos.x, pos.y), pivot, level);
+        Point::from((x, y))
+    }
+
+    /// 画面の点 `pos` にズームが掛かっているとき、その基準点（論理座標）と段階。掛かっていなければ `None`
+    /// （等倍・アクティブな出力の外・作業領域が無い）。
+    pub(crate) fn zoom_context(&self, pos: Point<f64, Logical>) -> Option<((i32, i32), ZoomLevel)> {
+        if self.zoom_level == 0 {
+            return None;
+        }
+        let output = self.output_at(pos.x, pos.y)?;
+        if self.active_output().as_ref() != Some(&output) {
+            return None;
+        }
+        let level = self.policy.zoom_settings().level(self.zoom_level);
+        if level.is_identity() {
+            return None;
+        }
+        let area = self.work_area(&output)?;
+        Some((
+            pivot_of((area.x(), area.y(), area.width(), area.height())),
+            level,
+        ))
     }
 
     /// ズームの段階を `delta`（+1 = 縮める、-1 = 戻す）だけ動かす。端なら何もしない。
@@ -260,6 +328,87 @@ mod tests {
         let out = zoom_elements(vec![far, near], Some(&xf(2)));
         assert_eq!(out.len(), 1);
         assert_eq!(Element::id(&out[0]).clone(), near_id);
+    }
+
+    fn rect(x: i32, y: i32, w: i32, h: i32) -> Rect {
+        Rect::new(x, y, w, h).unwrap()
+    }
+
+    #[test]
+    fn a_real_point_is_inside_exactly_when_its_floor_is() {
+        let r = rect(10, 20, 30, 40);
+        for (p, inside) in [
+            ((10.0, 20.0), true),
+            ((39.999, 59.999), true),
+            ((40.0, 30.0), false),
+            ((20.0, 60.0), false),
+            ((9.999, 30.0), false),
+            ((20.0, 19.999), false),
+            ((-5.5, 30.0), false),
+        ] {
+            assert_eq!(rect_contains_f64(r, p), inside, "{p:?}");
+        }
+    }
+
+    #[test]
+    fn picking_at_the_identity_is_the_plain_hit_test_with_the_top_window_first() {
+        // 下: 0、上: 1（重なる）。
+        let windows = [(0u32, rect(0, 0, 500, 500)), (1, rect(200, 200, 500, 500))];
+        let id = ZoomLevel::IDENTITY;
+        assert_eq!(
+            pick_window(&windows, (300.0, 300.0), (960, 540), id),
+            Some(1)
+        );
+        assert_eq!(
+            pick_window(&windows, (100.0, 100.0), (960, 540), id),
+            Some(0)
+        );
+        assert_eq!(pick_window(&windows, (900.0, 900.0), (960, 540), id), None);
+    }
+
+    #[test]
+    fn picking_while_zoomed_uses_the_inverse_map() {
+        // 1/2、基準点 (960, 540)。等倍の x 1920〜2400 の窓は、画面の x 1440〜1680 に出る。
+        let level = ZoomLevel::new(2).unwrap();
+        let windows = [
+            (7u32, rect(1920, 400, 480, 300)),
+            (8, rect(0, 0, 960, 1080)),
+        ];
+        // 画面の (1500, 600) → 等倍の (2040, 660)（窓 7）。
+        assert_eq!(
+            pick_window(&windows, (1500.0, 600.0), (960, 540), level),
+            Some(7)
+        );
+        // 等倍だったら (1500, 600) は何も無い（窓 8 は x < 960）。
+        assert_eq!(
+            pick_window(&windows, (1500.0, 600.0), (960, 540), ZoomLevel::IDENTITY),
+            None
+        );
+        // 画面の (700, 300) → 等倍の (440, 60)（窓 8）。
+        assert_eq!(
+            pick_window(&windows, (700.0, 300.0), (960, 540), level),
+            Some(8)
+        );
+        // 基準点は動かない: 画面の中心はどちらでも等倍の中心。
+        assert_eq!(
+            pick_window(&windows, (960.0, 540.0), (960, 540), level),
+            None
+        );
+    }
+
+    #[test]
+    fn the_client_gets_the_world_local_coordinates_while_the_cursor_stays_on_screen() {
+        // 画面の位置 (1500, 600) → 等倍の (2040, 660)。面の本当の原点が (1920, 400) なら、面内座標は (120, 260)。
+        let (pos, world, origin) = ((1500.0, 600.0), (2040.0, 660.0), (1920.0, 400.0));
+        let given = client_surface_origin(origin, pos, world);
+        // Smithay が送る面内座標 = location − 渡した原点。
+        let local = (pos.0 - given.0, pos.1 - given.1);
+        assert_eq!(local, (120.0, 260.0));
+        // 等倍（pos == world）なら原点は変わらない。
+        assert_eq!(
+            client_surface_origin(origin, (100.0, 50.0), (100.0, 50.0)),
+            origin
+        );
     }
 
     #[test]

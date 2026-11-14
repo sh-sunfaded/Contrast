@@ -79,6 +79,8 @@ impl Contrast {
         if let Some(hit) = layer_hit([Layer::Overlay, Layer::Top]) {
             return Some(hit);
         }
+        // ズーム中は、窓を探す点を等倍の点にする（レイヤー面は縮めないので、上の判定は画面の点のまま）。
+        let world = self.zoom_unmap(pos);
         // 窓は、その出力に表示中のものだけ（隣の出力にはみ出したスクロール列の窓は当たらない）。
         let on_output: Vec<smithay::desktop::Window> = output
             .as_ref()
@@ -98,8 +100,17 @@ impl Contrast {
             .find_map(|window| {
                 let location = self.space.element_location(window)? - window.geometry().loc;
                 window
-                    .surface_under(pos - location.to_f64(), WindowSurfaceType::ALL)
-                    .map(|(s, p)| (s, (p + location).to_f64()))
+                    .surface_under(world - location.to_f64(), WindowSurfaceType::ALL)
+                    .map(|(s, p)| {
+                        // ズーム中も、カーソルの位置（`location`）は画面のまま、面内座標は等倍の点で渡す（`client_surface_origin`）。
+                        let o = (p + location).to_f64();
+                        let (ox, oy) = crate::zoom_view::client_surface_origin(
+                            (o.x, o.y),
+                            (pos.x, pos.y),
+                            (world.x, world.y),
+                        );
+                        (s, Point::from((ox, oy)))
+                    })
             })
             .or_else(|| layer_hit([Layer::Bottom, Layer::Background]))
     }

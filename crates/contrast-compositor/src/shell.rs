@@ -22,7 +22,7 @@ use smithay::{
 
 use contrast_core::{
     Columns, Command, Core, CoreError, Effect, EntityId, ExternalKey, IdKind, OutputId, OutputName,
-    Point, Rect, StateView, WindowId, WindowMeta, WindowState, WindowView,
+    Rect, StateView, WindowId, WindowMeta, WindowState, WindowView,
 };
 
 use contrast_policy::{Policy, PortPlacement};
@@ -385,16 +385,28 @@ impl Contrast {
     /// 点 `(x, y)` の出力に表示中で、タイル（枠を含む）がその点を含む窓の ExternalKey。上に描かれている窓を優先する。
     /// 隣の出力の範囲にはみ出したスクロール列の窓は、その出力では当たらない。
     pub fn visible_key_at(&self, x: i32, y: i32) -> Option<ExternalKey> {
-        let p = Point::new(x, y);
-        let output = self.output_at(f64::from(x), f64::from(y))?;
+        self.visible_key_at_screen(smithay::utils::Point::from((f64::from(x), f64::from(y))))
+    }
+
+    /// 画面の点 `pos`（実数）の出力に表示中で、その点を含む窓の ExternalKey。ズーム中は、画面の点を逆写像で等倍の点にして
+    /// から、core の等倍の矩形で探す（出力は画面の点で決める）。等倍では整数の点の判定（点の床）と同じ。
+    pub fn visible_key_at_screen(
+        &self,
+        pos: smithay::utils::Point<f64, smithay::utils::Logical>,
+    ) -> Option<ExternalKey> {
+        let output = self.output_at(pos.x, pos.y)?;
+        let (pivot, level) = self
+            .zoom_context(pos)
+            .unwrap_or(((0, 0), contrast_policy::ZoomLevel::IDENTITY));
         let view = self.core.view();
         let mut visible = self.windows_on(&output);
         visible.sort_by_key(|w| stacking(w.state));
-        visible
+        let windows: Vec<(WindowId, Rect)> = visible
             .iter()
-            .rev()
-            .find(|w| w.rect.is_some_and(|r| r.contains(p)))
-            .and_then(|w| view.window_key(w.id))
+            .filter_map(|w| Some((w.id, w.rect?)))
+            .collect();
+        crate::zoom_view::pick_window(&windows, (pos.x, pos.y), pivot, level)
+            .and_then(|id| view.window_key(id))
     }
 
     // ---- Wayland のイベント → Command ----
@@ -615,7 +627,7 @@ impl Contrast {
 
     /// 座標の下の窓へのフォーカス要求（クリック）。窓の外なら何もしない。
     pub fn focus_at(&mut self, x: f64, y: f64) {
-        let Some(key) = self.visible_key_at(x.floor() as i32, y.floor() as i32) else {
+        let Some(key) = self.visible_key_at_screen(smithay::utils::Point::from((x, y))) else {
             // 窓の無い所: その出力をアクティブにする（niri の `focus_output`。D80）。
             if let Some(output) = self.output_at(x, y)
                 && let Some(key) = self.key_of_output(&output)
@@ -632,7 +644,7 @@ impl Contrast {
     /// ポインタが座標の下の窓に入った。その窓がフォーカスされていなければ、フォーカスを要求する
     /// （`Input.focusFollowsMouse`）。窓の外（空き領域）では何もしない。
     pub fn hover_focus(&mut self, x: f64, y: f64) {
-        let Some(key) = self.visible_key_at(x.floor() as i32, y.floor() as i32) else {
+        let Some(key) = self.visible_key_at_screen(smithay::utils::Point::from((x, y))) else {
             return;
         };
         let need = {
