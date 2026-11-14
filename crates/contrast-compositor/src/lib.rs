@@ -36,6 +36,7 @@ mod text;
 mod touch;
 mod window_anim;
 mod xwayland;
+mod zoom_view;
 
 use std::path::PathBuf;
 use std::rc::Rc;

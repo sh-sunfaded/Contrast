@@ -145,6 +145,7 @@ impl Contrast {
     pub(crate) fn reset_env_after_reload(&mut self) {
         self.key_mode = NORMAL_MODE.to_owned();
         self.env_logged.clear();
+        self.clamp_zoom_after_reload();
         self.sync_env();
     }
 }

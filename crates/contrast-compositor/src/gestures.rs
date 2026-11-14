@@ -269,6 +269,11 @@ pub fn past_drag_threshold(press: Point<f64, Logical>, pos: Point<f64, Logical>)
 impl Contrast {
     /// スワイプが始まった。3 本指と 4 本指はコンポジタが使う（true）。
     pub fn swipe_begin(&mut self, fingers: i32) -> bool {
+        // ズーム中は、3 本指（ビュー）・4 本指（オーバービュー）を使わない（座標系が変わるため）。クライアントへも渡さない。
+        if self.zoom_level != 0 && matches!(fingers, 3 | 4) {
+            self.gestures.swipe = None;
+            return true;
+        }
         match fingers {
             3 => {
                 self.gestures.swipe = Some(Swipe::Undecided(0.0, 0.0));
@@ -469,6 +474,10 @@ impl Contrast {
 
     /// 毎フレーム: DnD の端スクロールを進める。
     pub fn dnd_tick(&mut self) {
+        // ズーム中は端スクロールを使わない（座標系が変わるため）。
+        if self.zoom_level != 0 {
+            return;
+        }
         self.dnd_vertical_tick();
         let Some(d) = self.gestures.dnd.as_ref() else {
             return;

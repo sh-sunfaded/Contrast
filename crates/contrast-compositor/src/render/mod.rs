@@ -93,6 +93,16 @@ render_elements! {
     AnimBand=smithay::backend::renderer::element::utils::RescaleRenderElement<SolidColorRenderElement>,
     /// オーバービューで、ワークスペースの範囲に切り抜いた窓・レイヤー面。
     CroppedSurface=CropRenderElement<RescaleRenderElement<WaylandSurfaceRenderElement<GlesRenderer>>>,
+    /// ズーム中に縮めた、角丸・減光で描く窓の面。
+    ZRounded=CropRenderElement<RescaleRenderElement<StyledSurface<WaylandSurfaceRenderElement<GlesRenderer>>>>,
+    /// ズーム中に縮めた、枠の帯。
+    ZSolid=CropRenderElement<RescaleRenderElement<SolidColorRenderElement>>,
+    /// ズーム中に縮めた、枠の輪と影。
+    ZPixel=CropRenderElement<RescaleRenderElement<PixelShaderElement>>,
+    /// ズーム中に縮めた、開く・閉じる途中の窓。
+    ZAnim=CropRenderElement<RescaleRenderElement<crate::window_anim::AnimElement>>,
+    /// ズーム中に縮めた、閉じる途中の窓の枠の帯。
+    ZAnimBand=CropRenderElement<RescaleRenderElement<RescaleRenderElement<SolidColorRenderElement>>>,
     /// スクリーンショットの UI で止めた出力の絵。
     Frozen=smithay::backend::renderer::element::texture::TextureRenderElement<smithay::backend::renderer::gles::GlesTexture>,
 }
@@ -160,6 +170,9 @@ pub fn scene_elements(
     };
 
     let mut elements: Vec<SceneElement> = cursor;
+    // ズーム（窓・枠・影・開閉の絵だけを、作業領域の中心を基準に縮める。等倍なら `None`）。
+    let zoom = state.zoom_xform(output, origin);
+    let zoom_divisor = zoom.as_ref().map_or(1.0_f32, |z| f32::from(z.divisor));
     // スクリーンショットの UI が開いていれば、それだけを描く（niri と同じ。カーソルは前面）。
     if let Some(ui) = state.screenshot_ui_elements(renderer, output, origin) {
         elements.extend(ui);
@@ -246,6 +259,8 @@ pub fn scene_elements(
             .window_anims
             .elements(renderer, output, origin, |k| shell_windows.contains_key(&k))
     };
+    // ここから影までが「窓まわりの要素」（ズームで縮める範囲）。
+    let world_start = elements.len();
     elements.extend(closing);
     let replaced: Vec<contrast_core::ExternalKey> = opening.iter().map(|(k, _)| *k).collect();
     elements.extend(opening.into_iter().map(|(_, e)| SceneElement::Anim(e)));
@@ -308,8 +323,9 @@ pub fn scene_elements(
         } else {
             None
         };
+        // 角丸の半径（物理 px）。ズーム中は縮めた窓に合わせて半径も縮める（影・枠の輪はシェーダの座標ごと縮むので不要）。
         let radius_px = if round.is_some() {
-            radius as f32 * scale as f32
+            radius as f32 * scale as f32 / zoom_divisor
         } else {
             0.0
         };
@@ -343,6 +359,10 @@ pub fn scene_elements(
             output,
             origin,
         ));
+    }
+    if zoom.is_some() {
+        let world: Vec<SceneElement> = elements.drain(world_start..).collect();
+        elements.extend(crate::zoom_view::zoom_elements(world, zoom.as_ref()));
     }
     elements.extend(layer_elements(renderer, lower));
     Ok(elements)

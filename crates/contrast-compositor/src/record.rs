@@ -126,6 +126,11 @@ pub(crate) fn config_line(profile: &str, failed: bool, stamp: Stamp) -> String {
     )
 }
 
+/// ズームの段階が変わった行（段階の番号と約数）。
+pub(crate) fn zoom_line(level: usize, divisor: u8, stamp: Stamp) -> String {
+    line(stamp, "zoom", json!({ "level": level, "divisor": divisor }))
+}
+
 /// キー層が変わった行。
 pub(crate) fn mode_line(mode: &str, stamp: Stamp) -> String {
     line(stamp, "key_mode", json!({ "mode": mode }))
@@ -170,6 +175,11 @@ impl Recorder {
     /// 設定を読み込んだことを記録する。
     pub(crate) fn record_config(&mut self, profile: &str, failed: bool, stamp: Stamp) {
         self.write(&[config_line(profile, failed, stamp)]);
+    }
+
+    /// ズームの段階が変わったことを記録する。
+    pub(crate) fn record_zoom(&mut self, level: usize, divisor: u8, stamp: Stamp) {
+        self.write(&[zoom_line(level, divisor, stamp)]);
     }
 
     /// キー層が変わったことを記録する。
@@ -391,6 +401,17 @@ mod tests {
         assert!(c.contains(r#""failed":false"#));
         let m = mode_line("resize", T);
         assert!(m.contains(r#""event":"key_mode""#) && m.contains(r#""mode":"resize""#));
+    }
+
+    #[test]
+    fn a_zoom_line_has_the_level_and_the_divisor() {
+        let z = zoom_line(1, 2, T);
+        assert!(
+            z.contains(r#""event":"zoom""#)
+                && z.contains(r#""level":1"#)
+                && z.contains(r#""divisor":2"#)
+        );
+        assert!(serde_json::from_str::<Value>(&z).is_ok());
     }
 
     #[test]

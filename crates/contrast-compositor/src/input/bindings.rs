@@ -17,10 +17,9 @@ impl Contrast {
         }
         let core_action = match action {
             Action::Spawn(program) => return self.spawn(&program),
-            Action::ZoomIn | Action::ZoomOut | Action::ZoomReset => {
-                tracing::warn!(?action, "zoom is not wired yet");
-                return;
-            }
+            Action::ZoomIn => return self.zoom_step(1),
+            Action::ZoomOut => return self.zoom_step(-1),
+            Action::ZoomReset => return self.zoom_reset(),
             Action::SwitchWorkspaceByName(name) => {
                 self.switch_workspace_by_name(&name);
                 return;
@@ -42,6 +41,11 @@ impl Contrast {
                 return;
             }
             Action::Screenshot => {
+                // ズーム中は範囲選択の座標を変換しないので、開かない。
+                if self.zoom_level != 0 {
+                    tracing::info!("screenshot ui is disabled while zoomed");
+                    return;
+                }
                 self.screenshot_ui.requested = true;
                 return;
             }

@@ -202,6 +202,10 @@ impl Contrast {
 
     /// `toggle-overview` とホットコーナー。
     pub fn toggle_overview(&mut self) {
+        // 開くときは、先に等倍に戻す（オーバービューは縮めた窓の座標を使わない）。
+        if !self.overview.open {
+            self.zoom_reset();
+        }
         self.overview.toggle(0.0);
         tracing::info!(open = self.overview.open, "overview: toggled");
     }
@@ -651,7 +655,7 @@ impl Contrast {
                 let local = pos - g.loc.to_f64();
                 (0.0..1.0).contains(&local.x) && (0.0..1.0).contains(&local.y)
             });
-        if inside && !self.pointer_in_hot_corner {
+        if inside && !self.pointer_in_hot_corner && self.zoom_level == 0 {
             let grabbed = self.seat.get_pointer().is_some_and(|p| p.is_grabbed());
             if !grabbed {
                 tracing::info!("overview: hot corner");
