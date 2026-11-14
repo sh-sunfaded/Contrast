@@ -10,7 +10,7 @@
 // スクロール列レイアウト（Layout mode="scrolling"）: 列が横に並び、Up/Down/J/K は列の中の上下の窓を動く。
 "use cdl 1";
 import {
-  Contrast, Appearance, Tiers, FocusTier, Layout, Cursor, Screenshot, Input, Workspaces, Startup, Environment, Env, Keybind,
+  Contrast, Appearance, Tiers, FocusTier, Layout, Motion, Scroll, Resize, Workspace, Open, Close, Cursor, Screenshot, Input, Workspaces, Startup, Environment, Env, Keybind,
 } from "host:contrast";
 
 export default (
@@ -26,7 +26,15 @@ export default (
     </Tiers>
     {/* niri の layout { gaps 16; default-column-width { proportion 0.5; } preset-column-widths { 1/3 1/2 2/3 } } */}
     <Layout gap={px(16)} outerGap={px(16)} mode="scrolling" defaultColumnWidth={0.5}
-      presetColumnWidths="0.33333 0.5 0.66667" animation="spring" animationMs={150} />
+      presetColumnWidths="0.33333 0.5 0.66667" />
+    {/* niri の animations（既定のバネ）: 窓の移動・大きさ・ワークスペース切替と、窓の開閉。Focus は書かない（減光なし） */}
+    <Motion>
+      <Scroll curve="niriSpring" />
+      <Resize curve="niriSpring" />
+      <Workspace curve="niriSpring" />
+      <Open curve="niriSpring" />
+      <Close curve="niriSpring" />
+    </Motion>
     {/* niri の cursor { xcursor-theme "Cecilia"; xcursor-size 24 } */}
     <Cursor theme="Cecilia" size={24} />
     {/* niri の input { touchpad { tap; natural-scroll } }。niri は省略した dwt を off にする */}
@@ -196,8 +204,7 @@ export default (
           Mod+BracketLeft / Mod+BracketRight    consume-or-expel-window-left / right
         N5 待ち:
           Mod+ホイール系、Print 系（screenshot）、Mod+Shift+Slash（hotkey overlay）、Mod+Shift+P（power-off-monitors）、overview
-        アニメーション: 窓の移動・大きさ・ワークスペース切替の補間は Layout.animationMs（niri の animations は既定のまま有効）。
-          窓の開閉（出ていく窓・開く窓）の補間は未対応
+        アニメーション: 窓の移動・大きさ・ワークスペース切替・窓の開閉は <Motion>（niriSpring。niri の animations は既定のまま有効）。
         niri の config では使っていないので書かない（CDL では使える）:
           Input focusFollowsMouse（focus-follows-mouse）、Cursor hideAfterInactiveMs（cursor.hide-after-inactive-ms）、
           windowOpen フックの Placement.fullscreen（open-fullscreen） */}

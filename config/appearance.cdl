@@ -1,8 +1,10 @@
 "use cdl 1";
-import { Appearance, Tiers, FocusTier, Tier, Layout, Cursor, Screenshot, Workspaces } from "host:contrast";
+import {
+  Appearance, Tiers, FocusTier, Tier, Layout, Motion, Scroll, Resize, Workspace, Open, Close, Cursor, Screenshot, Workspaces,
+} from "host:contrast";
 import {
   GAP, BORDER_WIDTH, FOCUS_COLOR, BACKGROUND, TIER_FOCUS_L, TIER_REST_L, DEFAULT_COLUMN_WIDTH,
-  PRESET_COLUMN_WIDTHS, ANIMATION_MS, WORKSPACE_COUNT, CURSOR_THEME, CURSOR_SIZE,
+  PRESET_COLUMN_WIDTHS, WORKSPACE_COUNT, CURSOR_THEME, CURSOR_SIZE,
 } from "./theme.cdl";
 
 // 見た目と窓の並べ方（niri の layout、focus-ring、cursor）。niri の border は無効なので移さない。
@@ -33,9 +35,21 @@ export const layout = (
     outerGap={GAP}
     defaultColumnWidth={DEFAULT_COLUMN_WIDTH}
     presetColumnWidths={PRESET_COLUMN_WIDTHS}
-    animation="spring"
-    animationMs={ANIMATION_MS}
   />
+);
+
+/**
+ * 動き。niri の animations（既定のバネ）と同じ: 窓の移動・大きさ・ワークスペース切替と、窓の開閉が niri のバネで動く。
+ * Focus（明度の遷移）は書かない（減光は即時）。書くなら `<Focus />`（既定 120ms）。
+ */
+export const motion = (
+  <Motion>
+    <Scroll curve="niriSpring" />
+    <Resize curve="niriSpring" />
+    <Workspace curve="niriSpring" />
+    <Open curve="niriSpring" />
+    <Close curve="niriSpring" />
+  </Motion>
 );
 
 export const cursor = <Cursor theme={CURSOR_THEME} size={CURSOR_SIZE} />;
