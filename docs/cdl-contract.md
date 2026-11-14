@@ -106,6 +106,13 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
 - **観測の記録（L3。設定ファイルではなく環境変数）**: `CONTRAST_RECORD` で有効（既定は無効。`/` で始まる値はそのパス、それ以外は `$XDG_STATE_HOME/contrast/events.jsonl`、無ければ `~/.local/state/contrast/events.jsonl`）。1 行 1 JSON（`t_mono_ms`・`t_wall_ms`・`event`）で、`focus`・`workspace_activated`・`workspaces_changed`・`window_opened`・`window_closed`・`config_loaded`（`profile`・`failed`）・`key_mode`。**`title` は記録しない**。差分は IPC と同じ `diff`・`diff_extra` から作る。書き込みの失敗は握りつぶす（最初の 1 回だけ警告）。記録は動作に影響しない（INV-L1）。
 - **IPC**: ワークスペースの `name` は名前表から埋まる（`Fixed` のみ）。`FocusWorkspace` の `Name` 参照は名前表で切り替える（名前表が無いときは従来どおり「未対応」、知らない名前は `workspace not found`）。
 
+### ズーム（U5。`docs/ui-spec.md` §4.5）
+
+- `<Zoom>`（`Contrast` の一意の子。省略 = 等倍のみ）の中に `<Step divisor={2〜8}/>` を **0〜2 個**。`divisor` は整数で、**厳密に増える順**（`2, 4` はよい。`4, 2`・重複・範囲外・小数は **CT086**、位置は `divisor` の属性。`Step` が 3 つ以上は CT086、位置は 3 つ目の要素）。段階は等倍に `Step` が足される（等倍・1/divisor…。最大 3 段 = INV-Z1）。
+- `Keybind action="zoom-in"`（1 段縮める。最後の段階なら何もしない）・`"zoom-out"`（1 段戻す）・`"zoom-reset"`（等倍）。段階が等倍だけ（`<Zoom>` が無い・`Step` が無い）設定でこれらを書くと **CT088**（位置は `action` の属性）。CT087 はヒント減衰用に予約（未使用）。
+- 意味: 窓の実サイズ（クライアントへの `configure`）は等倍のまま、**描画だけ**を作業領域の中心を基準に 1/divisor 倍にする。矩形の写像は 4 辺を別々に同じ写像で写す（`contrast_policy::zoom_rect`）ので、順序と隣接は厳密に保たれ、大きさ・間隔の誤差は 1 論理 px 以下（ちょうど 1 になるのは、基準点をまたぐ 2 辺がどちらもちょうど半分の位置にあるときだけ。丸めは「同じ近さなら 0 から遠い方」）。基準線 `examples/niri.cdl` は `<Zoom>` を書かない（等倍のみ）。例は `examples/u5-zoom.cdl`。
+- ズームの設定は起動時に決まり、`Env` では変わらない。
+
 ### Motion（U3。`docs/ui-spec.md` §4.2・§5）
 
 - 種別は要素名で固定（`Scroll`・`Resize`・`Workspace`・`Focus`・`Open`・`Close`）。書かなかった種別は**即時**。`<Motion>` ごと省略したときも全種別が即時（組み込みの既定も同じ。旧 `animationMs` の既定 0 と同じ見た目）。
