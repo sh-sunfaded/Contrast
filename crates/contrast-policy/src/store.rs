@@ -313,6 +313,10 @@ impl Policy for ConfigStore {
         self.config().settings.appearance.tiers.clone()
     }
 
+    fn motion(&self) -> Option<crate::motion::MotionSettings> {
+        self.config().settings.motion
+    }
+
     fn workspace_count(&self) -> u8 {
         self.config().settings.workspaces
     }
@@ -426,6 +430,22 @@ mod tests {
         assert!(diagnostics.iter().any(|d| d.code == codes::NOT_APPLIED));
         // 起動時の方式のまま。
         assert_eq!(store.workspace_mode(), WorkspaceMode::Fixed);
+    }
+
+    #[test]
+    fn the_store_exposes_the_motion_of_the_current_config() {
+        use crate::motion::{MotionKind, MotionSettings, MotionSpec};
+        let store = ConfigStore::new(Config::builtin());
+        assert_eq!(Policy::motion(&store), None);
+        let mut m = MotionSettings::default();
+        m.set(
+            MotionKind::Focus,
+            MotionSpec::default_for(MotionKind::Focus),
+        );
+        let mut s = Settings::builtin();
+        s.motion = Some(m);
+        store.replace(Config::new(s, None));
+        assert_eq!(Policy::motion(&store), Some(m));
     }
 
     #[test]
