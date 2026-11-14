@@ -43,6 +43,21 @@ pub(crate) fn build_workspaces(
         .collect()
 }
 
+/// 固定のワークスペースの一覧に、名前表（位置順。`Workspaces` の子 `<Workspace name>`）の名前を付ける。
+/// 名前表に無い位置は `None` のまま。
+pub(crate) fn with_names(
+    mut list: Vec<Workspace>,
+    names: &[contrast_policy::NamedWorkspace],
+) -> Vec<Workspace> {
+    for w in &mut list {
+        w.name = usize::from(w.idx)
+            .checked_sub(1)
+            .and_then(|i| names.get(i))
+            .map(|n| n.name.clone());
+    }
+    list
+}
+
 /// 出力ごとの列から、ワークスペースの一覧を作る（`Dynamic`）。
 ///
 /// `outputs` は出力ごとの（名前, 列の id の並び, 表示中の位置）を OutputId 昇順に。`focused_output` はアクティブな出力の名前。
@@ -244,7 +259,10 @@ impl Contrast {
             .iter()
             .filter_map(|(id, name)| Some((name.clone(), view.shown_workspace(*id)?.get())))
             .collect();
-        build_workspaces(&ids, &shown, focused.as_deref())
+        with_names(
+            build_workspaces(&ids, &shown, focused.as_deref()),
+            &self.policy.named_workspaces(),
+        )
     }
 }
 
@@ -259,6 +277,30 @@ mod tests {
 
     fn shown(name: &str, index: u8) -> Vec<(String, u8)> {
         vec![(name.to_owned(), index)]
+    }
+
+    #[test]
+    fn named_workspaces_get_their_names_by_position() {
+        use contrast_policy::NamedWorkspace;
+        let names = vec![
+            NamedWorkspace {
+                name: "web".to_owned(),
+                launch: Vec::new(),
+            },
+            NamedWorkspace {
+                name: "code".to_owned(),
+                launch: Vec::new(),
+            },
+        ];
+        let list = with_names(
+            build_workspaces(&seq(3), &shown("eDP-1", 1), Some("eDP-1")),
+            &names,
+        );
+        let got: Vec<_> = list.iter().map(|w| w.name.as_deref()).collect();
+        assert_eq!(got, [Some("web"), Some("code"), None]);
+        // 名前表が無ければ従来どおり `None`。
+        let plain = with_names(build_workspaces(&seq(2), &[], None), &[]);
+        assert!(plain.iter().all(|w| w.name.is_none()));
     }
 
     #[test]

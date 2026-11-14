@@ -35,6 +35,10 @@ pub(crate) trait Host {
     fn ipc_workspaces(&self) -> Vec<Workspace>;
     /// 0 始まりの位置のワークスペースに切り替える。
     fn ipc_focus(&mut self, index: u8);
+    /// 名前のワークスペースに切り替える。`None` は名前表が無い（名前は未対応）、`Some(false)` は知らない名前。
+    fn ipc_focus_name(&mut self, _name: &str) -> Option<bool> {
+        None
+    }
     /// 窓・キーボードの配列・オーバービューの状態。
     fn ipc_extra(&mut self) -> Extra {
         Extra::default()
@@ -372,10 +376,14 @@ fn handle_line<D: Host>(
                 None => Err(NOT_FOUND.to_owned()),
             }
         }
-        Request::FocusWorkspaceName(name) => {
-            tracing::debug!(name, "ipc: focus by name is not supported");
-            Err(NAMES_UNSUPPORTED.to_owned())
-        }
+        Request::FocusWorkspaceName(name) => match host.ipc_focus_name(name) {
+            Some(true) => Ok(Response::Handled),
+            Some(false) => Err(NOT_FOUND.to_owned()),
+            None => {
+                tracing::debug!(name, "ipc: focus by name is not supported (no names)");
+                Err(NAMES_UNSUPPORTED.to_owned())
+            }
+        },
         Request::Unsupported => Err(UNSUPPORTED.to_owned()),
     };
     match request {
@@ -492,6 +500,8 @@ mod tests {
     struct Fake {
         list: Vec<Workspace>,
         focused: Vec<u8>,
+        /// 名前表（位置順）。空なら名前は未対応。
+        names: Vec<String>,
     }
 
     fn list(count: u8, active: u8) -> Vec<Workspace> {
@@ -510,6 +520,16 @@ mod tests {
     }
 
     impl Host for Fake {
+        fn ipc_focus_name(&mut self, name: &str) -> Option<bool> {
+            if self.names.is_empty() {
+                return None;
+            }
+            let index = self.names.iter().position(|n| n == name)?;
+            let index = u8::try_from(index).ok()?;
+            self.ipc_focus(index);
+            Some(true)
+        }
+
         fn ipc_workspaces(&self) -> Vec<Workspace> {
             self.list.clone()
         }
@@ -540,6 +560,7 @@ mod tests {
         let host = Fake {
             list: list(4, 0),
             focused: Vec::new(),
+            names: Vec::new(),
         };
         let server = IpcServer::start(
             &event_loop.handle(),
@@ -790,6 +811,26 @@ mod tests {
             ]
         );
         assert!(r.host.focused.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn focus_workspace_by_name_uses_the_name_table() -> Result<(), String> {
+        let mut r = rig("by-name")?;
+        r.host.names = vec!["web".to_owned(), "code".to_owned()];
+        let stream = r.connect()?;
+        for request in [
+            &br#"{"Action":{"FocusWorkspace":{"reference":{"Name":"code"}}}}"#[..],
+            br#"{"Action":{"FocusWorkspace":{"reference":{"Name":"web"}}}}"#,
+        ] {
+            (&stream)
+                .write_all(request)
+                .and_then(|()| (&stream).write_all(b"\n"))
+                .map_err(|e| e.to_string())?;
+        }
+        let (lines, _) = r.read_lines(&stream, 2);
+        assert_eq!(lines, [r#"{"Ok":"Handled"}"#, r#"{"Ok":"Handled"}"#]);
+        assert_eq!(r.host.focused, [1, 0]);
         Ok(())
     }
 

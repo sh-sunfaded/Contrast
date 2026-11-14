@@ -32,6 +32,13 @@ impl Host for Contrast {
         )));
     }
 
+    fn ipc_focus_name(&mut self, name: &str) -> Option<bool> {
+        if self.policy.named_workspaces().is_empty() {
+            return None;
+        }
+        Some(self.switch_workspace_by_name(name))
+    }
+
     fn ipc_extra(&mut self) -> state::Extra {
         self.ipc_extra_state()
     }
