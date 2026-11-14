@@ -9,6 +9,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
 
 use contrast_core::{Rect, WindowId};
+use contrast_policy::{
+    AnimationKind, EasingCurve, LayoutSettings, MotionCurve, MotionKind, MotionSettings,
+};
 
 use crate::spring::{Spring, SpringParams};
 
@@ -19,6 +22,32 @@ pub enum Motion {
     Easing(Duration),
     /// niri の既定のバネ（窓の移動・リサイズは stiffness 800。ワークスペースの切り替えは 1000）。
     Spring,
+    /// 曲線を選べる easing（`<Motion>` の `easeOutQuad` など）。`Duration` はかける時間（0 なら補間しない）。
+    Eased(EasingCurve, Duration),
+}
+
+/// 種別 `kind` の動きの曲線。`motion` が `Some`（`<Motion>` がある）なら Motion に従い、書かれていない種別は即時。
+/// `None` なら旧 `Layout.animation` / `animationMs`（`legacy`）に従う（`<Motion>` が無い設定の挙動は変わらない）。
+pub fn motion_for(
+    kind: MotionKind,
+    motion: Option<MotionSettings>,
+    legacy: &LayoutSettings,
+) -> Motion {
+    match motion {
+        None => match legacy.animation {
+            AnimationKind::Spring if legacy.animation_ms != 0 => Motion::Spring,
+            _ => Motion::Easing(Duration::from_millis(u64::from(legacy.animation_ms))),
+        },
+        Some(m) => match m.spec(kind) {
+            None => Motion::Easing(Duration::ZERO),
+            Some(spec) => match spec.curve {
+                MotionCurve::NiriSpring => Motion::Spring,
+                MotionCurve::Easing(curve) => {
+                    Motion::Eased(curve, Duration::from_millis(u64::from(spec.duration_ms)))
+                }
+            },
+        },
+    }
 }
 
 impl From<Duration> for Motion {
@@ -32,6 +61,8 @@ impl From<Duration> for Motion {
 enum Curve {
     /// ease-out の 3 次と、かける時間。
     Easing(Duration),
+    /// 曲線を選べる easing と、かける時間。
+    Eased(EasingCurve, Duration),
     /// 0 から 1 へのバネと、収束までの時間。
     Spring(Spring, Duration),
     /// 矩形の成分（x・y・幅・高さ）ごとのバネ（px）と、全部が収束するまでの時間。niri と同じく、
@@ -76,6 +107,18 @@ impl Curve {
                 let t = progress(elapsed, total);
                 (ease_out(t), t >= 1.0)
             }
+            Self::Eased(curve, total) => {
+                // 3 次は従来の式のまま（`<Motion>` を使わない設定の挙動を変えない）。
+                let p = progress(elapsed, total);
+                let value = match curve {
+                    EasingCurve::EaseOutCubic => ease_out(p),
+                    other => f64::from(contrast_policy::motion::ease(
+                        other,
+                        contrast_policy::motion::progress(elapsed, total),
+                    )),
+                };
+                (value, p >= 1.0)
+            }
             Self::Spring(spring, settle) => (
                 spring.value_at(elapsed.as_secs_f64()).clamp(0.0, 1.0),
                 elapsed >= settle,
@@ -89,6 +132,7 @@ impl Curve {
     fn new(motion: Motion, workspace: bool) -> Self {
         match motion {
             Motion::Easing(total) => Self::Easing(total),
+            Motion::Eased(curve, total) => Self::Eased(curve, total),
             Motion::Spring => {
                 let params = if workspace {
                     SpringParams::workspace_switch()
@@ -227,7 +271,7 @@ impl Animator {
         // 表示済みでない窓が、ワークスペースの切り替えで縦にずれた位置から入ってくるとき。
         let slid = shown.is_none() && self.slide.is_some();
         let from = shown.or_else(|| self.slide.and_then(|dy| shifted(to, dy)));
-        let enabled = !matches!(motion, Motion::Easing(d) if d.is_zero());
+        let enabled = !matches!(motion, Motion::Easing(d) | Motion::Eased(_, d) if d.is_zero());
         match from {
             Some(from) if animate && !self.suppressed && enabled && from != to => {
                 let curve = match motion {
@@ -422,6 +466,126 @@ mod tests {
         assert!((start[0] + 3000.0).abs() < 60.0, "{start:?}");
         b.end_slide();
         assert!(b.pending_vx.is_none());
+    }
+
+    use contrast_policy::{MotionCurve, MotionSpec};
+
+    fn legacy(kind: AnimationKind, ms: u32) -> LayoutSettings {
+        LayoutSettings {
+            animation: kind,
+            animation_ms: ms,
+            ..LayoutSettings::default()
+        }
+    }
+
+    fn spec(curve: MotionCurve, ms: u32) -> MotionSpec {
+        MotionSpec {
+            curve,
+            duration_ms: ms,
+        }
+    }
+
+    #[test]
+    fn without_a_motion_element_the_legacy_settings_apply_to_every_kind() {
+        use MotionKind::{Resize, Scroll, Workspace};
+        for kind in [Scroll, Resize, Workspace] {
+            assert_eq!(
+                motion_for(kind, None, &legacy(AnimationKind::Spring, 150)),
+                Motion::Spring
+            );
+            assert_eq!(
+                motion_for(kind, None, &legacy(AnimationKind::Easing, 100)),
+                Motion::Easing(Duration::from_millis(100))
+            );
+            // `animationMs` が 0 なら、spring でも補間しない。
+            assert_eq!(
+                motion_for(kind, None, &legacy(AnimationKind::Spring, 0)),
+                Motion::Easing(Duration::ZERO)
+            );
+        }
+    }
+
+    #[test]
+    fn a_motion_element_selects_curve_and_duration_per_kind_and_ignores_the_legacy_settings() {
+        use MotionKind::{Resize, Scroll, Workspace};
+        let mut m = MotionSettings::default();
+        m.set(
+            Scroll,
+            spec(MotionCurve::Easing(EasingCurve::EaseOutQuad), 200),
+        );
+        m.set(Resize, spec(MotionCurve::NiriSpring, 0));
+        let old = legacy(AnimationKind::Easing, 999);
+        assert_eq!(
+            motion_for(Scroll, Some(m), &old),
+            Motion::Eased(EasingCurve::EaseOutQuad, Duration::from_millis(200))
+        );
+        assert_eq!(motion_for(Resize, Some(m), &old), Motion::Spring);
+        // 書かれていない種別は即時。
+        assert_eq!(
+            motion_for(Workspace, Some(m), &old),
+            Motion::Easing(Duration::ZERO)
+        );
+        // 長さ 0 の easing も即時。
+        let mut z = MotionSettings::default();
+        z.set(
+            Scroll,
+            spec(MotionCurve::Easing(EasingCurve::EaseOutCubic), 0),
+        );
+        assert_eq!(
+            motion_for(Scroll, Some(z), &old),
+            Motion::Eased(EasingCurve::EaseOutCubic, Duration::ZERO)
+        );
+    }
+
+    #[test]
+    fn an_eased_motion_uses_its_curve_and_zero_duration_does_not_animate() {
+        let id = ids(1)[0];
+        let t0 = Instant::now();
+        let (from, to) = (r(0, 0, 100, 100), r(1000, 0, 100, 100));
+        let at_half = |curve: EasingCurve| {
+            let mut a = Animator::default();
+            let m = Motion::Eased(curve, Duration::from_millis(100));
+            a.retarget(id, from, t0, m, true);
+            a.retarget(id, to, t0, m, true);
+            a.tick(t0 + Duration::from_millis(50))[0].1.x()
+        };
+        let cubic = at_half(EasingCurve::EaseOutCubic);
+        let quad = at_half(EasingCurve::EaseOutQuad);
+        let in_out = at_half(EasingCurve::EaseInOutCubic);
+        // 半分の時点: cubic 87.5%、quad 75%、inOut 50%。
+        assert_eq!((cubic, quad, in_out), (875, 750, 500));
+        // 終わりは行き先そのもの。
+        let mut a = Animator::default();
+        let m = Motion::Eased(EasingCurve::EaseOutExpo, Duration::from_millis(100));
+        a.retarget(id, from, t0, m, true);
+        a.retarget(id, to, t0, m, true);
+        assert_eq!(a.tick(t0 + Duration::from_millis(100)), [(id, to)]);
+        // 長さ 0 は補間しない。
+        let mut z = Animator::default();
+        let zero = Motion::Eased(EasingCurve::EaseOutQuad, Duration::ZERO);
+        z.retarget(id, from, t0, zero, true);
+        assert_eq!(z.retarget(id, to, t0, zero, true), to);
+        assert!(!z.is_running());
+    }
+
+    #[test]
+    fn interrupting_restarts_from_the_displayed_rect_and_only_the_spring_keeps_velocity() {
+        let id = ids(1)[0];
+        let t0 = Instant::now();
+        let t1 = t0 + Duration::from_millis(40);
+        let m = Motion::Eased(EasingCurve::EaseOutQuad, Duration::from_millis(100));
+        let mut a = Animator::default();
+        a.retarget(id, r(0, 0, 100, 100), t0, m, true);
+        a.retarget(id, r(1000, 0, 100, 100), t0, m, true);
+        let shown = a.tick(t1)[0].1;
+        // 始点は今表示している矩形。新しい曲線・長さで最初から数え直す。
+        let other = Motion::Eased(EasingCurve::EaseOutExpo, Duration::from_millis(80));
+        assert_eq!(a.retarget(id, r(0, 0, 100, 100), t1, other, true), shown);
+        assert_eq!(
+            a.running.get(&id).map(|x| x.velocity_at(Duration::ZERO)),
+            Some([0.0; 4]),
+            "easing は速度を引き継がない"
+        );
     }
 
     #[test]
