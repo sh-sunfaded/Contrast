@@ -1,6 +1,6 @@
 //! `Tiers` / `FocusTier` / `Tier`（CC-3）の変換のテスト: 通る入力と、診断のコード・位置（行・列）。
 //!
-//! 位置は要素単位（props に位置は無い）。本文は `<Contrast>` の中身で、ファイルの 5 行目から始まる
+//! 位置は、原因の prop が決まる誤り（CT060・CT062・CT065）はその prop の属性、決まらない誤り（CT061・CT063・CT064）は要素。本文は `<Contrast>` の中身で、ファイルの 5 行目から始まる
 //! （1 行目 `"use cdl 1";`、2 行目 import、3 行目 `export default (`、4 行目 `<Contrast>`）。
 
 use std::fs;
@@ -112,7 +112,7 @@ fn a_brighter_tier_than_focus_is_ct062_at_that_tier() -> Result<(), String> {
     assert_eq!(codes(&r), ["CT062"]);
     assert_eq!(
         r.err().and_then(|d| d.first().cloned()),
-        Some(("CT062".to_owned(), Some(7), Some(7)))
+        Some(("CT062".to_owned(), Some(7), Some(13)))
     );
     Ok(())
 }
@@ -125,11 +125,11 @@ fn equal_l_is_ct062() -> Result<(), String> {
 }
 
 #[test]
-fn out_of_range_l_is_ct060_at_the_element() -> Result<(), String> {
-    for (dir, focus, rest, line) in [
-        ("zero", "1", "0", 7),
-        ("big", "1.2", "0.8", 6),
-        ("neg", "1", "-0.5", 7),
+fn out_of_range_l_is_ct060_at_the_l_attribute() -> Result<(), String> {
+    for (dir, focus, rest, line, col) in [
+        ("zero", "1", "0", 7, 13),
+        ("big", "1.2", "0.8", 6, 18),
+        ("neg", "1", "-0.5", 7, 13),
     ] {
         let body = format!(
             "    <Tiers>\n      <FocusTier l={{{focus}}} />\n      <Tier l={{{rest}}} />\n    </Tiers>"
@@ -138,7 +138,7 @@ fn out_of_range_l_is_ct060_at_the_element() -> Result<(), String> {
         assert_eq!(codes(&r), ["CT060"], "{dir}");
         assert_eq!(
             r.err().and_then(|d| d.first().cloned()),
-            Some(("CT060".to_owned(), Some(line), Some(7))),
+            Some(("CT060".to_owned(), Some(line), Some(col))),
             "{dir}"
         );
     }

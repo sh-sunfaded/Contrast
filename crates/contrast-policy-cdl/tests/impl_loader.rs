@@ -125,14 +125,20 @@ fn all_conversion_errors_are_reported_together() -> Result<(), String> {
         ["CT020", "CT021", "CT022", "CT030", "CT031"],
         "{diags:?}"
     );
-    // 位置は要素の行（本文は 7 行目から 1 行ずつ）。
-    let lines: Vec<_> = diags.iter().map(|d| d.line).collect();
-    assert_eq!(lines, [7, 8, 9, 10, 12].map(Some));
-    assert!(
-        diags
-            .iter()
-            .all(|d| d.file.ends_with("config.cdl") && d.column == Some(5))
+    // 位置は行（本文は 7 行目から 1 行ずつ）と、原因の prop の列。CT021 は prop が無いので要素の列（5）。
+    // 列は 4 空白 + `<Keybind `（9 文字）の後ろに `keys="mod+a" ` などが続く。
+    let places: Vec<_> = diags.iter().map(|d| (d.line, d.column)).collect();
+    assert_eq!(
+        places,
+        [
+            (Some(7), Some(27)),  // action="frobnicate"
+            (Some(8), Some(5)),   // command が無い: 要素
+            (Some(9), Some(46)),  // workspace={9}
+            (Some(10), Some(14)), // keys="hyper+d"
+            (Some(12), Some(14)), // keys="alt+E"
+        ]
     );
+    assert!(diags.iter().all(|d| d.file.ends_with("config.cdl")));
     Ok(())
 }
 

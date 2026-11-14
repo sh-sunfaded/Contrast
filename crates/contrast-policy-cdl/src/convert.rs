@@ -1,8 +1,8 @@
 //! 評価後の値木（`Contrast` 要素）を `Settings` にする。
 //!
 //! 誤りは見つけた順に全部集める。1 つでもあれば `Err` を返し、半端な `Settings` は作らない。
-//! 値木の位置は要素単位（props には位置がない）なので、診断は誤りのある prop を含む要素の位置を指し、
-//! メッセージに prop 名を書く。
+//! 診断の位置は、誤りの原因の prop が 1 つに決まるときはその prop の属性（`name={値}`）、
+//! 決まらない（複数の prop にまたがる・prop が無い）ときは要素の位置にする。メッセージには prop 名を書く。
 
 use std::collections::BTreeMap;
 
@@ -33,6 +33,15 @@ impl Ctx<'_> {
     fn error(&mut self, node: Node<'_>, code: &str, message: impl Into<String>) {
         let span = node.span();
         self.diags.push(at(span, code, message, self.sources));
+    }
+
+    /// `node` の prop `key` の位置に診断を足す。prop の位置が無ければ（prop が無いとき）要素の位置。
+    fn error_at(&mut self, node: Node<'_>, key: &str, code: &str, message: impl Into<String>) {
+        let diag = match node.prop_span(key) {
+            Some(span) => at(&span, code, message, self.sources),
+            None => at(node.span(), code, message, self.sources),
+        };
+        self.diags.push(diag);
     }
 
     /// 必須の prop を読む。読めなければ診断を足して `None`。
@@ -138,11 +147,12 @@ pub(crate) fn to_settings(
         let Some(binding) = read_keybind(&mut cx, node, &settings) else {
             continue;
         };
-        let here = position(&cx, node);
+        let here = position(&cx, node, "keys");
         let id = key_id(&binding.key);
         if let Some((line, col)) = seen.get(&id) {
-            cx.error(
+            cx.error_at(
                 node,
+                "keys",
                 codes::DUPLICATE_KEY,
                 format!(
                     "キー `{}` は {line}:{col} でも使っている",
@@ -162,9 +172,9 @@ pub(crate) fn to_settings(
     }
 }
 
-/// 要素の行・列（求められなければ 0:0）。
-fn position(cx: &Ctx<'_>, node: Node<'_>) -> (u32, u32) {
-    let span = node.span();
+/// prop `key` の行・列。prop の位置が無ければ要素の行・列（求められなければ 0:0）。
+fn position(cx: &Ctx<'_>, node: Node<'_>, key: &str) -> (u32, u32) {
+    let span = node.prop_span(key).unwrap_or_else(|| node.span().clone());
     cx.sources
         .get(&span.file)
         .and_then(|text| crate::diag::line_column(text, span.start))
@@ -186,8 +196,9 @@ fn read_mod_key(cx: &mut Ctx<'_>, root: Node<'_>, default: ModKey) -> ModKey {
         Some("alt") => ModKey::Alt,
         Some("super") => ModKey::Super,
         Some(other) => {
-            cx.error(
+            cx.error_at(
                 root,
+                "modKey",
                 codes::BAD_PROP,
                 format!("`modKey` は \"alt\" か \"super\"（\"{other}\" は使えない）"),
             );
@@ -202,8 +213,9 @@ fn read_appearance(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
         let max = u32::try_from(MAX_BORDER_WIDTH).unwrap_or(0);
         match integer_in(width, 0, max).and_then(|w| i32::try_from(w).ok()) {
             Some(w) => settings.appearance.border_width = w,
-            None => cx.error(
+            None => cx.error_at(
                 node,
+                "borderWidth",
                 codes::BAD_PROP,
                 format!("`borderWidth` は 0〜{MAX_BORDER_WIDTH}px の整数（{width}px は使えない）"),
             ),
@@ -281,9 +293,23 @@ fn read_tiers(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
                         _ => node,
                     },
                 };
-                cx.error(target, e.code(), e.message());
+                match tier_prop(&e) {
+                    Some(key) => cx.error_at(target, key, e.code(), e.message()),
+                    None => cx.error(target, e.code(), e.message()),
+                }
             }
         }
+    }
+}
+
+/// 段階の誤りの原因になった prop。`l` の誤りは `l`、`name` の誤りは `name`。
+/// 段階全体の誤り（`SpreadTooLarge`・`RestCount`）は複数の要素にまたがるので `None`（要素の位置）。
+fn tier_prop(e: &contrast_policy::TierError) -> Option<&'static str> {
+    match e {
+        contrast_policy::TierError::BadL { .. }
+        | contrast_policy::TierError::NotMonotonic { .. } => Some("l"),
+        contrast_policy::TierError::BadName { .. } => Some("name"),
+        _ => None,
     }
 }
 
@@ -314,8 +340,9 @@ fn optional_px(cx: &mut Ctx<'_>, node: Node<'_>, key: &str) -> Option<i32> {
     match integer_in(v, 0, max).and_then(|n| i32::try_from(n).ok()) {
         Some(n) => Some(n),
         None => {
-            cx.error(
+            cx.error_at(
                 node,
+                key,
                 codes::BAD_PROP,
                 format!("`{key}` は 0〜{MAX_DECORATION_PX}px の整数（{v}px は使えない）"),
             );
@@ -331,8 +358,9 @@ fn optional_offset(cx: &mut Ctx<'_>, node: Node<'_>, key: &str) -> Option<i32> {
     if v.is_finite() && v.fract() == 0.0 && (-max..=max).contains(&v) {
         return Some(v as i32);
     }
-    cx.error(
+    cx.error_at(
         node,
+        key,
         codes::BAD_PROP,
         format!(
             "`{key}` は -{MAX_DECORATION_PX}〜{MAX_DECORATION_PX}px の整数（{v}px は使えない）"
@@ -353,8 +381,9 @@ fn read_layout(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
         match mode.as_str() {
             "equal" => settings.layout.mode = LayoutMode::Equal,
             "scrolling" => settings.layout.mode = LayoutMode::Scrolling,
-            other => cx.error(
+            other => cx.error_at(
                 node,
+                "mode",
                 codes::BAD_PROP,
                 format!("`mode` は \"equal\" か \"scrolling\"（\"{other}\" は使えない）"),
             ),
@@ -363,8 +392,9 @@ fn read_layout(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
     if let Some(w) = cx.optional::<f64>(node, "defaultColumnWidth") {
         match proportion(w) {
             Some(r) => settings.layout.default_column_width = Some(r),
-            None => cx.error(
+            None => cx.error_at(
                 node,
+                "defaultColumnWidth",
                 codes::BAD_PROP,
                 format!("`defaultColumnWidth` は 0 より大きく 1 以下の数（{w} は使えない）"),
             ),
@@ -373,8 +403,9 @@ fn read_layout(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
     match cx.optional::<String>(node, "animation").as_deref() {
         None | Some("easing") => {}
         Some("spring") => settings.layout.animation = AnimationKind::Spring,
-        Some(other) => cx.error(
+        Some(other) => cx.error_at(
             node,
+            "animation",
             codes::BAD_PROP,
             format!("`animation` は \"easing\" か \"spring\"（`{other}` は使えない）"),
         ),
@@ -382,8 +413,9 @@ fn read_layout(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
     if let Some(ms) = cx.optional::<f64>(node, "animationMs") {
         match integer_in(ms, 0, MAX_ANIMATION_MS) {
             Some(n) => settings.layout.animation_ms = n,
-            None => cx.error(
+            None => cx.error_at(
                 node,
+                "animationMs",
                 codes::BAD_PROP,
                 format!("`animationMs` は 0〜{MAX_ANIMATION_MS} の整数（{ms} は使えない）"),
             ),
@@ -392,8 +424,8 @@ fn read_layout(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
     if let Some(text) = cx.optional::<String>(node, "presetColumnWidths") {
         match parse_presets(&text) {
             Some(list) => settings.layout.preset_column_widths = list,
-            None => cx.error(
-                node,
+            None => cx.error_at(
+                node, "presetColumnWidths",
                 codes::BAD_PROP,
                 format!(
                     "`presetColumnWidths` は 0 より大きく 1 以下の数を、空白かコンマで区切って 1〜{MAX_PRESET_COLUMNS} 個（\"{text}\" は使えない）"
@@ -404,8 +436,8 @@ fn read_layout(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
     if let Some(text) = cx.optional::<String>(node, "windowHeightPresets") {
         match parse_presets(&text) {
             Some(list) => settings.layout.window_height_presets = list,
-            None => cx.error(
-                node,
+            None => cx.error_at(
+                node, "windowHeightPresets",
                 codes::BAD_PROP,
                 format!(
                     "`windowHeightPresets` は 0 より大きく 1 以下の数を、空白かコンマで区切って 1〜{MAX_PRESET_COLUMNS} 個（\"{text}\" は使えない）"
@@ -471,8 +503,9 @@ fn read_cursor(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
     if let Some(size) = cx.optional::<f64>(node, "size") {
         match integer_in(size, 8, 256) {
             Some(n) => settings.cursor.size = Some(n),
-            None => cx.error(
+            None => cx.error_at(
                 node,
+                "size",
                 codes::BAD_PROP,
                 format!("`size` は 8〜256 の整数（{size} は使えない）"),
             ),
@@ -481,8 +514,8 @@ fn read_cursor(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
     if let Some(ms) = cx.optional::<f64>(node, "hideAfterInactiveMs") {
         match integer_in(ms, 1, MAX_HIDE_AFTER_INACTIVE_MS) {
             Some(n) => settings.cursor.hide_after_inactive_ms = Some(n),
-            None => cx.error(
-                node,
+            None => cx.error_at(
+                node, "hideAfterInactiveMs",
                 codes::BAD_PROP,
                 format!(
                     "`hideAfterInactiveMs` は 1〜{MAX_HIDE_AFTER_INACTIVE_MS} の整数（{ms} は使えない）"
@@ -500,7 +533,12 @@ fn read_startup(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
     };
     let command = command.trim().to_owned();
     if command.is_empty() {
-        cx.error(node, codes::BAD_PROP, "`Startup` の `command` が空");
+        cx.error_at(
+            node,
+            "command",
+            codes::BAD_PROP,
+            "`Startup` の `command` が空",
+        );
         return;
     }
     let mut startup = StartupCommand::new(command);
@@ -508,8 +546,9 @@ fn read_startup(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
         None => {}
         Some("niri") => startup = startup.with_niri_ipc(),
         Some(other) => {
-            cx.error(
+            cx.error_at(
                 node,
+                "ipc",
                 codes::BAD_PROP,
                 format!("`Startup` の `ipc` は \"niri\" だけ（`{other}` は使えない）"),
             );
@@ -536,14 +575,16 @@ fn read_data_control_clients(cx: &mut Ctx<'_>, nodes: &[Node<'_>], settings: &mu
                 .chars()
                 .any(|c| c.is_whitespace() || c == '/' || c == '\0')
         {
-            cx.error(
+            cx.error_at(
                 *node,
+                "name",
                 codes::BAD_PROP,
                 "`DataControlClient` の `name` は、空でなく、空白と `/` を含まない名前",
             );
         } else if names.contains(&name) {
-            cx.error(
+            cx.error_at(
                 *node,
+                "name",
                 codes::BAD_PROP,
                 format!("`DataControlClient` の `name` が重複している: {name}"),
             );
@@ -582,8 +623,9 @@ fn read_environment(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
             continue;
         }
         if settings.environment.insert(name.clone(), value).is_some() {
-            cx.error(
+            cx.error_at(
                 env,
+                "name",
                 codes::BAD_PROP,
                 format!("`Env` の名前 \"{name}\" が重複している"),
             );
@@ -596,8 +638,9 @@ fn read_workspaces(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
     match cx.optional::<String>(node, "mode").as_deref() {
         None | Some("fixed") => {}
         Some("dynamic") => settings.workspace_mode = contrast_core::WorkspaceMode::Dynamic,
-        Some(other) => cx.error(
+        Some(other) => cx.error_at(
             node,
+            "mode",
             codes::BAD_PROP,
             format!("`Workspaces` の `mode` は \"fixed\" か \"dynamic\"（`{other}` は使えない）"),
         ),
@@ -607,8 +650,9 @@ fn read_workspaces(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
     };
     match integer_in(count, 1, u32::from(MAX_WORKSPACES)).and_then(|n| u8::try_from(n).ok()) {
         Some(n) => settings.workspaces = n,
-        None => cx.error(
+        None => cx.error_at(
             node,
+            "count",
             codes::BAD_WORKSPACE_COUNT,
             format!("`count` は 1〜{MAX_WORKSPACES} の整数（{count} は使えない）"),
         ),
@@ -633,8 +677,9 @@ fn read_input(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
         if speed.is_finite() && (-1.0..=1.0).contains(&speed) {
             settings.input.accel_speed = speed;
         } else {
-            cx.error(
+            cx.error_at(
                 node,
+                "accelSpeed",
                 codes::BAD_PROP,
                 format!("`accelSpeed` は -1〜1 の数（{speed} は使えない）"),
             );
@@ -659,7 +704,12 @@ fn read_keybind(cx: &mut Ctx<'_>, node: Node<'_>, settings: &Settings) -> Option
     let spec: Option<KeySpec> = match parse_key_spec(&keys, settings.mod_key) {
         Ok(spec) => Some(spec),
         Err(e) => {
-            cx.error(node, codes::BAD_KEY, format!("`keys` \"{keys}\": {e}"));
+            cx.error_at(
+                node,
+                "keys",
+                codes::BAD_KEY,
+                format!("`keys` \"{keys}\": {e}"),
+            );
             None
         }
     };
@@ -691,8 +741,9 @@ fn read_cooldown(cx: &mut Ctx<'_>, node: Node<'_>, value: Option<f64>) -> Option
     match integer_in(ms, 1, MAX_COOLDOWN_MS) {
         Some(ms) => Some(Some(ms)),
         None => {
-            cx.error(
+            cx.error_at(
                 node,
+                "cooldown",
                 codes::BAD_PROP,
                 format!("`Keybind` の `cooldown` は 1〜{MAX_COOLDOWN_MS} の整数（ミリ秒）: {ms}"),
             );
@@ -802,8 +853,9 @@ fn read_action(cx: &mut Ctx<'_>, node: Node<'_>, name: &str, args: ActionArgs) -
         "set-column-width" => match width.and_then(proportion) {
             Some(r) => Some(Action::SetColumnWidth(r)),
             None => {
-                cx.error(
+                cx.error_at(
                     node,
+                    "width",
                     codes::BAD_PROP,
                     "`set-column-width` には 0 より大きく 1 以下の `width` が要る",
                 );
@@ -814,8 +866,9 @@ fn read_action(cx: &mut Ctx<'_>, node: Node<'_>, name: &str, args: ActionArgs) -
             Some(p) if name == "adjust-column-width" => Some(Action::AdjustColumnWidth(p)),
             Some(p) => Some(Action::AdjustWindowHeight(p)),
             None => {
-                cx.error(
+                cx.error_at(
                     node,
+                    "delta",
                     codes::BAD_PROP,
                     format!(
                         "`{name}` には 0 以外で -100〜100 の整数の `delta`（パーセント）が要る"
@@ -856,8 +909,9 @@ fn read_action(cx: &mut Ctx<'_>, node: Node<'_>, name: &str, args: ActionArgs) -
                 return None;
             };
             let Some(index) = workspace_index(n, count) else {
-                cx.error(
+                cx.error_at(
                     node,
+                    "workspace",
                     codes::BAD_ACTION_WORKSPACE,
                     format!("`workspace` は 1〜{count} の整数（{n} は使えない）"),
                 );
@@ -873,8 +927,8 @@ fn read_action(cx: &mut Ctx<'_>, node: Node<'_>, name: &str, args: ActionArgs) -
             }
         }
         other => {
-            cx.error(
-                node,
+            cx.error_at(
+                node, "action",
                 codes::UNKNOWN_ACTION,
                 format!(
                     "未知の action \"{other}\"（spawn / close / focus-left / focus-right / move-left / move-right / \

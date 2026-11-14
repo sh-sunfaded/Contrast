@@ -192,15 +192,16 @@ interface Policy     { windowOpen?: (w: WindowInfo) => Placement }
 | CT042 | フックの戻り値の `workspace` が不正（非整数・1 未満） |
 | CT043 | フックの戻り値の `workspace` が `Workspaces.count` を超える |
 | CT050 | リロードで反映できない変更（ワークスペース数） |
-| CT060 | `FocusTier` / `Tier` の `l` が有限の数でない、または 0 以下か 1 超（位置はその要素） |
+| CT060 | `FocusTier` / `Tier` の `l` が有限の数でない、または 0 以下か 1 超（位置はその `l` の属性） |
 | CT061 | `Tiers` に `FocusTier` が無い（位置は `Tiers`。2 個以上は CDL の `E4006`） |
-| CT062 | 段階が単調でない（`F > n_1 > …` を満たさない。位置は破った `Tier`） |
+| CT062 | 段階が単調でない（`F > n_1 > …` を満たさない。位置は破った `Tier` の `l` の属性） |
 | CT063 | フォーカス段階との差が、フォーカス外の段階全体の幅以下（DU-12。位置は `FocusTier`。メッセージに F・max(N)・min(N)） |
 | CT064 | `Tier` が 2 個以上（この版は 0 個か 1 個。位置は `Tiers`） |
-| CT065 | `Tier` の `name` が空・重複（位置はその `Tier`） |
+| CT065 | `Tier` の `name` が空・重複（位置はその `Tier` の `name` の属性） |
 
 CDL 自身の診断（`E0001`〜）は、そのままのコードで `ConfigDiagnostic` に写す。位置は `file:line:col`。
-値木の診断は要素単位の位置しか取れない（props に位置がない）ので、誤りのある prop を含む要素の位置を示し、メッセージに prop 名を書く。
+値木の診断は、原因の prop が 1 つに決まるもの（範囲外・形式の誤り・重複・未知の action など。CDL 0.2.1 の `Node::prop_span`）はその prop の属性（`name={値}`）の位置を示す。複数の prop にまたがるもの（`set-window-height` の `height` / `heightPx`、`Env` の `name` / `value` の複合検査、CT063 など）と、prop が無いもの（`spawn` の `command` 忘れなど）は要素の位置を示す。どちらもメッセージに prop 名を書く。
+CDL 自身の `E4008`（`Node::prop` などの変換の失敗）も、prop があればその prop の位置になる。
 
 ## 5. 設定ファイルの場所
 
