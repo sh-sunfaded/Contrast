@@ -75,12 +75,18 @@
 - 旧 `Layout.animation`・`animationMs` は**廃止済み**（U3 段階 (d)、2026-11-14）。書くと CDL が未知 prop（E4003、その prop の位置）として拒否し、リロードは旧設定を保持する。`<Motion>` なし = 全種別即時（旧既定も即時だったので組み込みの見た目は不変）。CT074 は削除。`examples/niri.cdl` は `<Motion>` に `niriSpring` の 5 種別（Focus なし）を書く。移行の書き方は `docs/cdl-contract.md`
 - 対象外: オーバービューの開閉、ワークスペースのジェスチャー追従、スクリーンショット UI（物理・指追従・システム UI）
 
-### 4.3 プロファイルと文脈 [暫定・未決を含む]（U4）
+### 4.3 プロファイルと文脈 [確定: DU-30〜39]（U4。2026-11-15 承認、U4 計画の推奨どおり）
 
-- `Env` 宣言（読み取り専用入力）と `Profile`/`when` は、CDL の `Env` 機能（評価は純粋・決定的）を使う前提。Contrast は未接続
-- ワークスペースの「種別」の出所が core に無い。第一候補は**名前付きワークスペース**（niri にもある）[未決]。core の公開 API に触れるので、規則 5 の例外を人間が許可する必要がある
-- シーン宣言（xmonad の TopicSpace 型: ワークスペースごとの作業ディレクトリ・起動アプリ）は、名前付きワークスペースの後 [未決]
-- キー層（mode）の宣言と、`Keybind` の同一性を (mode, 修飾キー, キー名) に変える（CT031）[暫定]
+- **`Env`**（読み取り専用・純粋・決定的）: `{ profile: string, mode: string, output: { name }, workspace: { index, name?, windowCount }, focus?: { appId, isDialog, state: "tiled"|"floating"|"fullscreen" } }`。`title` は入れない（変化が頻繁なため）。出力ごとの `Env` は対象外（`Settings` は全体で 1 つ）
+- **ルート**: 関数形（`export default function App(env: Env)`）を許す。`check` は本体を評価しないので、`load` の後に代表の `Env` で `render` し、`Settings` への変換まで通す（CT081）。実行時の `render`・変換の失敗は、直前の設定を保持して警告（CT080）。静的ルートの設定（`examples/niri.cdl`、`config/`）は従来どおり。`Env` が前回と等しければ再 `render` しない。`Env` 由来の「適用中の設定」は `ConfigStore` の世代とは別の層に持つ
+- **Profile**: 新しい要素は足さない。`env.profile`（1 つの文字列。既定 "default"）と条件（`c && <A/>`）で書く。同じ要素を複数の条件が出すと CDL の一意の子の検査（E4006）で衝突が禁止される。`profile` の入力は `~/.config/contrast/profile`（1 行）または `CONTRAST_PROFILE`、反映は `reload-config`（A/B の差が 1 か所に集まる）。切り替える対象は Tiers・Motion・Appearance・Keybind。`Layout.mode`・`Workspaces` は切り替えない
+- **名前付きワークスペース（H4）**: 当面は **core を変えない**。`<Workspaces>` の子 `<Workspace name>`（並び = 位置）の名前表を policy が持ち、`workspace-name` が既存の `SwitchWorkspace` に写る。対象は `Fixed` のみ（`Dynamic` で名前を使うと CT083）。IPC の `name`・`FocusWorkspaceName` もこの表から。core に名前を持たせる案（C。空でも残る名前）は H4 の所見の後で、規則 5 の例外許可・`core-spec.md` の追記・`tests/spec` が先
+- **シーン**: `<Workspace>` の子に `<Launch command/>`。宣言は純粋、起動は手動の命令 `scene`（`OpenScene`。先に切り替えてから spawn）。自動起動は入れない
+- **キー層（INV-K1）**: `Keybind.mode?`（既定 "normal"）、`enter-mode`・`exit-mode`。同一性は `(mode, 修飾キー, キー)`（CT031 の拡張）。保証は 2 重: (i) `normal` 以外の層に抜けるキーが無ければ CT082、(ii) 層の中では修飾キーなしの `Escape` が常に `exit-mode`（宣言で上書き不可）。オーバービュー・スクリーンショット UI は層より先にキーを奪う順序を保つ。タイムアウトは入れない
+- **観測の記録**: コンポジタ内蔵の JSONL（`CONTRAST_RECORD` で有効。既定は無効。単調時計 + 壁時計。フォーカス・ワークスペース・窓の出現消滅・設定の読み込み（`profile` つき）・層の遷移。`title` は記録しない）。IPC と同じ差分から作り、状態へ戻さない（INV-L1）
+- **Env 由来の減光**: `Tier` の `l` が `Env` の変化で変わるときは**補間する**。リロードだけ即時（Q10 の理由は `Env` に当てはまらない）
+- 診断（空きを実装時に確認）: CT080 実行時 `render` 失敗、CT081 読み込み時の代表 `Env` の失敗、CT082 抜けられない層、CT083 名前の重複・`Dynamic` での名前、CT084 未知の層・名前、CT085 未知のシーン
+- 診断コード・決定 DU-30〜39 の割り当て: 30 名前表（core 不変）/31 `Fixed` のみ/32 `Env` 最小/33 Profile は条件/34 Env 由来の減光は補間/35 キー層の 2 重の保証/36 シーンは手動/37 JSONL 内蔵/38 profile は 1 入力/39 診断コード
 
 ### 4.4 破壊的移行の規則 [確定]（DU-8）
 
