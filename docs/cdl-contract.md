@@ -254,7 +254,7 @@ CDL の DECISIONS R1〜R4・U1〜U5 による。`Limits` の既定値は変わ�
 
 | 変更 | Contrast の対応 |
 | --- | --- |
-| `Program::root()` / `document()` が `Option`（関数の形のルートでは `None`） | 静的なルート（要素）だけを受け付ける。`None` は `CT003` の内部エラーにする（`Env` は宣言しない） |
+| `Program::root()` / `document()` が `Option`（関数の形のルートでは `None`） | 静的なルート（要素）だけを受け付ける。`None` は `CT002` の内部エラー（位置なし、`diag::internal`）にする（`Env` は宣言しない）。スキーマが通した列挙の値を変換が知らない場合（スキーマと変換の食い違い）も同じ `CT002` の内部エラー |
 | `Node::name()` → `component()`、`element()` 廃止 → `span()` | 置き換え |
 | `Node::optional_prop::<T>` 廃止 → `prop::<Option<T>>` | 置き換え（意味は同じ: 無い・`undefined` は `None`） |
 | `Node::expect` → `expect_component` | 置き換え |

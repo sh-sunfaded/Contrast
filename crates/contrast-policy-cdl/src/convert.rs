@@ -17,7 +17,7 @@ use contrast_policy::{
     TierSlot, TierSpec, codes, validate_tiers,
 };
 
-use crate::diag::{at, convert};
+use crate::diag::{at, convert, internal};
 use crate::keys::parse_key_spec;
 
 /// 変換の文脈: 診断の行・列を求めるためのソース本文と、集めた診断。
@@ -45,14 +45,16 @@ impl Ctx<'_> {
     }
 
     /// スキーマが通した列挙の値を、変換が知らなかった（スキーマと変換の食い違い＝実装の不具合）。
-    /// panic せず、位置つきの診断にする。
+    /// panic せず、既存の内部エラー（`loader.rs` の `Program::root()` など）と同じ `internal`（CT002、位置なし）で返す。
+    /// 列挙の全ての値が通ることは `tests/impl_literal.rs` が確かめる。
     fn unexpected_value(&mut self, node: Node<'_>, key: &str, value: &str) {
-        self.error_at(
-            node,
-            key,
+        self.diags.push(internal(
             codes::TREE_MISMATCH,
-            format!("内部エラー: `{key}` の値 \"{value}\" をスキーマは通したが、変換が知らない"),
-        );
+            format!(
+                "内部エラー: `<{}>` の `{key}` の値 \"{value}\" をスキーマは通したが、変換が知らない",
+                node.component()
+            ),
+        ));
     }
 
     /// 必須の prop を読む。読めなければ診断を足して `None`。
