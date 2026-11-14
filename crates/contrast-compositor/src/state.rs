@@ -176,6 +176,10 @@ pub struct Contrast {
     pub window_anims: crate::window_anim::WindowAnims,
     /// フォーカスの明度遷移（窓ごとの減光の乗数の補間。`<Motion><Focus/></Motion>`）。
     pub dim_anim: crate::dim_anim::DimAnimator,
+    /// いまのキー層の名前（既定 `normal`。`enter-mode`・`exit-mode` で変わる。`Env.mode`）。
+    pub key_mode: String,
+    /// `Env` で作った設定の警告で、ログに出した文（同じ設定の世代では 1 回だけ出す）。
+    pub env_logged: std::collections::BTreeSet<String>,
 }
 
 impl Contrast {
@@ -294,6 +298,8 @@ impl Contrast {
             unplugged: Vec::new(),
             window_anims: Default::default(),
             dim_anim: Default::default(),
+            key_mode: contrast_policy::NORMAL_MODE.to_owned(),
+            env_logged: Default::default(),
             screenshot_window_pending: false,
             screenshot_ui: Default::default(),
             touch_last: Default::default(),

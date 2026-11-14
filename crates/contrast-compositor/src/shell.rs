@@ -672,6 +672,8 @@ impl Contrast {
                     self.run_effect(effect);
                 }
                 self.anim.end_slide();
+                // `Env`（フォーカス窓・ワークスペース・出力など）が変わったかもしれない。等しければ何も起きない。
+                self.sync_env();
                 // ワークスペースの表示・フォーカスの変化を、IPC の購読者に伝える。
                 self.ipc_sync();
                 true

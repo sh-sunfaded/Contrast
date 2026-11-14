@@ -3,6 +3,7 @@
 pub mod bindings;
 pub mod debug;
 pub mod devices;
+pub(crate) mod layer;
 pub mod wheel;
 
 use smithay::{
@@ -595,13 +596,18 @@ impl Contrast {
                     }
                     return FilterResult::Intercept(state.policy.resolve_key(to_mods(mods), &name));
                 }
-                match state.policy.resolve_key(to_mods(mods), &name) {
-                    Some(action) => {
-                        tracing::info!(key = %name, ?action, "keybinding");
+                match state.route_key(to_mods(mods), &name) {
+                    layer::KeyRoute::Run(action) => {
+                        tracing::info!(key = %name, mode = %state.key_mode, ?action, "keybinding");
                         state.suppressed_keys.push(keycode);
                         FilterResult::Intercept(Some(action))
                     }
-                    None => FilterResult::Forward,
+                    // 層の中で当たらないキー: クライアントへ渡さない（離したときも渡さない）。
+                    layer::KeyRoute::Consume => {
+                        state.suppressed_keys.push(keycode);
+                        FilterResult::Intercept(None)
+                    }
+                    layer::KeyRoute::Forward => FilterResult::Forward,
                 }
             },
         );

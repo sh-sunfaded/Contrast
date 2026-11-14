@@ -17,14 +17,13 @@ impl Contrast {
         }
         let core_action = match action {
             Action::Spawn(program) => return self.spawn(&program),
-            // U4 段階 (a): まだ配線していない（(b) で実装する）。
-            Action::SwitchWorkspaceByName(_)
-            | Action::OpenScene(_)
-            | Action::EnterMode(_)
-            | Action::ExitMode => {
-                tracing::warn!(?action, "action is not wired yet");
+            Action::SwitchWorkspaceByName(name) => {
+                self.switch_workspace_by_name(&name);
                 return;
             }
+            Action::OpenScene(name) => return self.open_scene(&name),
+            Action::EnterMode(name) => return self.set_key_mode(&name),
+            Action::ExitMode => return self.set_key_mode(contrast_policy::NORMAL_MODE),
             Action::Quit => {
                 tracing::info!("quit requested");
                 return self.loop_signal.stop();

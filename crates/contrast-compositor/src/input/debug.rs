@@ -203,12 +203,17 @@ impl Contrast {
                     tracing::info!(combo, "debug key: screenshot ui");
                     return;
                 }
-                match self.policy.resolve_key(mods, key) {
-                    Some(action) => {
+                match self.route_key(mods, key) {
+                    crate::input::layer::KeyRoute::Run(action) => {
                         tracing::info!(combo, ?action, "debug keybinding");
                         self.run_action(action);
                     }
-                    None => tracing::info!(combo, "debug key: no binding"),
+                    crate::input::layer::KeyRoute::Consume => {
+                        tracing::info!(combo, mode = %self.key_mode, "debug key: consumed by the key mode");
+                    }
+                    crate::input::layer::KeyRoute::Forward => {
+                        tracing::info!(combo, "debug key: no binding");
+                    }
                 }
             }
             (Some("shot"), None, None) => self.screenshot_pending = true,

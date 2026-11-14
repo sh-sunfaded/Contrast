@@ -43,6 +43,8 @@ impl Contrast {
                 self.refresh_data_control_clients();
                 self.reapply_layout();
                 self.reapply_input_settings();
+                // キー層は `normal` に戻し、`Env` で設定を作り直す（新しい版の `Program` で）。
+                self.reset_env_after_reload();
             }
             ReloadOutcome::Absent => tracing::warn!(
                 "config: reload failed: {} not found, keeping generation={generation}",

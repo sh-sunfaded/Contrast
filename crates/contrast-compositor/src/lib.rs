@@ -9,6 +9,7 @@ mod cursor;
 mod data_control;
 mod dim_anim;
 mod edid;
+mod env_sync;
 mod geometry;
 mod gestures;
 mod handler;
