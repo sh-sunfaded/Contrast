@@ -58,5 +58,10 @@ pub const BAD_WORKSPACE_NAME: &str = "CT083";
 pub const UNKNOWN_NAME: &str = "CT084";
 /// 未知のシーン（`scene` 命令の名前）。
 pub const UNKNOWN_SCENE: &str = "CT085";
+/// `<Zoom>` の `Step` の範囲・順序・重複・個数（段階は等倍と合わせて 3 まで）。
+pub const ZOOM_BAD_STEP: &str = "CT086";
+// CT087 はヒント減衰用に予約（未使用）。
+/// `zoom-in`・`zoom-out`・`zoom-reset` があるのに、`<Zoom>` が無い（段階が等倍だけ）。
+pub const ZOOM_WITHOUT_STEPS: &str = "CT088";
 /// リロードで反映できない変更。
 pub const NOT_APPLIED: &str = "CT050";

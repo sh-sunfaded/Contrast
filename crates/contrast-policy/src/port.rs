@@ -116,6 +116,12 @@ pub enum Action {
     EnterMode(String),
     /// 今のキー層から出る（`normal` に戻る）。
     ExitMode,
+    /// ズームを 1 段階進める（縮める。最後の段階なら何もしない）。
+    ZoomIn,
+    /// ズームを 1 段階戻す（等倍の方へ。等倍なら何もしない）。
+    ZoomOut,
+    /// ズームを等倍に戻す。
+    ZoomReset,
     /// 設定を再読み込みする。
     ReloadConfig,
     /// コンポジタを終了する。
@@ -283,6 +289,11 @@ pub trait Policy {
     /// 名前つきワークスペース（位置 = 並び）。既定は空。
     fn named_workspaces(&self) -> Vec<crate::settings::NamedWorkspace> {
         Vec::new()
+    }
+
+    /// ズームの段階（先頭は等倍。`<Zoom>` が無ければ等倍のみ）。既定は等倍のみ。
+    fn zoom_settings(&self) -> crate::zoom::ZoomSettings {
+        crate::zoom::ZoomSettings::default()
     }
 
     /// 設定を読んだときのプロファイル名（`Env.profile`）。既定は `"default"`。

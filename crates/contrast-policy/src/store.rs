@@ -456,6 +456,10 @@ impl Policy for ConfigStore {
         self.config().profile.clone()
     }
 
+    fn zoom_settings(&self) -> crate::zoom::ZoomSettings {
+        self.settings().zoom.clone()
+    }
+
     fn update_env(&self, env: crate::env::PolicyEnv) -> crate::env::EnvUpdate {
         ConfigStore::update_env(self, env)
     }

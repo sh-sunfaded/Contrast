@@ -176,7 +176,7 @@ impl Settings {
         merged.keybinds = rendered.keybinds.clone();
         merged.modes = rendered.modes.clone();
         let mut ignored = Vec::new();
-        let fixed: [(&'static str, bool); 8] = [
+        let fixed: [(&'static str, bool); 9] = [
             ("layout", self.layout != rendered.layout),
             ("workspaces", self.workspaces != rendered.workspaces),
             (
@@ -191,6 +191,7 @@ impl Settings {
             ("environment", self.environment != rendered.environment),
             ("cursor", self.cursor != rendered.cursor),
             ("mod_key", self.mod_key != rendered.mod_key),
+            ("zoom", self.zoom != rendered.zoom),
         ];
         for (name, differs) in fixed {
             if differs {

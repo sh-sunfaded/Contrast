@@ -140,6 +140,10 @@ impl Policy for StaticPolicy {
         self.store.profile()
     }
 
+    fn zoom_settings(&self) -> crate::zoom::ZoomSettings {
+        self.store.zoom_settings()
+    }
+
     fn update_env(&self, env: crate::env::PolicyEnv) -> crate::env::EnvUpdate {
         self.store.update_env(env)
     }

@@ -17,6 +17,10 @@ impl Contrast {
         }
         let core_action = match action {
             Action::Spawn(program) => return self.spawn(&program),
+            Action::ZoomIn | Action::ZoomOut | Action::ZoomReset => {
+                tracing::warn!(?action, "zoom is not wired yet");
+                return;
+            }
             Action::SwitchWorkspaceByName(name) => {
                 self.switch_workspace_by_name(&name);
                 return;

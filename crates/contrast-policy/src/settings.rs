@@ -280,6 +280,8 @@ pub struct Settings {
     pub modes: Vec<ModeSettings>,
     /// 名前つきワークスペース（位置 = 並び。`Fixed` のみ。空なら名前なし）。
     pub named_workspaces: Vec<NamedWorkspace>,
+    /// ズームの段階（先頭は等倍。`<Zoom>` が無ければ等倍のみ）。起動時に決まり、`Env` では変わらない。
+    pub zoom: crate::zoom::ZoomSettings,
 }
 
 /// `screenshot_path` の既定（niri と同じ）。
@@ -356,6 +358,7 @@ impl Settings {
             motion: None,
             modes: Vec::new(),
             named_workspaces: Vec::new(),
+            zoom: crate::zoom::ZoomSettings::default(),
         }
     }
 
