@@ -6,15 +6,16 @@
 
 use std::collections::BTreeMap;
 
-use cdl_host::{Node, Px, Rgba};
+use cdl_host::{Millis, Node, Px, Rgba};
 use contrast_core::{Direction, LayoutMode, Ratio, WindowHeight};
 use contrast_policy::settings::{
     MAX_ANIMATION_MS, MAX_BORDER_WIDTH, MAX_COOLDOWN_MS, MAX_DECORATION_PX,
     MAX_HIDE_AFTER_INACTIVE_MS, MAX_WINDOW_HEIGHT_PX, MAX_WORKSPACES, rgba8,
 };
 use contrast_policy::{
-    Action, AnimationKind, ConfigDiagnostic, KeyBinding, KeySpec, ModKey, Settings, StartupCommand,
-    TierSlot, TierSpec, codes, validate_tiers,
+    Action, AnimationKind, ConfigDiagnostic, DiagnosticSeverity, EasingCurve, KeyBinding, KeySpec,
+    MAX_MOTION_MS, ModKey, MotionCurve, MotionKind, MotionSettings, MotionSpec, Settings,
+    StartupCommand, TierSlot, TierSpec, codes, validate_tiers,
 };
 
 use crate::diag::{at, convert, internal};
@@ -26,6 +27,8 @@ struct Ctx<'a> {
     sources: &'a BTreeMap<String, String>,
     /// これまでに集めた診断。
     diags: Vec<ConfigDiagnostic>,
+    /// 成功しても知らせたいこと（警告）。
+    warnings: Vec<ConfigDiagnostic>,
 }
 
 impl Ctx<'_> {
@@ -42,6 +45,16 @@ impl Ctx<'_> {
             None => at(node.span(), code, message, self.sources),
         };
         self.diags.push(diag);
+    }
+
+    /// `node` の prop `key` の位置に警告を足す（無ければ要素の位置）。
+    fn warn_at(&mut self, node: Node<'_>, key: &str, code: &str, message: impl Into<String>) {
+        let mut diag = match node.prop_span(key) {
+            Some(span) => at(&span, code, message, self.sources),
+            None => at(node.span(), code, message, self.sources),
+        };
+        diag.severity = DiagnosticSeverity::Warning;
+        self.warnings.push(diag);
     }
 
     /// スキーマが通した列挙の値を、変換が知らなかった（スキーマと変換の食い違い＝実装の不具合）。
@@ -114,10 +127,11 @@ pub(crate) fn to_settings(
     root: Node<'_>,
     sources: &BTreeMap<String, String>,
     default_mod_key: ModKey,
-) -> Result<Settings, Vec<ConfigDiagnostic>> {
+) -> Result<(Settings, Vec<ConfigDiagnostic>), Vec<ConfigDiagnostic>> {
     let mut cx = Ctx {
         sources,
         diags: Vec::new(),
+        warnings: Vec::new(),
     };
     let mut settings = Settings::builtin();
     settings.keybinds.clear();
@@ -130,12 +144,21 @@ pub(crate) fn to_settings(
     // 1 回目: Appearance と Workspaces（キーバインドの検査に数が要る）。
     let mut keybind_nodes = Vec::new();
     let mut data_control_nodes = Vec::new();
+    let mut motion_node = None;
+    let mut layout_nodes = Vec::new();
     for child in root.children() {
         match child.component() {
             "Appearance" => read_appearance(&mut cx, child, &mut settings),
             "Tiers" => read_tiers(&mut cx, child, &mut settings),
             "Workspaces" => read_workspaces(&mut cx, child, &mut settings),
-            "Layout" => read_layout(&mut cx, child, &mut settings),
+            "Layout" => {
+                layout_nodes.push(child);
+                read_layout(&mut cx, child, &mut settings);
+            }
+            "Motion" => {
+                motion_node = Some(child);
+                read_motion(&mut cx, child, &mut settings);
+            }
             "Cursor" => read_cursor(&mut cx, child, &mut settings),
             "Screenshot" => read_screenshot(&mut cx, child, &mut settings),
             "HotkeyOverlay" => read_hotkey_overlay(&mut cx, child, &mut settings),
@@ -153,6 +176,7 @@ pub(crate) fn to_settings(
     }
 
     read_data_control_clients(&mut cx, &data_control_nodes, &mut settings);
+    warn_legacy_animation(&mut cx, motion_node, &layout_nodes);
 
     // 2 回目: Keybind。
     let mut seen: BTreeMap<KeyId, (u32, u32)> = BTreeMap::new();
@@ -179,10 +203,146 @@ pub(crate) fn to_settings(
     }
 
     if cx.diags.is_empty() {
-        Ok(settings)
+        Ok((settings, cx.warnings))
     } else {
         Err(cx.diags)
     }
+}
+
+/// `<Motion>` があるとき、旧 `Layout.animation` / `animationMs` が無視されることを警告する（CT074）。
+fn warn_legacy_animation(cx: &mut Ctx<'_>, motion: Option<Node<'_>>, layouts: &[Node<'_>]) {
+    if motion.is_none() {
+        return;
+    }
+    for layout in layouts {
+        for key in ["animation", "animationMs"] {
+            if layout.prop_span(key).is_some() {
+                cx.warn_at(
+                    *layout,
+                    key,
+                    codes::MOTION_IGNORES_LAYOUT,
+                    format!("`<Motion>` があるので、旧 `Layout` の `{key}` は無視する"),
+                );
+            }
+        }
+    }
+}
+
+/// 種別の要素名から `MotionKind`。
+fn motion_kind(name: &str) -> Option<MotionKind> {
+    match name {
+        "Scroll" => Some(MotionKind::Scroll),
+        "Resize" => Some(MotionKind::Resize),
+        "Workspace" => Some(MotionKind::Workspace),
+        "Focus" => Some(MotionKind::Focus),
+        "Open" => Some(MotionKind::Open),
+        "Close" => Some(MotionKind::Close),
+        _ => None,
+    }
+}
+
+/// 曲線名から曲線。未知なら `None`。
+fn motion_curve(name: &str) -> Option<MotionCurve> {
+    match name {
+        "easeOutCubic" => Some(MotionCurve::Easing(EasingCurve::EaseOutCubic)),
+        "easeOutQuad" => Some(MotionCurve::Easing(EasingCurve::EaseOutQuad)),
+        "easeOutExpo" => Some(MotionCurve::Easing(EasingCurve::EaseOutExpo)),
+        "easeInOutCubic" => Some(MotionCurve::Easing(EasingCurve::EaseInOutCubic)),
+        "niriSpring" => Some(MotionCurve::NiriSpring),
+        _ => None,
+    }
+}
+
+/// `Motion` を読む。種別（`Scroll` など）は高々 1 つ（2 つ目以降は CT073）。省略した種別は即時（`None`）。
+/// 長さは easing だけが持つ。0 以上 `MAX_MOTION_MS` 以下（INV-T1。CT070）。`niriSpring` は長さを持たない（併記は CT072）。
+fn read_motion(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
+    let mut motion = MotionSettings::default();
+    let mut seen: Vec<MotionKind> = Vec::new();
+    for child in node.children() {
+        let Some(kind) = motion_kind(child.component()) else {
+            cx.error(
+                child,
+                codes::TREE_MISMATCH,
+                format!("`<Motion>` に `<{}>` は置けない", child.component()),
+            );
+            continue;
+        };
+        if seen.contains(&kind) {
+            cx.error(
+                child,
+                codes::MOTION_DUPLICATE,
+                format!("`<Motion>` に `<{}>` が 2 つ以上ある", child.component()),
+            );
+            continue;
+        }
+        seen.push(kind);
+        if let Some(spec) = read_motion_spec(cx, child, kind) {
+            motion.set(kind, spec);
+        }
+    }
+    settings.motion = Some(motion);
+}
+
+/// 種別 1 つの `curve`・`duration` を読む。誤りは診断を足して `None`。
+fn read_motion_spec(cx: &mut Ctx<'_>, node: Node<'_>, kind: MotionKind) -> Option<MotionSpec> {
+    let curve_name = cx.optional::<String>(node, "curve");
+    let duration = cx.optional::<Millis>(node, "duration");
+    let curve = match curve_name.as_deref() {
+        None => MotionCurve::Easing(EasingCurve::default()),
+        Some(name) => {
+            let Some(curve) = motion_curve(name) else {
+                cx.error_at(
+                    node,
+                    "curve",
+                    codes::MOTION_BAD_CURVE,
+                    format!(
+                        "未知の曲線 \"{name}\"（easeOutCubic / easeOutQuad / easeOutExpo / easeInOutCubic / niriSpring）"
+                    ),
+                );
+                return None;
+            };
+            curve
+        }
+    };
+    if curve == MotionCurve::NiriSpring {
+        if kind == MotionKind::Focus {
+            cx.error_at(
+                node,
+                "curve",
+                codes::MOTION_SPRING_CONFLICT,
+                "`<Focus>` に `niriSpring` は使えない（明度が行き過ぎるため）",
+            );
+            return None;
+        }
+        if node.prop_span("duration").is_some() {
+            cx.error(
+                node,
+                codes::MOTION_SPRING_CONFLICT,
+                "`niriSpring` は長さを持たない（`duration` と一緒に書けない）",
+            );
+            return None;
+        }
+        return Some(MotionSpec {
+            curve,
+            duration_ms: 0,
+        });
+    }
+    let duration_ms = match duration {
+        None => MotionSpec::default_duration_ms(kind),
+        Some(Millis(ms)) => {
+            let Some(ms) = u32::try_from(ms).ok().filter(|ms| *ms <= MAX_MOTION_MS) else {
+                cx.error_at(
+                    node,
+                    "duration",
+                    codes::MOTION_BAD_DURATION,
+                    format!("`duration` は 0〜{MAX_MOTION_MS}ms（{ms}ms は使えない）"),
+                );
+                return None;
+            };
+            ms
+        }
+    };
+    Some(MotionSpec { curve, duration_ms })
 }
 
 /// prop `key` の行・列。prop の位置が無ければ要素の行・列（求められなければ 0:0）。

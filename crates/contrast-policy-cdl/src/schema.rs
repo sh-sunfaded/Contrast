@@ -19,6 +19,13 @@ fn one_of(values: &[&str]) -> Ty {
     )
 }
 
+/// `Motion` の子（種別）の定義。`curve`（曲線名。`string` のまま CT071 で検査する）と `duration`（`ms(150)`）。
+fn motion_kind(name: &str) -> ComponentDef {
+    ComponentDef::new(name)
+        .optional_prop("curve", Ty::String)
+        .optional_prop("duration", Ty::Duration)
+}
+
 /// スキーマを組み立てる。失敗は `Schema::build` が返す誤りの一覧（実装の不具合を意味する）。
 pub(crate) fn contrast_schema() -> Result<Schema, Vec<String>> {
     let window_info = Ty::object([
@@ -53,6 +60,7 @@ pub(crate) fn contrast_schema() -> Result<Schema, Vec<String>> {
                     "DataControlClient",
                     "Environment",
                     "Keybind",
+                    "Motion",
                 ])
                 .unique_child("Environment")
                 .unique_child("Appearance")
@@ -62,8 +70,27 @@ pub(crate) fn contrast_schema() -> Result<Schema, Vec<String>> {
                 .unique_child("Cursor")
                 .unique_child("Screenshot")
                 .unique_child("HotkeyOverlay")
-                .unique_child("Input"),
+                .unique_child("Input")
+                .unique_child("Motion"),
         )
+        // `Motion` の種別の一意性は CDL の `unique_child` ではなく、変換の CT073 で守る（診断コードを保つため）。
+        .component(
+            MODULE,
+            ComponentDef::new("Motion").children(&[
+                "Scroll",
+                "Resize",
+                "Workspace",
+                "Focus",
+                "Open",
+                "Close",
+            ]),
+        )
+        .component(MODULE, motion_kind("Scroll"))
+        .component(MODULE, motion_kind("Resize"))
+        .component(MODULE, motion_kind("Workspace"))
+        .component(MODULE, motion_kind("Focus"))
+        .component(MODULE, motion_kind("Open"))
+        .component(MODULE, motion_kind("Close"))
         .component(
             MODULE,
             ComponentDef::new("Appearance")

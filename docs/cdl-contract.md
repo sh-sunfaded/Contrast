@@ -14,12 +14,14 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
 
 | 要素 | props | 子 | 一意 |
 | --- | --- | --- | --- |
-| `Contrast` | `modKey?: "alt" \| "super"`（省略時は下記の優先順位で決まる） | `Appearance` \| `Tiers` \| `Workspaces` \| `Layout` \| `Cursor` \| `Input` \| `Startup` \| `DataControlClient` \| `Environment` \| `Keybind` | `Appearance`、`Tiers`、`Workspaces`、`Layout`、`Cursor`、`Input`、`Environment` |
+| `Contrast` | `modKey?: "alt" \| "super"`（省略時は下記の優先順位で決まる） | `Appearance` \| `Tiers` \| `Workspaces` \| `Layout` \| `Cursor` \| `Input` \| `Startup` \| `DataControlClient` \| `Environment` \| `Keybind` \| `Motion` | `Appearance`、`Tiers`、`Workspaces`、`Layout`、`Cursor`、`Input`、`Environment`、`Motion` |
 | `Appearance` | `borderWidth?: Length`（省略 = 0 = 枠なし）、`background?: Color`、`radius?: Length`、`shadowBlur?: Length`、`shadowOffsetX?: Length`、`shadowOffsetY?: Length`、`shadowColor?: Color`、`inactiveBorderWidth?: Length` | なし | — |
 | `Tiers` | なし | `FocusTier` \| `Tier` | `Contrast` の中で 1 つまで。`FocusTier` は `Tiers` の中で 1 つまで（`E4006`）。省略すると組み込みの段階（フォーカス `l=1`、フォーカス外 `l=0.8`、枠なし） |
 | `FocusTier` | `l: number`（0 より大きく 1 以下）、`ringColor?: Color` | なし | `Tiers` の中でちょうど 1 つ（無いと CT061） |
 | `Tier` | `l: number`（0 より大きく 1 以下）、`ringColor?: Color`、`name?: string`（診断用。空・重複は CT065） | なし | `Tiers` の中で 0 個か 1 個（この版。0 個は減光なし。2 個以上は CT064） |
-| `Workspaces` | `count: number`（整数、1〜32）、`mode?: "fixed" \| "dynamic"`（既定 `"fixed"`） | なし | — |
+| `Motion` | なし | `Scroll` \| `Resize` \| `Workspace` \| `Focus` \| `Open` \| `Close` | `Contrast` の中で 1 つまで。省略すると全種別が即時（旧 `Layout.animation*` に従う）。種別の重複は CT073 |
+| `Scroll` / `Resize` / `Workspace` / `Focus` / `Open` / `Close` | `curve?: string`、`duration?: Duration` | なし | `Motion` の中で各 1 つまで（CT073） |
+| `Workspaces` | `count: number'（整数、1〜32）、`mode?: "fixed" \| "dynamic"`（既定 `"fixed"`） | なし | — |
 | `Layout` | `gap?: Length`、`outerGap?: Length`、`mode?: "equal" \| "scrolling"`（既定 `"equal"`）、`defaultColumnWidth?: number`、`presetColumnWidths?: string`、`windowHeightPresets?: string`、`animation?: "easing" \| "spring"`（既定 `"easing"`）、`animationMs?: number`（既定 0） | なし | — |
 | `Cursor` | `theme?: string`、`size?: number`、`hideAfterInactiveMs?: number` | なし | — |
 | `Screenshot` | `path?: string`（`~` と strftime の `%Y` などを展開。既定は niri と同じ `~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png`。空文字列で保存しない） | なし | — |
@@ -86,6 +88,15 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
   **減光**: フォーカス外の窓（Tiled / Floating。全画面の窓とフォーカス窓は除く）の画素に、プリマルチプライドの RGB へ乗数 `k = (l_tier / l_focus)^(3/2.2)` を掛ける（アルファ・矩形・枠・影は変えない。ポップアップ・サブサーフェスも同じ乗数）。
   **`k` と組み込みの `l = 0.8` は仮置き**（中立のグレーでだけ正確な近似で、目標値ではない）。`l` は「窓の画素を何倍に暗くするか」の指標で、周囲（壁紙・隣の窓）に対する知覚コントラストの保証ではない（未決。ui-breaking-update §7）。
   `screenshot-window` は減光しない（常に乗数 1）。`screenshot-screen` は画面に見えているとおり減光が入る。オーバービューは減光しない。
+
+### Motion（U3。`docs/ui-spec.md` §4.2・§5）
+
+- 種別は要素名で固定（`Scroll`・`Resize`・`Workspace`・`Focus`・`Open`・`Close`）。書かなかった種別は**即時**。`<Motion>` ごと省略したときは、旧 `Layout.animation` / `animationMs` に従う（今までの挙動）。
+- `curve`（`string`のまま。未知の名前は CT071）: `easeOutCubic`（既定）・`easeOutQuad`・`easeOutExpo`・`easeInOutCubic`・`niriSpring`。`niriSpring` は niri のバネ（互換専用）で、長さを持たない。`Focus` には使えない。`linear` は無い。
+- `duration`（`Duration`）: CDL に Duration のリテラルは無く、`ms(150)` と書く（`sec(0.15)` も同じ 150ms。整数ミリ秒にならない小数は CDL の E5009）。`ms(-5)` は CDL を通るので、**範囲（0 以上 400 以下。INV-T1 の `MAX_MOTION_MS`。設定で上げられない）は Contrast の変換で検査する**（CT070）。0 は「その種別は動きなし」。`niriSpring` は INV-T1 の対象外で、`duration` との併記は CT072。
+- 既定の長さ: `Focus` は 120ms、ほかは 150ms。
+- 併存: `<Motion>` があるとき、旧 `Layout.animation`・`animationMs` は**無視**する。書かれていれば、その prop の位置に警告 CT074 を出す（読み込みは成功する。リロードの結果の診断に載る）。旧 prop は後の段階で廃止する。
+- 診断の位置は原因の prop（`curve`・`duration`）。複数 prop にまたがる検査（`niriSpring` と `duration` の併記）と、種別の重複は要素の位置。
 
 ### `modKey` の決まり方
 
@@ -200,6 +211,11 @@ interface Policy     { windowOpen?: (w: WindowInfo) => Placement }
 | CT063 | フォーカス段階との差が、フォーカス外の段階全体の幅以下（DU-12。位置は `FocusTier`。メッセージに F・max(N)・min(N)） |
 | CT064 | `Tier` が 2 個以上（この版は 0 個か 1 個。位置は `Tiers`） |
 | CT065 | `Tier` の `name` が空・重複（位置はその `Tier` の `name` の属性） |
+| CT070 | `Motion` の easing の `duration` が 0 未満か 400ms 超（INV-T1。位置は `duration` の属性） |
+| CT071 | `Motion` の未知の `curve`（位置は `curve` の属性） |
+| CT072 | `niriSpring` と `duration` の併記（位置は要素）、または `Focus` に `niriSpring`（位置は `curve` の属性） |
+| CT073 | `Motion` の中で同じ種別が 2 つ以上（位置は 2 つ目以降の要素） |
+| CT074 | 警告: `<Motion>` があるので、旧 `Layout.animation` / `animationMs` を無視する（位置はその prop） |
 
 CDL 自身の診断（`E0001`〜）は、そのままのコードで `ConfigDiagnostic` に写す。位置は `file:line:col`。
 値木の診断は、原因の prop が 1 つに決まるもの（範囲外・形式の誤り・重複・未知の action など。CDL 0.2.1 の `Node::prop_span`）はその prop の属性（`name={値}`）の位置を示す。複数の prop にまたがるもの（`set-window-height` の `height` / `heightPx`、`Env` の `name` / `value` の複合検査、CT063 など）と、prop が無いもの（`spawn` の `command` 忘れなど）は要素の位置を示す。どちらもメッセージに prop 名を書く。
