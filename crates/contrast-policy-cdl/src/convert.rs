@@ -140,6 +140,7 @@ pub(crate) fn to_settings(
             "Workspaces" => read_workspaces(&mut cx, child, &mut settings),
             "Layout" => read_layout(&mut cx, child, &mut settings),
             "Motion" => read_motion(&mut cx, child, &mut settings),
+            "Zoom" => read_zoom(&mut cx, child, &mut settings),
             "Cursor" => read_cursor(&mut cx, child, &mut settings),
             "Screenshot" => read_screenshot(&mut cx, child, &mut settings),
             "HotkeyOverlay" => read_hotkey_overlay(&mut cx, child, &mut settings),
@@ -889,6 +890,72 @@ fn read_input(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
     }
 }
 
+/// 段階（`Step`）の約数の範囲。
+const ZOOM_DIVISOR_MIN: u32 = 2;
+/// 段階（`Step`）の約数の上限。
+const ZOOM_DIVISOR_MAX: u32 = 8;
+/// `Step` の個数の上限（等倍と合わせて 3 段まで。INV-Z1）。
+const ZOOM_MAX_STEPS: usize = 2;
+
+/// `Zoom` を読む。`Step` は 0〜`ZOOM_MAX_STEPS` 個、`divisor` は `ZOOM_DIVISOR_MIN`〜`ZOOM_DIVISOR_MAX` の整数で、
+/// 厳密に増える順（CT086）。段階は等倍から始まる。
+fn read_zoom(cx: &mut Ctx<'_>, node: Node<'_>, settings: &mut Settings) {
+    let mut levels = vec![contrast_policy::ZoomLevel::IDENTITY];
+    let mut previous = 1_u32;
+    let mut count = 0_usize;
+    for child in node.children() {
+        if child.component() != "Step" {
+            cx.error(
+                child,
+                codes::TREE_MISMATCH,
+                format!("`<Zoom>` に `<{}>` は置けない", child.component()),
+            );
+            continue;
+        }
+        count = count.saturating_add(1);
+        if count > ZOOM_MAX_STEPS {
+            cx.error(
+                child,
+                codes::ZOOM_BAD_STEP,
+                format!(
+                    "`<Step>` は {ZOOM_MAX_STEPS} 個まで（等倍と合わせて {} 段まで）",
+                    ZOOM_MAX_STEPS.saturating_add(1)
+                ),
+            );
+            continue;
+        }
+        let Some(value) = cx.prop::<f64>(child, "divisor") else {
+            continue;
+        };
+        let Some(divisor) = integer_in(value, ZOOM_DIVISOR_MIN, ZOOM_DIVISOR_MAX) else {
+            cx.error_at(
+                child,
+                "divisor",
+                codes::ZOOM_BAD_STEP,
+                format!("`divisor` は {ZOOM_DIVISOR_MIN}〜{ZOOM_DIVISOR_MAX} の整数（{value} は使えない）"),
+            );
+            continue;
+        };
+        if divisor <= previous {
+            cx.error_at(
+                child,
+                "divisor",
+                codes::ZOOM_BAD_STEP,
+                format!("`divisor` は前の段階（{previous}）より大きい（{divisor} は使えない。厳密に増える順）"),
+            );
+            continue;
+        }
+        previous = divisor;
+        if let Some(level) = u8::try_from(divisor)
+            .ok()
+            .and_then(contrast_policy::ZoomLevel::new)
+        {
+            levels.push(level);
+        }
+    }
+    settings.zoom = contrast_policy::ZoomSettings { levels };
+}
+
 /// `Mode`（キー層の宣言）を読む。名前は空でなく、`normal` でなく、重複しない（CT083）。
 fn read_modes(cx: &mut Ctx<'_>, nodes: &[Node<'_>], settings: &mut Settings) {
     for node in nodes {
@@ -1096,6 +1163,23 @@ fn read_action(
         "move-workspace-up" => Some(Action::MoveWorkspaceUp),
         "reload-config" => Some(Action::ReloadConfig),
         "exit-mode" => Some(Action::ExitMode),
+        "zoom-in" | "zoom-out" | "zoom-reset" => {
+            // 段階が等倍だけのとき、ズームのキーは意味がない（CT088）。
+            if settings.zoom.count() <= 1 {
+                cx.error_at(
+                    node,
+                    "action",
+                    codes::ZOOM_WITHOUT_STEPS,
+                    format!("`{name}` には `<Zoom>`（`<Step>` が 1 つ以上）が要る"),
+                );
+                return None;
+            }
+            Some(match name {
+                "zoom-in" => Action::ZoomIn,
+                "zoom-out" => Action::ZoomOut,
+                _ => Action::ZoomReset,
+            })
+        }
         "quit" => Some(Action::Quit),
         "power-off-monitors" => Some(Action::PowerOffMonitors),
         "screenshot-screen" => Some(Action::ScreenshotScreen),

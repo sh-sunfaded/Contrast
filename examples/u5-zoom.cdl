@@ -1,0 +1,20 @@
+"use cdl 1";
+import { Contrast, Zoom, Step, Keybind } from "host:contrast";
+
+// U5 の例（ズーム）。静的ルート。基準線の examples/niri.cdl には影響しない（別ファイル。あちらは <Zoom> を書かない = 等倍のみ）。
+//   ズームは「見え方」だけの変換: 窓の実サイズ（クライアントへの configure）は等倍のまま、描画だけを作業領域の中心を基準に
+//   1/divisor 倍にして、1 画面に見える列を増やす。列の順序・幅・間隔・フォーカスは変わらない（INV-S1・S2・F1・R1）。
+//   段階は等倍に <Step> を足す（0〜2 個。divisor は 2〜8 の整数で、厳密に増える順）。ここでは 等倍 → 1/2 の 2 段。
+//   ズーム中は、3 本指のビュー操作・DnD の端スクロール・4 本指のオーバービュー・スクリーンショット UI を使えない。
+//   zoom-in = 1 段縮める、zoom-out = 1 段戻す、zoom-reset = 等倍（<Zoom> が無い設定でこれらのキーを書くと CT088）。
+
+export default (
+  <Contrast>
+    <Zoom>
+      <Step divisor={2} />
+    </Zoom>
+    <Keybind keys="alt+minus" action="zoom-in" />
+    <Keybind keys="alt+equal" action="zoom-out" />
+    <Keybind keys="alt+0" action="zoom-reset" />
+  </Contrast>
+);

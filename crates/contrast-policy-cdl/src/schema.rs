@@ -100,6 +100,7 @@ pub(crate) fn contrast_schema() -> Result<Schema, Vec<String>> {
                     "Keybind",
                     "Motion",
                     "Mode",
+                    "Zoom",
                 ])
                 .unique_child("Environment")
                 .unique_child("Appearance")
@@ -110,7 +111,8 @@ pub(crate) fn contrast_schema() -> Result<Schema, Vec<String>> {
                 .unique_child("Screenshot")
                 .unique_child("HotkeyOverlay")
                 .unique_child("Input")
-                .unique_child("Motion"),
+                .unique_child("Motion")
+                .unique_child("Zoom"),
         )
         // `Motion` の種別の一意性は CDL の `unique_child` ではなく、変換の CT073 で守る（診断コードを保つため）。
         .component(
@@ -137,6 +139,12 @@ pub(crate) fn contrast_schema() -> Result<Schema, Vec<String>> {
         .component(
             MODULE,
             ComponentDef::new("Launch").prop("command", Ty::String),
+        )
+        // ズームの段階（INV-Z1）。`Step` は等倍の次の段階（`divisor` = 約数）。個数・範囲・順序は変換が検査する（CT086）。
+        .component(MODULE, ComponentDef::new("Zoom").children(&["Step"]))
+        .component(
+            MODULE,
+            ComponentDef::new("Step").prop("divisor", Ty::Number),
         )
         .component(
             MODULE,
