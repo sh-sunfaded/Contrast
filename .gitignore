@@ -1,5 +1,4 @@
 /target
-.cc-logs/
 mutants.out*/
 .idea/
 # 手元の CDL への差し替え（[patch]）。リポジトリには入れない。
