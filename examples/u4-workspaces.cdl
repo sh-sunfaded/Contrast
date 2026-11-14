@@ -1,0 +1,37 @@
+"use cdl 1";
+import {
+  Contrast, Workspaces, Workspace, Launch, Mode, Keybind,
+} from "host:contrast";
+
+// U4 の例（名前つきワークスペース・シーン・キー層）。静的ルート。基準線の examples/niri.cdl には影響しない（別ファイル）。
+//   名前つきワークスペースは `Fixed` だけ（`Dynamic` で名前を書くと CT083）。並び = 位置（1 番目が 1 番）。
+//   シーン: `<Launch>` は宣言のみ。`scene` 命令を押したときだけ、そのワークスペースへ切り替えて起動する（自動起動しない）。
+//   キー層: `<Mode>` で宣言し、`Keybind mode="…"` を層の中に置く。層には必ず抜けるキー（`exit-mode`）が要る（CT082）。
+//   層の中では、修飾キーなしの Escape は常に `exit-mode`（書き換えられない）。
+//   `Workspace` は `<Motion>` の中の `<Workspace>`（curve・duration）と同じ名前だが、`<Workspaces>` の中の `<Workspace>` は名前表。
+
+export default (
+  <Contrast>
+    <Workspaces count={4}>
+      <Workspace name="web">
+        <Launch command="firefox" />
+      </Workspace>
+      <Workspace name="code">
+        <Launch command="foot -D /home/user/src" />
+      </Workspace>
+      <Workspace name="chat" />
+    </Workspaces>
+    <Keybind keys="alt+1" action="workspace-name" name="web" />
+    <Keybind keys="alt+2" action="workspace-name" name="code" />
+    <Keybind keys="alt+3" action="workspace-name" name="chat" />
+    <Keybind keys="alt+shift+1" action="scene" name="web" />
+    <Keybind keys="alt+shift+2" action="scene" name="code" />
+
+    {/* リサイズ層: alt+r で入り、h / l で列の幅を変え、q か Escape で抜ける。当たらないキーは消費する（fallthrough なし）。 */}
+    <Mode name="resize" />
+    <Keybind keys="alt+r" action="enter-mode" name="resize" />
+    <Keybind mode="resize" keys="h" action="adjust-column-width" delta={-10} />
+    <Keybind mode="resize" keys="l" action="adjust-column-width" delta={10} />
+    <Keybind mode="resize" keys="q" action="exit-mode" />
+  </Contrast>
+);

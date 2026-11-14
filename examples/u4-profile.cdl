@@ -1,0 +1,53 @@
+"use cdl 1";
+import {
+  Contrast, Appearance, Tiers, FocusTier, Tier, Layout, Motion, Scroll, Resize, Workspace, Focus, Open, Close, Keybind,
+} from "host:contrast";
+import type { Env } from "host:contrast-env";
+
+// U4 の例（Profile）: 設定は `Env`（読み取り専用の入力）の関数。基準線の examples/niri.cdl には影響しない（別ファイル）。
+//   使い方: CONTRAST_CONFIG=examples/u4-profile.cdl で起動し、プロファイルは次のどちらかで決める（環境変数が優先）。
+//     CONTRAST_PROFILE=dim            環境変数
+//     ~/.config/contrast/profile      1 行のファイル（反映は reload-config）
+//   プロファイル: "default"（減光なし・動きなし）／ "dim"（フォーカス外を暗くする。Focus の明度遷移つき）／
+//   "calm"（niri のバネ）／ "fast"（短い easing）。
+// 型の制約: `&&` の左辺は boolean。省略できるフィールド（`env.focus`・`env.workspace.name`）は `?.` で読む。
+// `Layout`・`Workspaces` は Env で変わらない（起動時に決まる）ので、Env に依らない形で書く。
+
+export default function App(env: Env): Element<Contrast> {
+  return (
+    <Contrast>
+      <Appearance borderWidth={px(2)} />
+      {/* 同じ要素（Tiers・Motion）を複数の条件が出さないよう、条件は互いに排他にする（衝突は E4006）。 */}
+      {env.profile === "dim" && (
+        <Tiers>
+          <FocusTier l={1} ringColor={color("#7fc8ff")} />
+          <Tier l={0.7} />
+        </Tiers>
+      )}
+      {env.profile === "dim" && (
+        <Motion>
+          <Focus curve="easeOutQuad" duration={ms(120)} />
+        </Motion>
+      )}
+      {env.profile === "calm" && (
+        <Motion>
+          <Scroll curve="niriSpring" />
+          <Resize curve="niriSpring" />
+          <Workspace curve="niriSpring" />
+          <Open curve="niriSpring" />
+          <Close curve="niriSpring" />
+        </Motion>
+      )}
+      {env.profile === "fast" && (
+        <Motion>
+          <Scroll curve="easeOutQuad" duration={ms(90)} />
+          <Resize curve="easeOutQuad" duration={ms(90)} />
+        </Motion>
+      )}
+      <Keybind keys="alt+Return" action="spawn" command="foot" />
+      <Keybind keys="alt+q" action="close" />
+      {/* フォーカス窓が全画面のときだけ有効なバインド（Env の focus.state）。 */}
+      {env.focus?.state === "fullscreen" && <Keybind keys="alt+f" action="toggle-fullscreen" />}
+    </Contrast>
+  );
+}

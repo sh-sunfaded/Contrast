@@ -21,7 +21,10 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
 | `Tier` | `l: number`（0 より大きく 1 以下）、`ringColor?: Color`、`name?: string`（診断用。空・重複は CT065） | なし | `Tiers` の中で 0 個か 1 個（この版。0 個は減光なし。2 個以上は CT064） |
 | `Motion` | なし | `Scroll` \| `Resize` \| `Workspace` \| `Focus` \| `Open` \| `Close` | `Contrast` の中で 1 つまで。省略すると全種別が即時。種別の重複は CT073 |
 | `Scroll` / `Resize` / `Workspace` / `Focus` / `Open` / `Close` | `curve?: string`、`duration?: Duration` | なし | `Motion` の中で各 1 つまで（CT073） |
-| `Workspaces` | `count: number'（整数、1〜32）、`mode?: "fixed" \| "dynamic"`（既定 `"fixed"`） | なし | — |
+| `Workspaces` | `count: number`（整数、1〜32）、`mode?: "fixed" \| "dynamic"`（既定 `"fixed"`） | `Workspace`（名前表） | — |
+| `Workspace`（`<Workspaces>` の中） | `name: string` | `Launch` | `Workspaces` の中で 0 個以上。並び = 位置。`<Motion>` の中の `<Workspace>`（`curve`・`duration`）と同じ名前の要素で、書ける props は文脈で決まる（`<Motion>` の中の `name`、`<Workspaces>` の中の `curve`・`duration` は CT003） |
+| `Launch` | `command: string` | なし | `Workspace` の中で 0 個以上 |
+| `Mode` | `name: string`、`fallthrough?: boolean`（既定 false） | なし | `Contrast` の中。層の名前ごとに 1 つ（重複は CT083） |
 | `Layout` | `gap?: Length`、`outerGap?: Length`、`mode?: "equal" \| "scrolling"`（既定 `"equal"`）、`defaultColumnWidth?: number`、`presetColumnWidths?: string`、`windowHeightPresets?: string` | なし | — |
 | `Cursor` | `theme?: string`、`size?: number`、`hideAfterInactiveMs?: number` | なし | — |
 | `Screenshot` | `path?: string`（`~` と strftime の `%Y` などを展開。既定は niri と同じ `~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png`。空文字列で保存しない） | なし | — |
@@ -31,7 +34,7 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
 | `DataControlClient` | `name: string` | なし | —（複数可） |
 | `Environment` | なし | `Env` | 一意 |
 | `Env` | `name: string`、`value: string` | なし | —（`Environment` の中だけ） |
-| `Keybind` | `keys: string`、`action: string`、`command?: string`、`workspace?: number`、`width?: number`、`delta?: number`、`height?: number`、`heightPx?: number` | なし | — |
+| `Keybind` | `keys: string`、`action: string`、`command?: string`、`workspace?: number`、`width?: number`、`delta?: number`、`height?: number`、`heightPx?: number`、`mode?: string`（層。既定 `"normal"`）、`name?: string`（`workspace-name`・`scene`・`enter-mode` の対象） | なし | — |
 
 - `Layout.mode` はスクロール列レイアウト（core-spec 12 節）を選ぶ。起動時に決まり、リロードでは変わらない（変えるには再起動）。
   `defaultColumnWidth` は新しい列の幅（0 より大きく 1 以下の割合、既定 0.5）。`presetColumnWidths` はプリセットの列幅で、
@@ -88,6 +91,17 @@ CDL 側の仕様は CDL リポジトリの `docs/SPEC.md`（6・8・9 章）と 
   **減光**: フォーカス外の窓（Tiled / Floating。全画面の窓とフォーカス窓は除く）の画素に、プリマルチプライドの RGB へ乗数 `k = (l_tier / l_focus)^(3/2.2)` を掛ける（アルファ・矩形・枠・影は変えない。ポップアップ・サブサーフェスも同じ乗数）。
   **`k` と組み込みの `l = 0.8` は仮置き**（中立のグレーでだけ正確な近似で、目標値ではない）。`l` は「窓の画素を何倍に暗くするか」の指標で、周囲（壁紙・隣の窓）に対する知覚コントラストの保証ではない（未決。ui-breaking-update §7）。
   `screenshot-window` は減光しない（常に乗数 1）。`screenshot-screen` は画面に見えているとおり減光が入る。オーバービューは減光しない。
+
+### Env・Profile・名前つきワークスペース・シーン・キー層（U4。`docs/ui-spec.md` §4.3）
+
+- **関数形ルート**: `export default function App(env: Env): Element<Contrast>`。型 `Env` は **`import type { Env } from "host:contrast-env"`**（`host:contrast` には要素 `Env`（`Environment` の子）があり、CDL は同じモジュールで要素と型の名前が重なるのを許さないので、別のモジュール）。静的ルート（`export default (<Contrast>…</Contrast>)`）は従来どおり読める（`examples/niri.cdl`・`config/`）。
+- **`Env`**（読み取り専用・純粋・決定的）: `{ profile: string, mode: string, output: { name: string }, workspace: { index: number（1 始まり）, name?: string, windowCount: number }, focus?: { appId: string, isDialog: boolean, state: "tiled" | "floating" | "fullscreen" } }`。`title` は入れない（変化が頻繁なため）。型に合わない値をホストが渡すと E4014（実行時の `render`）。
+- **CDL の型の制約（実測。`tests/impl_env_probe.rs`）**: `&&` の左辺は `boolean`（E3006）。オブジェクト型 | `undefined` は `=== undefined` で比べられない（E3006）ので、省略できるフィールドは `?.`（`env.focus?.appId === "foot"`、`env.focus?.state === "fullscreen"`）で読む。`c && <A/>` は `false | Element` なので、配列に入れず子の位置に直接書く（E3016）。複数ファイルに分けた条件は、`boolean` を返す関数（`isDim(env)` など）として import できる。
+- **読み込みと更新**: `load` のあと、代表の `Env`（フォーカスなし、フォーカスあり ×3 状態。`appId` は空文字列）で `render` と変換を通し、失敗は **CT081**（元のコードはメッセージの先頭 `[CT003]` に残る。位置は元のまま）。基準（最初）の `Env` の設定が `Config.settings`。実行時は `Env` が前回と等しければ再 `render` せず、変わったら `Env` で作り直し、**`Appearance`（`Tiers` を含む）・`Motion`・`Keybind`（層）だけ**を反映する（`Layout`・`Workspaces` などは基準のまま。違っていたら CT050 の警告）。実行時の失敗は直前の設定を保持して警告 **CT080**（同じ `Env` では 1 回だけ）。`Env` 由来の設定は `ConfigStore` の世代・CT050 の判定とは別の層。`render` + 変換は小さい例で平均 約 0.07ms（debug ビルド。`impl_env_examples.rs`）。
+- **Profile**: 新しい要素は無い。`env.profile` と条件で書く。入力は環境変数 `CONTRAST_PROFILE`（優先）、または `~/.config/contrast/profile`（`$XDG_CONFIG_HOME/contrast/profile`）の 1 行。無ければ `"default"`。反映は `reload-config`。同じ要素を複数の条件が出すと CDL の一意の子の検査（E4006）で拒否される。例は `examples/u4-profile.cdl`。
+- **名前つきワークスペース**: `<Workspaces>` の子 `<Workspace name>`（並び = 位置）。**`Fixed` のみ**（`Dynamic` で名前を書く・名前が空・重複・`count` より多いは **CT083**）。`Keybind action="workspace-name" name="web"` は名前表の位置へ `SwitchWorkspace`。未知の名前は **CT084**。core には名前を持たせない（policy の名前表）。
+- **シーン**: `<Workspace>` の子 `<Launch command>`（宣言のみ。自動起動しない）。`Keybind action="scene" name="web"` が、そのワークスペースへ切り替えてから `Launch` を spawn する。未知の名前は **CT085**。
+- **キー層**: `<Mode name fallthrough?>` で宣言（`normal` は宣言不要・宣言不可）。`Keybind mode="resize"`（既定 `"normal"`）。`enter-mode`（`name`）・`exit-mode`。同一性は `(mode, 修飾キー, キー)`（CT031）。未宣言の層・未知の `enter-mode` の対象は **CT084**。`normal` 以外の層に抜けるキー（`exit-mode`、または `enter-mode name="normal"`）が無い、層の中の修飾キーなし `Escape` を書く、は **CT082**（層の中では修飾キーなしの `Escape` は常に `exit-mode`）。例は `examples/u4-workspaces.cdl`。
 
 ### Motion（U3。`docs/ui-spec.md` §4.2・§5）
 
@@ -217,6 +231,12 @@ interface Policy     { windowOpen?: (w: WindowInfo) => Placement }
 | CT071 | `Motion` の未知の `curve`（位置は `curve` の属性） |
 | CT072 | `niriSpring` と `duration` の併記（位置は要素）、または `Focus` に `niriSpring`（位置は `curve` の属性） |
 | CT073 | `Motion` の中で同じ種別が 2 つ以上（位置は 2 つ目以降の要素） |
+| CT080 | 警告: 実行時の `Env` での `render`・変換に失敗した（直前の設定を保持。同じ `Env` では 1 回だけ） |
+| CT081 | 読み込み時の代表の `Env` での `render`・変換の失敗（元のコードはメッセージの先頭。位置は元のまま） |
+| CT082 | キー層に抜けるキーが無い、または層の中で修飾キーなしの `Escape` を書いた（INV-K1） |
+| CT083 | ワークスペース・キー層の名前が空・重複、`Dynamic` での名前、`count` より多い名前 |
+| CT084 | 未知のキー層・ワークスペース名（`Keybind` の `mode`・`enter-mode`・`workspace-name`） |
+| CT085 | 未知のシーン（`scene` の `name`） |
 
 CDL 自身の診断（`E0001`〜）は、そのままのコードで `ConfigDiagnostic` に写す。位置は `file:line:col`。
 値木の診断は、原因の prop が 1 つに決まるもの（範囲外・形式の誤り・重複・未知の action など。CDL 0.2.1 の `Node::prop_span`）はその prop の属性（`name={値}`）の位置を示す。複数の prop にまたがるもの（`set-window-height` の `height` / `heightPx`、`Env` の `name` / `value` の複合検査、CT063 など）と、prop が無いもの（`spawn` の `command` 忘れなど）は要素の位置を示す。どちらもメッセージに prop 名を書く。
